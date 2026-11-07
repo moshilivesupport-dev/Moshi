@@ -1,0 +1,45 @@
+{
+  "common": {
+    "home": "Accueil",
+    "live": "Live",
+    "shop": "Boutique",
+    "wallet": "Coins",
+    "profile": "Profil",
+    "login": "Connexion",
+    "register": "S'inscrire",
+    "logout": "Déconnexion",
+    "follow": "Suivre",
+    "following": "Suivi",
+    "loading": "Chargement..."
+  },
+  "auth": {
+    "email": "Email",
+    "password": "Mot de passe",
+    "fullName": "Nom complet",
+    "username": "Nom d'utilisateur",
+    "strongPassword": "Mot de passe fort obligatoire",
+    "createAccount": "Créer mon compte"
+  },
+  "seller": {
+    "becomeSeller": "Devenir vendeur",
+    "onboardingTitle": "Devenir vendeur Moshi",
+    "photoRequired": "Photo de profil obligatoire",
+    "country": "Pays",
+    "age": "Âge",
+    "gender": "Genre",
+    "submit": "Soumettre pour vérification",
+    "pending": "Demande en cours de vérification"
+  },
+  "live": {
+    "liveNow": "EN DIRECT",
+    "viewers": "spectateurs",
+    "discussion": "Discussion Live",
+    "sendGift": "Envoyer un gift",
+    "writeMessage": "Écrire un message..."
+  },
+  "product": {
+    "newProduct": "Nouveau produit",
+    "minPhotos": "Minimum 2 photos obligatoires",
+    "publish": "Publier le produit"
+  }
+}
