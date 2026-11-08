@@ -24,7 +24,6 @@ const COUNTRIES = [
   "Canada", "USA", "UK", "Allemagne", "Espagne", "Portugal", "Chine", "Émirats",
 ];
 
-/** Normalise n'importe quelle image vers un Blob non vide (évite "No content provided") */
 async function toUploadableImage(
   file: File
 ): Promise<{ blob: Blob; contentType: string; ext: string }> {
@@ -32,7 +31,6 @@ async function toUploadableImage(
     throw new Error("Fichier photo vide. Rechoisissez une image.");
   }
 
-  // JPG / PNG / WebP déjà OK
   if (
     file.type === "image/jpeg" ||
     file.type === "image/png" ||
@@ -48,7 +46,6 @@ async function toUploadableImage(
     return { blob, contentType: file.type, ext };
   }
 
-  // HEIC / type vide / autres → conversion canvas → JPEG
   const objectUrl = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
