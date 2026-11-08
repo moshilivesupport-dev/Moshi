@@ -9,3 +9,5 @@ binding = "ASSETS"
 
 [vars]
 NEXT_PUBLIC_APP_URL = "https://moshi.pages.dev"
+NEXT_PUBLIC_SUPABASE_URL=https://xmzmswmoylgcjhlwqrju.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_K_OiO8evcXr__uyuHKdtrA_cnLiwDDb
