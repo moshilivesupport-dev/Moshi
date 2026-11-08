@@ -1,31 +1,33 @@
 /**
- * CinetPay fee & total calculation
+ * Calcul des frais et du total CinetPay (utilisable côté client ET serveur).
  *
- * Rule: CinetPay transaction fees are added to the amount paid by the customer.
- * The seller receives the exact product price.
- * Platform commission is deducted later from the seller's payouts.
+ * Règle : les frais CinetPay sont AJOUTÉS au montant payé par le client.
+ * Le vendeur reçoit le prix exact du produit. La commission plateforme est
+ * prélevée plus tard, lors des payouts vendeur.
+ *
+ * Contrainte CinetPay : le montant d'une transaction doit être un entier
+ * multiple de 5. L'arrondi est donc absorbé par les frais.
+ *
+ * Les appels à l'API CinetPay (clés secrètes) sont dans cinetpay-server.ts.
  */
 
 export interface CinetPayFeeConfig {
-  percent: number; // e.g. 2.5
-  fixed: number;   // e.g. 0
+  percent: number; // ex. 2.5
+  fixed: number;   // ex. 0
 }
 
 export interface CheckoutBreakdown {
-  productPrice: number;      // What the seller should receive
-  cinetpayFees: number;      // Fees paid by the customer
-  customerTotal: number;     // productPrice + cinetpayFees
-  platformCommission: number; // Deducted later from seller payout
-  sellerNet: number;         // productPrice - platformCommission (at payout time)
+  productPrice: number;       // ce que le vendeur doit recevoir
+  cinetpayFees: number;       // frais payés par le client (arrondi inclus)
+  customerTotal: number;      // montant débité au client (multiple de 5)
+  platformCommission: number; // prélevée plus tard sur le payout vendeur
+  sellerNet: number;          // productPrice - platformCommission
   currency: string;
 }
 
-const DEFAULT_CINETPAY_FEE: CinetPayFeeConfig = {
-  percent: 2.5,
-  fixed: 0,
-};
-
+const DEFAULT_CINETPAY_FEE: CinetPayFeeConfig = { percent: 2.5, fixed: 0 };
 const DEFAULT_COMMISSION_RATE = 10; // %
+const AMOUNT_STEP = 5;
 
 export function calculateCinetPayFees(
   amount: number,
@@ -40,8 +42,9 @@ export function buildCheckoutBreakdown(
   cinetpayConfig: CinetPayFeeConfig = DEFAULT_CINETPAY_FEE,
   commissionRate: number = DEFAULT_COMMISSION_RATE
 ): CheckoutBreakdown {
-  const cinetpayFees = calculateCinetPayFees(productPrice, cinetpayConfig);
-  const customerTotal = productPrice + cinetpayFees;
+  const rawFees = calculateCinetPayFees(productPrice, cinetpayConfig);
+  const customerTotal = Math.ceil((productPrice + rawFees) / AMOUNT_STEP) * AMOUNT_STEP;
+  const cinetpayFees = customerTotal - productPrice;
   const platformCommission = Math.round((productPrice * commissionRate) / 100);
   const sellerNet = productPrice - platformCommission;
 
@@ -52,28 +55,5 @@ export function buildCheckoutBreakdown(
     platformCommission,
     sellerNet,
     currency,
-  };
-}
-
-/**
- * Stub: initiate CinetPay payment
- * In production: call CinetPay API (https://docs.cinetpay.com)
- */
-export async function initiateCinetPayPayment(params: {
-  amount: number;
-  currency: string;
-  description: string;
-  customerName: string;
-  customerEmail: string;
-  customerPhone?: string;
-  transactionId: string;
-  notifyUrl: string;
-  returnUrl: string;
-}): Promise<{ paymentUrl?: string; error?: string }> {
-  // TODO: Replace with real CinetPay API call
-  // POST https://api-checkout.cinetpay.com/v2/payment
-  console.log("[CinetPay stub] initiate payment", params);
-  return {
-    paymentUrl: `/payments/cinetpay/mock?tx=${params.transactionId}&amount=${params.amount}`,
   };
 }
