@@ -3,7 +3,8 @@
 -- À exécuter dans le SQL Editor de Supabase. Idempotente.
 --
 --  * Crée les buckets "avatars" et "products" (erreur "Bucket not found")
---  * Désactive l'approbation manuelle des vendeurs (réglable, voir plus bas)
+--  * Approbation vendeur AUTOMATIQUE : la personne doit toujours soumettre sa demande
+--    (photo, pays, âge 18+, genre) ; si le dossier est complet, il est validé aussitôt
 --  * Un admin n'est plus rétrogradé par erreur quand il remplit le formulaire vendeur
 -- Pour réactiver l'approbation manuelle plus tard :
 --   update public.platform_settings set value = 'false' where key = 'auto_approve_sellers';
@@ -90,11 +91,17 @@ begin
     end if;
   end if;
 
-  -- Approbation automatique : une demande "pending" est validée aussitôt
+  -- Approbation automatique : la demande doit avoir été SOUMISE (statut "pending")
+  -- et le dossier doit être complet. Sinon elle reste en attente de l'admin.
   select coalesce(value = 'true'::jsonb, false) into v_auto
   from public.platform_settings where key = 'auto_approve_sellers';
 
-  if coalesce(v_auto, false) and new.seller_status = 'pending' then
+  if coalesce(v_auto, false)
+     and new.seller_status = 'pending'
+     and coalesce(new.avatar_url, '') <> ''
+     and coalesce(new.country, '') <> ''
+     and coalesce(new.gender, '') <> ''
+     and coalesce(new.age, 0) >= 18 then
     new.seller_status := 'approved';
     new.is_verified := true;
   end if;
@@ -107,7 +114,11 @@ create trigger guard_profile_update
   before update on public.profiles
   for each row execute function public.guard_profile_update();
 
--- ---------- 4. Valide les demandes déjà en attente ----------
+-- ---------- 4. Valide les demandes DÉJÀ soumises et complètes ----------
 update public.profiles
 set seller_status = 'approved', is_verified = true
-where seller_status = 'pending';
+where seller_status = 'pending'
+  and coalesce(avatar_url, '') <> ''
+  and coalesce(country, '') <> ''
+  and coalesce(gender, '') <> ''
+  and coalesce(age, 0) >= 18;
