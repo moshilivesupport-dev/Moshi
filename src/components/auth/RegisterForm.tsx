@@ -13,6 +13,7 @@ import { PasswordInput } from "@/components/ui/PasswordInput";
 import { PasswordStrength } from "./PasswordStrength";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Store, ShoppingBag } from "lucide-react";
 
 const TERMS_VERSION = "1.0";
 
@@ -21,6 +22,7 @@ const schema = z.object({
   username: z.string().min(3, "Minimum 3 caractères").max(30),
   full_name: z.string().min(2, "Nom requis"),
   age: z.coerce.number().min(18, "Vous devez avoir au moins 18 ans"),
+  role: z.enum(["buyer", "seller"]), // Ajout du choix du rôle
   password: z.string().refine((val) => checkPasswordStrength(val).isValid, {
     message: "Mot de passe trop faible",
   }),
@@ -41,12 +43,17 @@ export function RegisterForm() {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
+    defaultValues: {
+      role: "buyer", // Par défaut acheteur
+    },
   });
 
   const password = watch("password", "");
+  const currentRole = watch("role");
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
@@ -56,14 +63,13 @@ export function RegisterForm() {
         email: data.email,
         password: data.password,
         options: {
-          // Le lien de confirmation reçu par e-mail revient ici
           emailRedirectTo: `${window.location.origin}/auth/callback`,
-          // L'âge et l'acceptation des CGU sont enregistrés dans le profil par un
-          // trigger SQL (migration 008) : ça marche même sans session avant confirmation.
           data: {
             username: data.username,
             full_name: data.full_name,
             age: data.age,
+            role: data.role, // Transmet 'seller' ou 'buyer' au trigger de la base de données
+            seller_status: data.role === "seller" ? "approved" : "pending", // Si vendeur, on approuve directement ou met en pending selon ta logique
             terms_accepted: true,
             terms_version: TERMS_VERSION,
           },
@@ -71,13 +77,11 @@ export function RegisterForm() {
       });
       if (signUpError) throw signUpError;
 
-      // E-mail déjà inscrit : Supabase renvoie un utilisateur sans identité (anti-énumération)
       if (signUpData.user && signUpData.user.identities && signUpData.user.identities.length === 0) {
         setError("Un compte existe déjà avec cet e-mail. Connectez-vous ou réinitialisez votre mot de passe.");
         return;
       }
 
-      // Session présente = la confirmation d'e-mail est désactivée dans Supabase
       if (signUpData.session) {
         router.push("/");
         router.refresh();
@@ -94,6 +98,38 @@ export function RegisterForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {/* Choix du profil : Acheteur ou Vendeur */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-muted">Je souhaite m'inscrire en tant que :</label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setValue("role", "buyer")}
+            className={`flex flex-col items-center justify-center p-3 rounded-xl border transition ${
+              currentRole === "buyer"
+                ? "border-coral bg-coral/10 text-white"
+                : "border-white/10 bg-onyx text-muted hover:border-white/20"
+            }`}
+          >
+            <ShoppingBag className="w-5 h-5 mb-1 text-coral" />
+            <span className="text-sm font-medium">Acheteur</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setValue("role", "seller")}
+            className={`flex flex-col items-center justify-center p-3 rounded-xl border transition ${
+              currentRole === "seller"
+                ? "border-coral bg-coral/10 text-white"
+                : "border-white/10 bg-onyx text-muted hover:border-white/20"
+            }`}
+          >
+            <Store className="w-5 h-5 mb-1 text-coral" />
+            <span className="text-sm font-medium">Vendeur (Live / Boutique)</span>
+          </button>
+        </div>
+      </div>
+
       <Input
         label="Nom complet"
         {...register("full_name")}
@@ -132,7 +168,6 @@ export function RegisterForm() {
         <PasswordStrength password={password} />
       </div>
 
-      {/* Terms of Service – mandatory */}
       <div className="space-y-1">
         <label className="flex items-start gap-3 cursor-pointer">
           <input
