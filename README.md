@@ -89,3 +89,4 @@ npm run dev
 ## Dépendances
 
 Déjà présentes dans Moshi : `@supabase/ssr`, `lucide-react`, `@/components/ui/Button`, `@/components/ui/Input`, `@/lib/utils` (`formatNumber`).
+
