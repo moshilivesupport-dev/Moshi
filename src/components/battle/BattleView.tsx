@@ -8,7 +8,7 @@ interface BattleSide {
   avatar_url?: string;
   score: number;
 }
-ttle/
+
 interface Props {
   title: string;
   sideA: BattleSide;
