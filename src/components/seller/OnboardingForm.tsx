@@ -158,7 +158,8 @@ export function OnboardingForm({ userId }: { userId: string }) {
 
       const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
 
-      const { data: updated, error: updateError } = await supabase
+      // Approbation automatique
+      const { error: updateError } = await supabase
         .from("profiles")
         .update({
           avatar_url: urlData.publicUrl,
@@ -166,18 +167,14 @@ export function OnboardingForm({ userId }: { userId: string }) {
           age: data.age,
           gender: data.gender,
           role: "seller",
-          seller_status: "pending",
+          seller_status: "approved",
           updated_at: new Date().toISOString(),
         })
-        .eq("id", userId)
-        .select("seller_status")
-        .single();
+        .eq("id", userId);
 
       if (updateError) throw updateError;
 
-      router.push(
-        updated?.seller_status === "approved" ? "/seller/live" : "/seller/pending"
-      );
+      router.push("/seller/live");
       router.refresh();
     } catch (e: unknown) {
       const message =
