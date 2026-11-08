@@ -91,6 +91,24 @@ async function toUploadableImage(
   }
 }
 
+function getErrorMessage(e: unknown): string {
+  if (!e) return "Erreur lors de la soumission";
+  if (typeof e === "string") return e;
+  if (e instanceof Error && e.message) return e.message;
+  if (typeof e === "object") {
+    const anyErr = e as Record<string, unknown>;
+    if (typeof anyErr.message === "string" && anyErr.message) return anyErr.message;
+    if (typeof anyErr.error_description === "string") return anyErr.error_description;
+    if (typeof anyErr.error === "string") return anyErr.error;
+    try {
+      return JSON.stringify(e);
+    } catch {
+      return "Erreur lors de la soumission";
+    }
+  }
+  return "Erreur lors de la soumission";
+}
+
 export function OnboardingForm({ userId }: { userId: string }) {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -159,7 +177,7 @@ export function OnboardingForm({ userId }: { userId: string }) {
       const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
 
       // Approbation automatique
-      const { error: updateError } = await supabase
+      const { data: updated, error: updateError } = await supabase
         .from("profiles")
         .update({
           avatar_url: urlData.publicUrl,
@@ -170,16 +188,22 @@ export function OnboardingForm({ userId }: { userId: string }) {
           seller_status: "approved",
           updated_at: new Date().toISOString(),
         })
-        .eq("id", userId);
+        .eq("id", userId)
+        .select("id, role, seller_status")
+        .single();
 
       if (updateError) throw updateError;
+      if (!updated) {
+        throw new Error(
+          "Profil non mis à jour (RLS ou session). Reconnecte-toi puis réessaie."
+        );
+      }
 
       router.push("/seller/live");
       router.refresh();
     } catch (e: unknown) {
-      const message =
-        e instanceof Error ? e.message : "Erreur lors de la soumission";
-      setError(message);
+      console.error("ONBOARDING_ERROR", e);
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -250,7 +274,7 @@ export function OnboardingForm({ userId }: { userId: string }) {
       </div>
 
       {error && (
-        <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+        <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 break-words">
           {error}
         </div>
       )}
