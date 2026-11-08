@@ -95,11 +95,21 @@ function getErrorMessage(e: unknown): string {
   if (!e) return "Erreur lors de la soumission";
   if (typeof e === "string") return e;
   if (e instanceof Error && e.message) return e.message;
+  
   if (typeof e === "object") {
     const anyErr = e as Record<string, unknown>;
-    if (typeof anyErr.message === "string" && anyErr.message) return anyErr.message;
-    if (typeof anyErr.error_description === "string") return anyErr.error_description;
-    if (typeof anyErr.error === "string") return anyErr.error;
+    // Récupération intelligente des erreurs Supabase / PostgREST
+    const parts = [];
+    if (typeof anyErr.message === "string") parts.push(anyErr.message);
+    if (typeof anyErr.details === "string") parts.push(anyErr.details);
+    if (typeof anyErr.hint === "string") parts.push(`Astuce: ${anyErr.hint}`);
+    if (typeof anyErr.error_description === "string") parts.push(anyErr.error_description);
+    if (typeof anyErr.error === "string") parts.push(anyErr.error);
+
+    if (parts.length > 0) {
+      return parts.join(" - ");
+    }
+
     try {
       return JSON.stringify(e);
     } catch {
@@ -203,6 +213,7 @@ export function OnboardingForm({ userId }: { userId: string }) {
       router.refresh();
     } catch (e: unknown) {
       console.error("ONBOARDING_ERROR", e);
+      // Affiche l'erreur détaillée directement dans l'UI au lieu d'un message générique
       setError(getErrorMessage(e));
     } finally {
       setLoading(false);
