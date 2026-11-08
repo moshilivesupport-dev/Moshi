@@ -10,6 +10,13 @@ import { Input } from "@/components/ui/Input";
 import { useRouter } from "next/navigation";
 import { Camera, Upload } from "lucide-react";
 
+// Extension déduite du type MIME (jamais du nom de fichier)
+const EXT_BY_TYPE: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
 const schema = z.object({
   country: z.string().min(2, "Pays requis"),
   age: z.coerce.number().min(18, "Âge minimum 18 ans").max(120),
@@ -44,6 +51,12 @@ export function OnboardingForm({ userId }: { userId: string }) {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!EXT_BY_TYPE[file.type]) {
+        setError("Format non pris en charge. Choisissez une photo JPG, PNG ou WebP.");
+        e.target.value = "";
+        return;
+      }
+      setError(null);
       setAvatarFile(file);
       setPreview(URL.createObjectURL(file));
     }
@@ -58,7 +71,8 @@ export function OnboardingForm({ userId }: { userId: string }) {
     setError(null);
     try {
       // Upload avatar
-      const ext = avatarFile.name.split(".").pop();
+      const ext = EXT_BY_TYPE[avatarFile.type];
+      if (!ext) throw new Error("Format non pris en charge (JPG, PNG ou WebP).");
       const path = `${userId}/avatar.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from("avatars")
@@ -67,7 +81,7 @@ export function OnboardingForm({ userId }: { userId: string }) {
 
       const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
 
-      const { error: updateError } = await supabase
+      const { data: updated, error: updateError } = await supabase
         .from("profiles")
         .update({
           avatar_url: urlData.publicUrl,
@@ -78,10 +92,13 @@ export function OnboardingForm({ userId }: { userId: string }) {
           seller_status: "pending",
           updated_at: new Date().toISOString(),
         })
-        .eq("id", userId);
+        .eq("id", userId)
+        .select("seller_status")
+        .single();
 
       if (updateError) throw updateError;
-      router.push("/seller/pending");
+      // Approbation automatique : accès direct, sinon page d'attente
+      router.push(updated?.seller_status === "approved" ? "/seller/live" : "/seller/pending");
     } catch (e: any) {
       setError(e.message || "Erreur lors de la soumission");
     } finally {
