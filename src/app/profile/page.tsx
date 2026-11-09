@@ -3,15 +3,18 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProfilRedirectPage() {
+export default async function ProfileRedirectPage() {
   const supabase = await createClient();
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/auth/login?next=/profil");
+  // Si l'utilisateur n'est pas connecté, on l'envoie vers le login
+  if (error || !user) {
+    redirect("/auth/login");
   }
 
-  redirect(`/profil/${user.id}`);
+  // S'il est connecté, on le redirige vers son vrai profil avec son ID
+  redirect(`/profile/${user.id}`);
 }
