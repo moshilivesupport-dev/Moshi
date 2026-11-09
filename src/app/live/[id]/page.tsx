@@ -1,18 +1,8 @@
-import { LivePlayer } from "@/components/live/LivePlayer";
-import { createClient } from "@/lib/supabase/server";
-import { notFound } from "next/navigation";
-
-interface LivePageProps {
-  params: Promise<{
-    id: string;
-  }>;
-}
-
 export default async function LiveStreamPage({ params }: LivePageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // Récupération des détails du live et des infos vendeur
+  // Récupération du live
   const { data: stream, error } = await supabase
     .from("live_streams")
     .select(`
@@ -22,7 +12,7 @@ export default async function LiveStreamPage({ params }: LivePageProps) {
       viewer_count,
       stream_url,
       status,
-      profiles (
+      profiles:seller_id (
         id,
         username,
         avatar_url,
@@ -33,14 +23,16 @@ export default async function LiveStreamPage({ params }: LivePageProps) {
     .single();
 
   if (error || !stream) {
+    console.error("Erreur de récupération du live :", error);
     notFound();
   }
 
-  // Récupération de l'utilisateur courant et des gifts actifs
   const [{ data: { user } }, { data: gifts }] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("gifts").select("*").eq("is_active", true)
   ]);
+
+  const sellerInfo = Array.isArray(stream.profiles) ? stream.profiles[0] : stream.profiles;
 
   return (
     <main className="min-h-[100dvh] bg-black text-white">
@@ -50,7 +42,7 @@ export default async function LiveStreamPage({ params }: LivePageProps) {
             id: stream.id,
             title: stream.title,
             seller_id: stream.seller_id,
-            seller: Array.isArray(stream.profiles) ? stream.profiles[0] : stream.profiles,
+            seller: sellerInfo,
             viewer_count: stream.viewer_count,
             stream_url: stream.stream_url,
             status: stream.status,
