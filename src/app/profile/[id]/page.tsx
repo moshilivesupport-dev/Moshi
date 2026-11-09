@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import AuthGuard from "@/components/auth/AuthGuard"; // Assure-toi d'avoir un composant de protection
 
 interface ProfilePageProps {
   params: Promise<{
@@ -15,7 +14,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
   const { data: { session } } = await supabase.auth.getSession();
   
   if (!session) {
-    redirect("/auth/login"); // Redirige vers la connexion si non authentifié
+    redirect("/auth/login");
   }
 
   const { id } = await params;
