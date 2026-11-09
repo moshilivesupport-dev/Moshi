@@ -12,11 +12,12 @@ export default function SignupPage() {
           </p>
         </div>
 
+        {/* Formulaire complet gérant le mot de passe, la date de naissance, le pays et les CGU */}
         <SignupForm />
 
         <p className="text-center text-sm text-neutral-500 mt-8">
           Déjà un compte ?{" "}
-          <Link href="/auth/login" className="text-red-500 font-medium">
+          <Link href="/auth/login" className="text-red-500 font-medium hover:underline">
             Se connecter
           </Link>
         </p>
