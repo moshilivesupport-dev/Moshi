@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { Navbar } from "@/components/layout/Navbar";
+import Navbar from "@/components/layout/Navbar";
 import { PWARegister } from "@/components/layout/PWARegister";
 import { SplashProvider } from "@/components/splash/SplashProvider";
 import { createClient } from "@/lib/supabase/server";
