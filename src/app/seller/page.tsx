@@ -103,7 +103,7 @@ export default async function SellerDashboardPage() {
           <Link
             key={href}
             href={href}
-            className="card flex flex-col gap-3 p-4 hover:border-coral/40 transition border border-white/5"
+            className="card flex flex-col gap-3 p-4 border border-white/5 hover:border-coral/40 transition"
           >
             <div
               className={`w-11 h-11 rounded-xl flex items-center justify-center ${color}`}
@@ -112,7 +112,7 @@ export default async function SellerDashboardPage() {
             </div>
             <div>
               <p className="font-semibold text-white text-sm">{title}</p>
-              <p className="text-[11px] text-muted mt-0.5 leading-snug">{desc}</p>
+              <p className="text-[11px] text-muted mt-0.5">{desc}</p>
             </div>
           </Link>
         ))}
