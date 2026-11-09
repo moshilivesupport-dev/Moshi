@@ -29,7 +29,7 @@ export default async function LoginPage({
         </div>
         <p className="text-center text-sm text-muted mt-6">
           Pas de compte ?{" "}
-          <Link href="/auth/register" className="text-coral hover:underline">S&apos;inscrire</Link>
+          <Link href="/auth/signup" className="text-coral hover:underline">S&apos;inscrire</Link>
         </p>
       </div>
     </div>
