@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { cn } from "@/lib/utils";
 import { Loader2, Store, ShoppingBag } from "lucide-react";
 
@@ -14,6 +15,16 @@ interface SignupFormProps {
   className?: string;
 }
 
+// Liste de pays (tu pourras l'étendre ou l'ajuster selon tes besoins)
+const COUNTRIES = [
+  { code: "TG", name: "Togo" },
+  { code: "BJ", name: "Bénin" },
+  { code: "CI", name: "Côte d'Ivoire" },
+  { code: "BF", name: "Burkina Faso" },
+  { code: "FR", name: "France" },
+  { code: "OTHER", name: "Autre" },
+];
+
 export default function SignupForm({ className }: SignupFormProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -22,16 +33,46 @@ export default function SignupForm({ className }: SignupFormProps) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [country, setCountry] = useState("TG");
+  const [acceptTerms, setAcceptTerms] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Fonction de validation pour un mot de passe fort
+  const validatePassword = (pass: string) => {
+    const minLength = pass.length >= 8;
+    const hasUpperCase = /[A-Z]/.test(pass);
+    const hasLowerCase = /[a-z]/.test(pass);
+    const hasNumber = /[0-9]/.test(pass);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(pass);
+
+    return minLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Vérification des conditions d'utilisation
+    if (!acceptTerms) {
+      setError("Vous devez accepter les conditions d'utilisation.");
+      return;
+    }
+
+    // Vérification du mot de passe fort
+    if (!validatePassword(password)) {
+      setError(
+        "Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule, un chiffre et un caractère spécial."
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Envoi du rôle dans les metadata (lu par le trigger SQL)
+      // Envoi de l'inscription avec les métadonnées supplémentaires (pays, date de naissance, rôle)
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -40,6 +81,8 @@ export default function SignupForm({ className }: SignupFormProps) {
             role,
             full_name: fullName.trim() || null,
             username: email.split("@")[0],
+            birth_date: birthDate,
+            country: country,
           },
         },
       });
@@ -47,10 +90,15 @@ export default function SignupForm({ className }: SignupFormProps) {
       if (signUpError) throw signUpError;
 
       if (data.user) {
-        // Sécurité supplémentaire : mise à jour directe du profil
+        // Mise à jour de la table profiles si nécessaire
         await supabase
           .from("profiles")
-          .update({ role })
+          .update({
+            role,
+            // Si tes colonnes existent en base, tu peux aussi les décommenter :
+            // birth_date: birthDate,
+            // country: country,
+          })
           .eq("id", data.user.id);
 
         router.push(role === "seller" ? "/seller/dashboard" : "/");
@@ -113,6 +161,7 @@ export default function SignupForm({ className }: SignupFormProps) {
           onChange={(e) => setFullName(e.target.value)}
           disabled={loading}
         />
+
         <Input
           type="email"
           placeholder="Email"
@@ -121,15 +170,66 @@ export default function SignupForm({ className }: SignupFormProps) {
           required
           disabled={loading}
         />
-        <Input
-          type="password"
-          placeholder="Mot de passe (min. 6 caractères)"
+
+        {/* Date de naissance */}
+        <div>
+          <label className="block text-xs text-neutral-400 mb-1">Date de naissance</label>
+          <Input
+            type="date"
+            value={birthDate}
+            onChange={(e) => setBirthDate(e.target.value)}
+            required
+            disabled={loading}
+          />
+        </div>
+
+        {/* Choix du pays */}
+        <div>
+          <label className="block text-xs text-neutral-400 mb-1">Pays</label>
+          <select
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500"
+            disabled={loading}
+          >
+            {COUNTRIES.map((c) => (
+              <option key={c.code} value={c.code} className="bg-neutral-900">
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Mot de passe fort */}
+        <PasswordInput
+          placeholder="Mot de passe"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          minLength={6}
           disabled={loading}
         />
+        <p className="text-[11px] text-neutral-500">
+          8+ caractères, incluant majuscule, minuscule, chiffre et caractère spécial.
+        </p>
+
+        {/* Conditions d'utilisation */}
+        <div className="flex items-start gap-2 pt-2">
+          <input
+            type="checkbox"
+            id="terms"
+            checked={acceptTerms}
+            onChange={(e) => setAcceptTerms(e.target.checked)}
+            className="mt-1 rounded border-neutral-700 bg-neutral-900 text-red-500 focus:ring-red-500"
+            required
+          />
+          <label htmlFor="terms" className="text-xs text-neutral-400">
+            J&apos;accepte les{" "}
+            <a href="/terms" className="text-red-500 hover:underline" target="_blank">
+              conditions d&apos;utilisation
+            </a>{" "}
+            et la politique de confidentialité.
+          </label>
+        </div>
       </div>
 
       {error && (
