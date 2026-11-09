@@ -13,6 +13,8 @@ import {
   Radio,
   ShoppingBag,
   ExternalLink,
+  X,
+  Send,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -22,19 +24,29 @@ export type FeedItem = {
   type: "video" | "live" | "product";
   title: string | null;
   description: string | null;
-  media_url: string;          // video_url, stream_url ou image_url du produit
+  media_url: string;
   thumbnail_url: string | null;
   duration?: number;
   views_count: number;
   likes_count: number;
   comments_count: number;
-  price?: number;             // Spécifique aux produits
+  price?: number;
   created_at: string;
   user_id: string;
   profiles?: {
     id: string;
     username: string | null;
     full_name: string | null;
+    avatar_url: string | null;
+  } | null;
+};
+
+type Comment = {
+  id: string;
+  created_at: string;
+  content: string;
+  profiles: {
+    username: string | null;
     avatar_url: string | null;
   } | null;
 };
@@ -57,6 +69,11 @@ function FeedCard({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
   const [playing, setPlaying] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+  const supabase = createClient();
 
   useEffect(() => {
     const el = videoRef.current;
@@ -72,6 +89,55 @@ function FeedCard({
     }
   }, [isActive, item.type]);
 
+  useEffect(() => {
+    if (!showComments) return;
+    async function fetchComments() {
+      setLoadingComments(true);
+      const { data } = await supabase
+        .from(item.type === "video" ? "video_comments" : "live_comments")
+        .select(`
+          id, created_at, content,
+          profiles:user_id (username, avatar_url)
+        `)
+        .eq(item.type === "video" ? "video_id" : "live_id", item.id)
+        .order("created_at", { ascending: false });
+      
+      setComments((data as unknown as Comment[]) || []);
+      setLoadingComments(false);
+    }
+    fetchComments();
+  }, [showComments, item.id, item.type, supabase]);
+
+  const handleSendComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const table = item.type === "video" ? "video_comments" : "live_comments";
+    const foreignKey = item.type === "video" ? "video_id" : "live_id";
+
+    const { error } = await supabase.from(table).insert({
+      [foreignKey]: item.id,
+      user_id: user.id,
+      content: newComment.trim(),
+    });
+
+    if (!error) {
+      setNewComment("");
+      const { data } = await supabase
+        .from(table)
+        .select(`
+          id, created_at, content,
+          profiles:user_id (username, avatar_url)
+        `)
+        .eq(foreignKey, item.id)
+        .order("created_at", { ascending: false });
+      setComments((data as unknown as Comment[]) || []);
+    }
+  };
+
   const togglePlay = () => {
     const el = videoRef.current;
     if (!el || item.type !== "video") return;
@@ -84,16 +150,11 @@ function FeedCard({
     }
   };
 
-  const authorName =
-    item.profiles?.full_name ||
-    item.profiles?.username ||
-    "Utilisateur";
-
+  const authorName = item.profiles?.full_name || item.profiles?.username || "Utilisateur";
   const profileHref = `/profil/${item.user_id}`;
 
   return (
     <div className="relative h-[100dvh] w-full snap-start snap-always bg-black flex items-center justify-center overflow-hidden">
-      {/* Média selon le type (Vidéo, Live ou Produit) */}
       {item.type === "video" ? (
         <video
           ref={videoRef}
@@ -108,46 +169,27 @@ function FeedCard({
       ) : item.type === "live" ? (
         <div className="absolute inset-0 bg-neutral-900 flex items-center justify-center">
           {item.thumbnail_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={item.thumbnail_url}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover opacity-60"
-            />
+            <img src={item.thumbnail_url} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60" />
           )}
           <div className="relative z-10 flex flex-col items-center gap-3">
             <div className="w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center animate-pulse">
               <Radio className="w-10 h-10 text-red-500" />
             </div>
             <span className="text-white font-bold text-lg">Live en cours</span>
-            <Link
-              href={`/live/${item.id}`}
-              className="px-6 py-2.5 rounded-full bg-red-500 text-white font-semibold text-sm shadow-lg"
-            >
+            <Link href={`/live/${item.id}`} className="px-6 py-2.5 rounded-full bg-red-500 text-white font-semibold text-sm shadow-lg">
               Rejoindre le Live
             </Link>
           </div>
         </div>
       ) : (
-        // Affichage Produit / Article e-commerce dans le feed
         <div className="absolute inset-0 bg-neutral-900 flex items-center justify-center">
           {item.media_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={item.media_url}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover opacity-70 blur-xs"
-            />
+            <img src={item.media_url} alt="" className="absolute inset-0 w-full h-full object-cover opacity-70 blur-xs" />
           )}
           <div className="absolute inset-0 bg-black/50" />
           <div className="relative z-10 flex flex-col items-center gap-4 p-6 max-w-sm text-center">
             {item.thumbnail_url || item.media_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.thumbnail_url || item.media_url}
-                alt={item.title || "Produit"}
-                className="w-48 h-48 rounded-2xl object-cover shadow-2xl border border-neutral-700"
-              />
+              <img src={item.thumbnail_url || item.media_url} alt="" className="w-48 h-48 rounded-2xl object-cover shadow-2xl border border-neutral-700" />
             ) : null}
             <div className="bg-black/70 backdrop-blur px-4 py-1.5 rounded-full border border-neutral-700 text-emerald-400 font-bold text-lg">
               {item.price ? `${item.price} XOF` : "Article boutique"}
@@ -156,34 +198,57 @@ function FeedCard({
         </div>
       )}
 
-      {/* Gradient */}
       <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none" />
 
-      {/* Badge Type (Live ou Produit) */}
-      {item.type === "live" && (
-        <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-red-500 px-2.5 py-1 rounded-md text-xs font-bold text-white">
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-          LIVE
-        </div>
-      )}
-      {item.type === "product" && (
-        <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 bg-emerald-600 px-2.5 py-1 rounded-md text-xs font-bold text-white">
-          <ShoppingBag className="w-3.5 h-3.5" />
-          PRODUIT
+      {showComments && (
+        <div className="absolute inset-x-0 bottom-0 top-1/3 bg-neutral-900/95 backdrop-blur-md rounded-t-3xl z-30 flex flex-col animate-in slide-in-from-bottom duration-300 border-t border-neutral-800">
+          <div className="flex items-center justify-between p-4 border-b border-neutral-800">
+            <h3 className="text-white font-semibold text-base">
+              Commentaires ({comments.length})
+            </h3>
+            <button onClick={() => setShowComments(false)} className="p-1 rounded-full text-neutral-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {loadingComments ? (
+              <div className="flex justify-center p-4"><div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin"/></div>
+            ) : comments.length === 0 ? (
+              <p className="text-center text-neutral-500 text-sm py-8">Aucun commentaire pour le moment.</p>
+            ) : (
+              comments.map((c) => (
+                <div key={c.id} className="flex gap-3 items-start">
+                  <img src={c.profiles?.avatar_url || "/placeholder-avatar.png"} alt="" className="w-8 h-8 rounded-full object-cover bg-neutral-800" />
+                  <div>
+                    <div className="text-xs font-semibold text-neutral-300">@{c.profiles?.username || "Utilisateur"}</div>
+                    <div className="text-sm text-white mt-0.5">{c.content}</div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <form onSubmit={handleSendComment} className="p-3 border-t border-neutral-800 bg-neutral-950 flex gap-2">
+            <input
+              type="text"
+              placeholder="Ajouter un commentaire..."
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              className="flex-1 bg-neutral-800 border border-neutral-700 rounded-full px-4 py-2 text-sm text-white focus:outline-none focus:border-red-500"
+            />
+            <button type="submit" className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition">
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
         </div>
       )}
 
-      {/* Actions droites */}
       <div className="absolute right-3 bottom-28 flex flex-col items-center gap-5 z-10">
         <Link href={profileHref} onClick={(e) => e.stopPropagation()}>
           <div className="w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
             {item.profiles?.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.profiles.avatar_url}
-                alt={authorName}
-                className="w-full h-full object-cover"
-              />
+              <img src={item.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-white text-lg font-semibold">
                 {authorName.charAt(0).toUpperCase()}
@@ -193,134 +258,42 @@ function FeedCard({
         </Link>
 
         {item.type !== "product" && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onLike(item.id);
-            }}
-            className="flex flex-col items-center gap-1"
-          >
-            <div
-              className={cn(
-                "w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center",
-                liked && "text-red-500"
-              )}
-            >
+          <button onClick={(e) => { e.stopPropagation(); onLike(item.id); }} className="flex flex-col items-center gap-1">
+            <div className={cn("w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center", liked && "text-red-500")}>
               <Heart className={cn("w-6 h-6", liked && "fill-current")} />
             </div>
-            <span className="text-xs text-white font-medium">
-              {formatNumber(item.likes_count + (liked ? 1 : 0))}
-            </span>
+            <span className="text-xs text-white font-medium">{formatNumber(item.likes_count + (liked ? 1 : 0))}</span>
           </button>
         )}
 
-        <Link
-          href={
-            item.type === "video"
-              ? `/videos/${item.id}`
-              : item.type === "live"
-              ? `/live/${item.id}`
-              : `/shop/products/${item.id}`
-          }
-          onClick={(e) => e.stopPropagation()}
-          className="flex flex-col items-center gap-1"
-        >
-          <div className="w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center">
-            {item.type === "product" ? (
+        {item.type === "product" ? (
+          <Link href={`/shop/products/${item.id}`} onClick={(e) => e.stopPropagation()} className="flex flex-col items-center gap-1">
+            <div className="w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center">
               <ExternalLink className="w-6 h-6 text-white" />
-            ) : (
+            </div>
+            <span className="text-xs text-white font-medium">Voir</span>
+          </Link>
+        ) : (
+          <button onClick={(e) => { e.stopPropagation(); setShowComments(true); }} className="flex flex-col items-center gap-1">
+            <div className="w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center">
               <MessageCircle className="w-6 h-6 text-white" />
-            )}
-          </div>
-          <span className="text-xs text-white font-medium">
-            {item.type === "product" ? "Voir" : formatNumber(item.comments_count)}
-          </span>
-        </Link>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (navigator.share) {
-              navigator.share({
-                title: item.title || "Noxia",
-                url: window.location.origin + (item.type === "video" ? `/videos/${item.id}` : `/live/${item.id}`),
-              });
-            }
-          }}
-          className="flex flex-col items-center gap-1"
-        >
-          <div className="w-11 h-11 rounded-full bg-black/40 backdrop-blur flex items-center justify-center">
-            <Share2 className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-xs text-white font-medium">Partager</span>
-        </button>
+            </div>
+            <span className="text-xs text-white font-medium">{formatNumber(item.comments_count)}</span>
+          </button>
+        )}
       </div>
 
-      {/* Infos bas */}
       <div className="absolute left-0 right-16 bottom-20 px-4 z-10">
-        <Link
-          href={profileHref}
-          className="font-semibold text-white text-[15px] hover:underline"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <Link href={profileHref} className="font-semibold text-white text-[15px] hover:underline" onClick={(e) => e.stopPropagation()}>
           @{item.profiles?.username || authorName}
         </Link>
-
-        {item.title && (
-          <p className="text-white text-sm mt-1 font-medium line-clamp-1">
-            {item.title}
-          </p>
-        )}
-        {item.description && (
-          <p className="text-white/90 text-sm mt-1 line-clamp-2">
-            {item.description}
-          </p>
-        )}
-
-        <div className="flex items-center gap-3 mt-2 text-xs text-white/70">
-          {item.type !== "product" && <span>{formatNumber(item.views_count)} vues</span>}
-          {item.type === "product" && (
-            <Link
-              href={`/shop/products/${item.id}`}
-              className="inline-flex items-center gap-1 text-emerald-400 font-semibold bg-emerald-950/60 px-3 py-1 rounded-full border border-emerald-800"
-            >
-              <ShoppingBag className="w-3.5 h-3.5" /> Voir la boutique
-            </Link>
-          )}
-        </div>
+        {item.title && <p className="text-white text-sm mt-1 font-medium line-clamp-1">{item.title}</p>}
       </div>
-
-      {/* Mute */}
-      {item.type === "video" && (
-        <div className="absolute top-4 right-4 z-10">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setMuted((m) => !m);
-            }}
-            className="w-9 h-9 rounded-full bg-black/40 backdrop-blur flex items-center justify-center"
-          >
-            {muted ? (
-              <VolumeX className="w-4 h-4 text-white" />
-            ) : (
-              <Volume2 className="w-4 h-4 text-white" />
-            )}
-          </button>
-        </div>
-      )}
-
-      {!playing && isActive && item.type === "video" && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur flex items-center justify-center">
-            <Play className="w-8 h-8 text-white fill-white ml-1" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-export default function HomeFeed({ initialItems = [] }: HomeFeedProps) {
+export function HomeFeed({ initialItems = [] }: HomeFeedProps) {
   const supabase = createClient();
   const containerRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<FeedItem[]>(initialItems);
@@ -330,196 +303,65 @@ export default function HomeFeed({ initialItems = [] }: HomeFeedProps) {
 
   useEffect(() => {
     if (initialItems.length > 0) return;
-
     async function load() {
       setLoading(true);
-
-      // 1. Récupération des vidéos publiques
-      const { data: videos } = await supabase
-        .from("videos")
-        .select(`
-          id, title, description, video_url, thumbnail_url,
-          duration, views_count, likes_count, comments_count,
-          created_at, user_id,
-          profiles:user_id (id, username, full_name, avatar_url)
-        `)
-        .eq("is_public", true)
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      // 2. Récupération des lives en cours (si la table s'appelle 'lives' ou 'streams')
-      const { data: lives } = await supabase
-        .from("lives")
-        .select(`
-          id, title, description, stream_url, thumbnail_url,
-          viewer_count, created_at, user_id,
-          profiles:user_id (id, username, full_name, avatar_url)
-        `)
-        .eq("is_active", true)
-        .limit(5);
-
-      // 3. Récupération des produits récents des vendeurs
-      const { data: products } = await supabase
-        .from("products")
-        .select(`
-          id, name, description, image_url, price,
-          created_at, user_id,
-          profiles:user_id (id, username, full_name, avatar_url)
-        `)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(10);
+      const { data: videos } = await supabase.from("videos").select(`
+        id, title, description, video_url, thumbnail_url,
+        duration, views_count, likes_count, comments_count,
+        created_at, user_id, profiles:user_id (id, username, full_name, avatar_url)
+      `).eq("is_public", true).limit(20);
 
       const formattedVideos: FeedItem[] = (videos || []).map((v: any) => ({
-        id: v.id,
-        type: "video" as const,
-        title: v.title,
-        description: v.description,
-        media_url: v.video_url,
-        thumbnail_url: v.thumbnail_url,
-        duration: v.duration,
-        views_count: v.views_count || 0,
-        likes_count: v.likes_count || 0,
-        comments_count: v.comments_count || 0,
-        created_at: v.created_at,
-        user_id: v.user_id,
-        profiles: v.profiles,
+        id: v.id, type: "video" as const, title: v.title, media_url: v.video_url, thumbnail_url: v.thumbnail_url,
+        views_count: v.views_count, likes_count: v.likes_count, comments_count: v.comments_count,
+        created_at: v.created_at, user_id: v.user_id, profiles: v.profiles
       }));
 
-      const formattedLives: FeedItem[] = (lives || []).map((l: any) => ({
-        id: l.id,
-        type: "live" as const,
-        title: l.title,
-        description: l.description,
-        media_url: l.stream_url || "",
-        thumbnail_url: l.thumbnail_url,
-        views_count: l.viewer_count || 0,
-        likes_count: 0,
-        comments_count: 0,
-        created_at: l.created_at,
-        user_id: l.user_id,
-        profiles: l.profiles,
-      }));
-
-      const formattedProducts: FeedItem[] = (products || []).map((p: any) => ({
-        id: p.id,
-        type: "product" as const,
-        title: p.name,
-        description: p.description,
-        media_url: p.image_url,
-        thumbnail_url: p.image_url,
-        price: p.price,
-        views_count: 0,
-        likes_count: 0,
-        comments_count: 0,
-        created_at: p.created_at,
-        user_id: p.user_id,
-        profiles: p.profiles,
-      }));
-
-      // Mélange ou concaténation du feed global (Lives en premier si actifs, puis vidéos et produits)
-      const combinedFeed = [...formattedLives, ...formattedVideos, ...formattedProducts].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-
-      setItems(combinedFeed);
+      setItems(formattedVideos);
       setLoading(false);
     }
-
     load();
   }, [initialItems.length, supabase]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container || items.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const index = Number(entry.target.getAttribute("data-index"));
-            if (!Number.isNaN(index)) setActiveIndex(index);
-          }
-        });
-      },
-      { root: container, threshold: 0.6 }
-    );
-
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const index = Number(entry.target.getAttribute("data-index"));
+          if (!Number.isNaN(index)) setActiveIndex(index);
+        }
+      });
+    }, { root: container, threshold: 0.6 });
     container.querySelectorAll("[data-index]").forEach((el) => observer.observe(el));
     return () => observer.disconnect();
   }, [items]);
 
-  const handleLike = useCallback(
-    async (id: string) => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+  const handleLike = useCallback(async (id: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const already = likedIds.has(id);
+    if (already) {
+      await supabase.from("video_likes").delete().eq("video_id", id).eq("user_id", user.id);
+      setLikedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    } else {
+      await supabase.from("video_likes").insert({ video_id: id, user_id: user.id });
+      setLikedIds((prev) => new Set(prev).add(id));
+    }
+  }, [likedIds, supabase]);
 
-      const already = likedIds.has(id);
-      if (already) {
-        await supabase
-          .from("video_likes")
-          .delete()
-          .eq("video_id", id)
-          .eq("user_id", user.id);
-        setLikedIds((prev) => {
-          const n = new Set(prev);
-          n.delete(id);
-          return n;
-        });
-      } else {
-        await supabase.from("video_likes").insert({
-          video_id: id,
-          user_id: user.id,
-        });
-        setLikedIds((prev) => new Set(prev).add(id));
-      }
-    },
-    [likedIds, supabase]
-  );
-
-  if (loading) {
-    return (
-      <div className="h-[100dvh] w-full bg-black flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="h-[100dvh] w-full bg-black flex flex-col items-center justify-center gap-4 text-white px-6">
-        <p className="text-neutral-400 text-center">
-          Aucun contenu pour le moment.
-          <br />
-          Publiez la première vidéo ou ajoutez un produit !
-        </p>
-        <Link
-          href="/videos/new"
-          className="px-6 py-2.5 rounded-full bg-red-500 text-sm font-medium"
-        >
-          Créer du contenu
-        </Link>
-      </div>
-    );
-  }
+  if (loading) return <div className="h-[100dvh] w-full bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin"/></div>;
 
   return (
-    <div
-      ref={containerRef}
-      className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide"
-    >
+    <div ref={containerRef} className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide">
       {items.map((item, index) => (
         <div key={`${item.type}-${item.id}`} data-index={index}>
-          <FeedCard
-            item={item}
-            isActive={index === activeIndex}
-            onLike={handleLike}
-            liked={likedIds.has(item.id)}
-          />
+          <FeedCard item={item} isActive={index === activeIndex} onLike={handleLike} liked={likedIds.has(item.id)} />
         </div>
       ))}
     </div>
   );
 }
+
+export default HomeFeed;
