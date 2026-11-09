@@ -3,6 +3,7 @@ import "./globals.css";
 import { Navbar } from "@/components/layout/Navbar";
 import { PWARegister } from "@/components/layout/PWARegister";
 import { SplashProvider } from "@/components/splash/SplashProvider";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "Moshi – Live Shopping Platform",
@@ -30,11 +31,28 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Le rôle détermine l'interface : acheteur, vendeur ou admin
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  let role: string | null = null;
+  let sellerStatus: string | null = null;
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, seller_status")
+      .eq("id", user.id)
+      .maybeSingle();
+    role = profile?.role ?? null;
+    sellerStatus = profile?.seller_status ?? null;
+  }
+
   return (
     <html lang="fr">
       <head>
@@ -45,7 +63,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-onyx text-white antialiased">
         <SplashProvider>
-          <Navbar />
+          <Navbar role={role} sellerStatus={sellerStatus} />
           <main className="pt-0 md:pt-16 pb-20 md:pb-8 min-h-screen">
             {children}
           </main>
