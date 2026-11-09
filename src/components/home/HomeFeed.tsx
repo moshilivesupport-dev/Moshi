@@ -312,9 +312,18 @@ export function HomeFeed({ initialItems = [] }: HomeFeedProps) {
       `).eq("is_public", true).limit(20);
 
       const formattedVideos: FeedItem[] = (videos || []).map((v: any) => ({
-        id: v.id, type: "video" as const, title: v.title, media_url: v.video_url, thumbnail_url: v.thumbnail_url,
-        views_count: v.views_count, likes_count: v.likes_count, comments_count: v.comments_count,
-        created_at: v.created_at, user_id: v.user_id, profiles: v.profiles
+        id: v.id, 
+        type: "video" as const, 
+        title: v.title, 
+        description: v.description || "", // <--- Ajouté ici pour satisfaire FeedItem
+        media_url: v.video_url, 
+        thumbnail_url: v.thumbnail_url,
+        views_count: v.views_count, 
+        likes_count: v.likes_count, 
+        comments_count: v.comments_count,
+        created_at: v.created_at, 
+        user_id: v.user_id, 
+        profiles: v.profiles
       }));
 
       setItems(formattedVideos);
