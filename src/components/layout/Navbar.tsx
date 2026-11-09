@@ -20,7 +20,7 @@ interface NavbarProps {
 export default function Navbar({ role, sellerStatus }: NavbarProps) {
   const pathname = usePathname();
 
-  // Liste des liens de navigation mis à jour avec les bons dossiers
+  // Liste des liens de navigation avec les bons chemins
   const links = [
     {
       href: "/",
@@ -39,7 +39,7 @@ export default function Navbar({ role, sellerStatus }: NavbarProps) {
       isCentral: true,
     },
     {
-      href: "/shop", // Corrigé pour pointer vers le dossier src/app/shop
+      href: "/shop",
       label: "Boutique",
       icon: ShoppingBag,
     },
@@ -54,7 +54,7 @@ export default function Navbar({ role, sellerStatus }: NavbarProps) {
         ]
       : []),
     {
-      href: "/profil/me", // Corrigé pour rediriger proprement via src/app/profil/[id]
+      href: "/profile/me", // Corrigé ici avec un "e" pour correspondre au dossier src/app/profile
       label: "Profil",
       icon: User,
     },
