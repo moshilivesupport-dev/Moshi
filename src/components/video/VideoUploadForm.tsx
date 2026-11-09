@@ -22,7 +22,8 @@ interface Props {
 }
 
 export function VideoUploadForm({ userId }: Props) {
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<Blob | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [caption, setCaption] = useState("");
@@ -36,53 +37,71 @@ export function VideoUploadForm({ userId }: Props) {
 
   const reset = () => {
     setFile(null);
-    setPreview(null);
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
     setDuration(null);
     setError(null);
     setProgress(0);
     if (inputRef.current) inputRef.current.value = "";
   };
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    setError(null);
 
     if (!EXT_BY_TYPE[f.type]) {
       setError("Format non pris en charge (MP4, WebM ou MOV)");
-      if (inputRef.current) inputRef.current.value = "";
+      e.target.value = "";
       return;
     }
     if (f.size > MAX_SIZE_MB * 1024 * 1024) {
       setError(`Fichier trop lourd (max ${MAX_SIZE_MB} Mo)`);
-      if (inputRef.current) inputRef.current.value = "";
+      e.target.value = "";
       return;
     }
 
-    const url = URL.createObjectURL(f);
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.src = url;
-    video.onloadedmetadata = () => {
-      window.URL.revokeObjectURL(video.src);
-      const d = video.duration;
-      if (!isFinite(d) || d <= 0) {
-        setError("Impossible de lire la durée de la vidéo");
-        return;
-      }
+    setPreparing(true);
+    let url: string | null = null;
+    try {
+      // Copie en mémoire : sur iPhone, un fichier de la photothèque peut devenir
+      // illisible au moment de l'envoi ("No content provided").
+      const buffer = await f.arrayBuffer();
+      if (buffer.byteLength === 0) throw new Error("La vidéo est vide ou illisible. Choisissez-en une autre.");
+      const blob = new Blob([buffer], { type: f.type });
+      url = URL.createObjectURL(blob);
+
+      const d = await new Promise<number>((resolve, reject) => {
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.onloadedmetadata = () => resolve(video.duration);
+        video.onerror = () => reject(new Error("Vidéo illisible"));
+        video.src = url as string;
+      });
+      if (!isFinite(d) || d <= 0) throw new Error("Impossible de lire la durée de la vidéo");
       if (d > MAX_SECONDS) {
-        setError(`Vidéo trop longue (${d.toFixed(1)}s). Maximum ${MAX_SECONDS} secondes.`);
-        setFile(null);
-        setPreview(null);
-        setDuration(null);
-        if (inputRef.current) inputRef.current.value = "";
-        return;
+        throw new Error(`Vidéo trop longue (${d.toFixed(1)}s). Maximum ${MAX_SECONDS} secondes.`);
       }
-      setFile(f);
-      setPreview(url);
+
+      // L'URL de l'aperçu n'est PAS révoquée ici (c'est ce qui rendait l'aperçu noir)
+      setFile(blob);
+      setPreview((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return url;
+      });
       setDuration(d);
-      setError(null);
-    };
-    video.onerror = () => setError("Vidéo illisible");
+    } catch (err: unknown) {
+      if (url) URL.revokeObjectURL(url);
+      setError(err instanceof Error ? err.message : "Vidéo illisible");
+      setFile(null);
+      setPreview(null);
+      setDuration(null);
+    } finally {
+      setPreparing(false);
+      e.target.value = "";
+    }
   };
 
   const submit = async () => {
@@ -139,13 +158,13 @@ export function VideoUploadForm({ userId }: Props) {
       {!preview ? (
         <button
           type="button"
-          onClick={() => inputRef.current?.click()}
+          onClick={() => !preparing && inputRef.current?.click()}
           className="w-full aspect-[9/16] max-h-[420px] rounded-2xl border-2 border-dashed border-white/15 bg-anthracite flex flex-col items-center justify-center gap-3 hover:border-coral/50 transition"
         >
           <div className="w-14 h-14 rounded-full bg-coral/15 flex items-center justify-center">
             <Upload className="w-6 h-6 text-coral" />
           </div>
-          <p className="text-sm text-white font-medium">Choisir une vidéo</p>
+          <p className="text-sm text-white font-medium">{preparing ? "Préparation de la vidéo…" : "Choisir une vidéo"}</p>
           <p className="text-xs text-muted">MP4 / WebM · max {MAX_SECONDS}s · max {MAX_SIZE_MB} Mo</p>
         </button>
       ) : (
