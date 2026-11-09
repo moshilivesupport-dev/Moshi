@@ -112,3 +112,4 @@ Dans `BottomNav.tsx`, vérifie les `href` :
 - Le trigger `handle_new_user` **remplace** l’ancien. Vérifie qu’il n’y a pas de conflit avec une ancienne version.
 - Si tu as déjà une page d’inscription, remplace juste le formulaire par `SignupForm`.
 - Le feed Accueil charge actuellement les **vidéos**. Tu pourras y ajouter les lives plus tard.
+
