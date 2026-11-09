@@ -1,20 +1,7 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-
-export const dynamic = "force-dynamic";
-
-export default async function ProfileRedirectPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  // Si l'utilisateur n'est pas connecté, on l'envoie vers le login
-  if (error || !user) {
-    redirect("/auth/login");
-  }
-
-  // S'il est connecté, on le redirige vers son vrai profil avec son ID
-  redirect(`/profile/${user.id}`);
-}
+src/
+  app/
+    profile/
+      me/
+        page.tsx   <-- (Celui qui redirige vers /profile/[id])
+      [id]/
+        page.tsx   <-- (C'est LA page qui manquait et qui affiche le profil avec le 404)
