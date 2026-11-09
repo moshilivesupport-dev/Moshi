@@ -38,6 +38,15 @@ export async function GET(request: NextRequest) {
     ok = !error;
   }
 
-  if (ok) return NextResponse.redirect(`${base}${next}`);
+  if (ok) {
+    let target = next;
+    if (next === "/") {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.user_metadata?.account_type === "seller") target = "/seller/onboard";
+    }
+    return NextResponse.redirect(`${base}${target}`);
+  }
   return NextResponse.redirect(`${base}/auth/login?error=link_invalid`);
 }
