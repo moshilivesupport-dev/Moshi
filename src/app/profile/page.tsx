@@ -62,7 +62,7 @@ export default async function ProfilePage() {
         </div>
 
         <div className="mt-6 flex flex-col gap-2">
-          {isSeller ? (
+          {isSeller && (
             <>
               <Link href="/seller">
                 <Button variant="gold" className="w-full">
@@ -78,7 +78,7 @@ export default async function ProfilePage() {
                 </Button>
               </Link>
             </>
-          ) : null}
+          )}
           <Link href="/settings">
             <Button variant="outline" size="sm" className="w-full">
               Paramètres
