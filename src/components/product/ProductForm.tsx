@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { CURRENCIES } from "@/lib/currency";
 import { X, ImagePlus } from "lucide-react";
+import { resizeToJpeg } from "@/lib/image";
 import { useRouter } from "next/navigation";
 
 const schema = z.object({
@@ -28,7 +29,7 @@ interface Props {
 }
 
 export function ProductForm({ sellerId, categories = [] }: Props) {
-  const [images, setImages] = useState<File[]>([]);
+  const [images, setImages] = useState<Blob[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,11 +48,24 @@ export function ProductForm({ sellerId, categories = [] }: Props) {
 
   const canPublish = images.length >= 2;
 
-  const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const newFiles = [...images, ...files].slice(0, 8);
-    setImages(newFiles);
-    setPreviews(newFiles.map((f) => URL.createObjectURL(f)));
+    if (!files.length) return;
+    setError(null);
+    try {
+      // Chaque photo est relue et convertie en JPEG léger (fiable sur iPhone)
+      const converted = await Promise.all(
+        files.slice(0, Math.max(0, 8 - images.length)).map((f) => resizeToJpeg(f, 1280))
+      );
+      const newImages = [...images, ...converted].slice(0, 8);
+      previews.forEach((u) => URL.revokeObjectURL(u));
+      setImages(newImages);
+      setPreviews(newImages.map((b) => URL.createObjectURL(b)));
+    } catch (err: any) {
+      setError(err.message || "Impossible de lire cette photo.");
+    } finally {
+      e.target.value = "";
+    }
   };
 
   const removeImage = (idx: number) => {
@@ -86,10 +100,10 @@ export function ProductForm({ sellerId, categories = [] }: Props) {
       // Upload images
       for (let i = 0; i < images.length; i++) {
         const file = images[i];
-        const path = `${sellerId}/${product.id}/${i}-${file.name}`;
+        const path = `${sellerId}/${product.id}/${i}.jpg`;
         const { error: upErr } = await supabase.storage
           .from("products")
-          .upload(path, file);
+          .upload(path, file, { contentType: "image/jpeg", upsert: true });
         if (upErr) throw upErr;
         const { data: urlData } = supabase.storage.from("products").getPublicUrl(path);
         await supabase.from("product_images").insert({
@@ -99,7 +113,7 @@ export function ProductForm({ sellerId, categories = [] }: Props) {
         });
       }
 
-      router.push(`/seller/products/${product.id}`);
+      router.push(`/shop/${product.id}`);
     } catch (e: any) {
       setError(e.message || "Erreur lors de la création");
     } finally {
