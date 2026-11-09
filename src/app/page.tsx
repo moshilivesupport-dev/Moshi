@@ -1,12 +1,5 @@
+import { redirect } from "next/navigation";
 
-import HomeFeed from "@/components/home/HomeFeed";
-
-export const dynamic = "force-dynamic";
-
-export default function HomePage() {
-  return (
-    <main className="bg-black">
-      <HomeFeed />
-    </main>
-  );
+export default function ProfileRedirectPage() {
+  redirect("/profile/me");
 }
