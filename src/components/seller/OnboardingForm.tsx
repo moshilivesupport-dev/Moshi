@@ -8,7 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useRouter } from "next/navigation";
-import { Camera } from "lucide-react";
+import { Camera, Upload } from "lucide-react";
+import { resizeToJpeg } from "@/lib/image";
 
 const schema = z.object({
   country: z.string().min(2, "Pays requis"),
@@ -21,106 +22,11 @@ type FormData = z.infer<typeof schema>;
 const COUNTRIES = [
   "Togo", "France", "Sénégal", "Côte d'Ivoire", "Nigeria", "Ghana", "Kenya",
   "Cameroun", "Bénin", "Mali", "Burkina Faso", "Maroc", "Algérie", "Tunisie",
-  "Canada", "USA", "UK", "Allemagne", "Espagne", "Portugal", "Chine", "Émirats",
+  "Canada", "USA", "UK", "Allemagne", "Espagne", "Portugal", "Chine", "Émirats"
 ];
 
-async function toUploadableImage(
-  file: File
-): Promise<{ blob: Blob; contentType: string; ext: string }> {
-  if (file.size === 0) {
-    throw new Error("Fichier photo vide. Rechoisissez une image.");
-  }
-
-  if (
-    file.type === "image/jpeg" ||
-    file.type === "image/png" ||
-    file.type === "image/webp"
-  ) {
-    const ext =
-      file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-    const buffer = await file.arrayBuffer();
-    if (buffer.byteLength === 0) {
-      throw new Error("Photo illisible (0 octet). Essayez une autre image.");
-    }
-    const blob = new Blob([buffer], { type: file.type });
-    return { blob, contentType: file.type, ext };
-  }
-
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () =>
-        reject(new Error("Impossible de lire la photo. Utilisez JPG ou PNG."));
-      el.src = objectUrl;
-    });
-
-    const max = 1200;
-    let w = img.naturalWidth || img.width;
-    let h = img.naturalHeight || img.height;
-    if (!w || !h) throw new Error("Dimensions de photo invalides.");
-
-    if (w > max || h > max) {
-      const ratio = Math.min(max / w, max / h);
-      w = Math.round(w * ratio);
-      h = Math.round(h * ratio);
-    }
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas indisponible sur cet appareil.");
-    ctx.drawImage(img, 0, 0, w, h);
-
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (b) => {
-          if (b && b.size > 0) resolve(b);
-          else reject(new Error("Conversion de la photo échouée."));
-        },
-        "image/jpeg",
-        0.85
-      );
-    });
-
-    return { blob, contentType: "image/jpeg", ext: "jpg" };
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
-
-function getErrorMessage(e: unknown): string {
-  if (!e) return "Erreur lors de la soumission";
-  if (typeof e === "string") return e;
-  if (e instanceof Error && e.message) return e.message;
-  
-  if (typeof e === "object") {
-    const anyErr = e as Record<string, unknown>;
-    // Récupération intelligente des erreurs Supabase / PostgREST
-    const parts = [];
-    if (typeof anyErr.message === "string") parts.push(anyErr.message);
-    if (typeof anyErr.details === "string") parts.push(anyErr.details);
-    if (typeof anyErr.hint === "string") parts.push(`Astuce: ${anyErr.hint}`);
-    if (typeof anyErr.error_description === "string") parts.push(anyErr.error_description);
-    if (typeof anyErr.error === "string") parts.push(anyErr.error);
-
-    if (parts.length > 0) {
-      return parts.join(" - ");
-    }
-
-    try {
-      return JSON.stringify(e);
-    } catch {
-      return "Erreur lors de la soumission";
-    }
-  }
-  return "Erreur lors de la soumission";
-}
-
 export function OnboardingForm({ userId }: { userId: string }) {
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarFile, setAvatarFile] = useState<Blob | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,29 +42,23 @@ export function OnboardingForm({ userId }: { userId: string }) {
     resolver: zodResolver(schema),
   });
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (file.type && !file.type.startsWith("image/")) {
-      setError("Choisissez une photo (JPG, PNG, WebP…).");
-      e.target.value = "";
-      return;
-    }
-    if (file.size === 0) {
-      setError("Fichier photo vide. Réessayez.");
-      e.target.value = "";
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setError("Photo trop lourde (max 10 Mo).");
-      e.target.value = "";
-      return;
-    }
-
     setError(null);
-    setAvatarFile(file);
-    setPreview(URL.createObjectURL(file));
+    try {
+      // Relit la photo tout de suite et la convertit en JPEG léger (fiable sur iPhone)
+      const blob = await resizeToJpeg(file, 800);
+      setAvatarFile(blob);
+      setPreview((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return URL.createObjectURL(blob);
+      });
+    } catch (err: any) {
+      setError(err.message || "Impossible de lire cette photo.");
+    } finally {
+      e.target.value = "";
+    }
   };
 
   const onSubmit = async (data: FormData) => {
@@ -166,27 +66,18 @@ export function OnboardingForm({ userId }: { userId: string }) {
       setError("La photo de profil est obligatoire pour activer le streaming.");
       return;
     }
-
     setLoading(true);
     setError(null);
-
     try {
-      const { blob, contentType, ext } = await toUploadableImage(avatarFile);
-      const path = `${userId}/avatar.${ext}`;
-
+      // Upload avatar
+      const path = `${userId}/avatar.jpg`;
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(path, blob, {
-          upsert: true,
-          contentType,
-          cacheControl: "3600",
-        });
-
+        .upload(path, avatarFile, { upsert: true, contentType: "image/jpeg" });
       if (uploadError) throw uploadError;
 
       const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
 
-      // Approbation automatique
       const { data: updated, error: updateError } = await supabase
         .from("profiles")
         .update({
@@ -195,26 +86,19 @@ export function OnboardingForm({ userId }: { userId: string }) {
           age: data.age,
           gender: data.gender,
           role: "seller",
-          seller_status: "approved",
+          seller_status: "pending",
           updated_at: new Date().toISOString(),
         })
         .eq("id", userId)
-        .select("id, role, seller_status")
+        .select("seller_status")
         .single();
 
       if (updateError) throw updateError;
-      if (!updated) {
-        throw new Error(
-          "Profil non mis à jour (RLS ou session). Reconnecte-toi puis réessaie."
-        );
-      }
-
-      router.push("/seller/live");
+      // Approbation automatique : accès direct, sinon page d'attente
+      router.push(updated?.seller_status === "approved" ? "/" : "/seller/pending");
       router.refresh();
-    } catch (e: unknown) {
-      console.error("ONBOARDING_ERROR", e);
-      // Affiche l'erreur détaillée directement dans l'UI au lieu d'un message générique
-      setError(getErrorMessage(e));
+    } catch (e: any) {
+      setError(e.message || "Erreur lors de la soumission");
     } finally {
       setLoading(false);
     }
@@ -228,7 +112,6 @@ export function OnboardingForm({ userId }: { userId: string }) {
           className="relative w-28 h-28 mx-auto rounded-full bg-anthracite border-2 border-dashed border-coral/50 flex items-center justify-center cursor-pointer overflow-hidden hover:border-coral transition"
         >
           {preview ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={preview} alt="Avatar" className="w-full h-full object-cover" />
           ) : (
             <div className="flex flex-col items-center text-muted">
@@ -249,17 +132,16 @@ export function OnboardingForm({ userId }: { userId: string }) {
 
       <div>
         <label className="block text-sm font-medium text-muted mb-1.5">Pays</label>
-        <select {...register("country")} className="input-field">
+        <select
+          {...register("country")}
+          className="input-field"
+        >
           <option value="">Sélectionner un pays</option>
           {COUNTRIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
+            <option key={c} value={c}>{c}</option>
           ))}
         </select>
-        {errors.country && (
-          <p className="text-xs text-red-400 mt-1">{errors.country.message}</p>
-        )}
+        {errors.country && <p className="text-xs text-red-400 mt-1">{errors.country.message}</p>}
       </div>
 
       <Input
@@ -279,13 +161,11 @@ export function OnboardingForm({ userId }: { userId: string }) {
           <option value="other">Autre</option>
           <option value="prefer_not_to_say">Préfère ne pas dire</option>
         </select>
-        {errors.gender && (
-          <p className="text-xs text-red-400 mt-1">{errors.gender.message}</p>
-        )}
+        {errors.gender && <p className="text-xs text-red-400 mt-1">{errors.gender.message}</p>}
       </div>
 
       {error && (
-        <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 break-words">
+        <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
           {error}
         </div>
       )}
