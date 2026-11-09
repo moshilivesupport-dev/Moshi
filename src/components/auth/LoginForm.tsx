@@ -37,14 +37,26 @@ export function LoginForm() {
     setError(null);
     setUnconfirmedEmail(null);
 
-    const { error } = await supabase.auth.signInWithPassword(data);
+    const { data: authData, error } = await supabase.auth.signInWithPassword(data);
     if (error) {
       if (error.code === "email_not_confirmed") setUnconfirmedEmail(data.email);
       setError(authErrorMessage(error));
       setLoading(false);
       return;
     }
-    router.push("/");
+    // Inscrit comme vendeur mais profil vendeur pas encore envoyé : on reprend l'onboarding
+    let target = "/";
+    if (authData.user?.user_metadata?.account_type === "seller") {
+      const { data: p } = await supabase
+        .from("profiles")
+        .select("role, seller_status")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+      if (p && p.role === "buyer" && ["none", "rejected"].includes(p.seller_status)) {
+        target = "/seller/onboard";
+      }
+    }
+    router.push(target);
     router.refresh();
   };
 
