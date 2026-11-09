@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
+import AuthGuard from "@/components/auth/AuthGuard"; // Assure-toi d'avoir un composant de protection
 
 interface ProfilePageProps {
   params: Promise<{
@@ -8,18 +9,30 @@ interface ProfilePageProps {
 }
 
 export default async function ProfilePage({ params }: ProfilePageProps) {
-  const { id } = await params;
   const supabase = await createClient();
+  
+  // Vérification de la session
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    redirect("/auth/login"); // Redirige vers la connexion si non authentifié
+  }
 
-  // Récupérer les informations du profil depuis la base de données
+  const { id } = await params;
+
+  // Récupération du profil
   const { data: profile, error } = await supabase
     .from("profiles")
     .select("*")
-    .eq("id", id)
+    .eq("id", id === "me" ? session.user.id : id)
     .single();
 
   if (error || !profile) {
-    notFound();
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <p>Profil introuvable.</p>
+      </div>
+    );
   }
 
   return (
