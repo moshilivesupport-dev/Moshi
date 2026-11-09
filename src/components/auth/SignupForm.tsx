@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { Loader2, Store, ShoppingBag } from "lucide-react";
 
-type Role = "acheteur" | "vendeur";
+type Role = "buyer" | "seller";
 
 interface SignupFormProps {
   className?: string;
@@ -18,7 +18,7 @@ export default function SignupForm({ className }: SignupFormProps) {
   const router = useRouter();
   const supabase = createClient();
 
-  const [role, setRole] = useState<Role>("acheteur");
+  const [role, setRole] = useState<Role>("buyer");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,14 +31,13 @@ export default function SignupForm({ className }: SignupFormProps) {
     setLoading(true);
 
     try {
-      // IMPORTANT : on envoie le rôle dans les metadata
-      // La migration 013 lit raw_user_meta_data->>'role'
+      // Envoi du rôle dans les metadata (lu par le trigger SQL)
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
           data: {
-            role,                    // ← clé lue par le trigger
+            role,
             full_name: fullName.trim() || null,
             username: email.split("@")[0],
           },
@@ -48,14 +47,13 @@ export default function SignupForm({ className }: SignupFormProps) {
       if (signUpError) throw signUpError;
 
       if (data.user) {
-        // Sécurité supplémentaire : forcer le rôle côté profiles
-        // (au cas où le trigger aurait un souci)
+        // Sécurité supplémentaire : mise à jour directe du profil
         await supabase
           .from("profiles")
           .update({ role })
           .eq("id", data.user.id);
 
-        router.push(role === "vendeur" ? "/vendeur/dashboard" : "/");
+        router.push(role === "seller" ? "/seller/dashboard" : "/");
         router.refresh();
       }
     } catch (err: any) {
@@ -71,7 +69,7 @@ export default function SignupForm({ className }: SignupFormProps) {
       onSubmit={handleSubmit}
       className={cn("flex flex-col gap-5 max-w-md mx-auto", className)}
     >
-      {/* Choix du rôle – bien visible */}
+      {/* Choix du rôle */}
       <div>
         <p className="text-sm text-neutral-400 mb-3 text-center">
           Je veux créer un compte en tant que :
@@ -79,10 +77,10 @@ export default function SignupForm({ className }: SignupFormProps) {
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => setRole("acheteur")}
+            onClick={() => setRole("buyer")}
             className={cn(
               "flex flex-col items-center gap-2 rounded-2xl border-2 p-4 transition",
-              role === "acheteur"
+              role === "buyer"
                 ? "border-red-500 bg-red-500/10 text-white"
                 : "border-neutral-700 bg-neutral-900 text-neutral-400 hover:border-neutral-500"
             )}
@@ -93,10 +91,10 @@ export default function SignupForm({ className }: SignupFormProps) {
 
           <button
             type="button"
-            onClick={() => setRole("vendeur")}
+            onClick={() => setRole("seller")}
             className={cn(
               "flex flex-col items-center gap-2 rounded-2xl border-2 p-4 transition",
-              role === "vendeur"
+              role === "seller"
                 ? "border-red-500 bg-red-500/10 text-white"
                 : "border-neutral-700 bg-neutral-900 text-neutral-400 hover:border-neutral-500"
             )}
@@ -147,13 +145,15 @@ export default function SignupForm({ className }: SignupFormProps) {
             Création en cours...
           </>
         ) : (
-          `Créer mon compte ${role === "vendeur" ? "Vendeur" : "Acheteur"}`
+          `Créer mon compte ${role === "seller" ? "Vendeur" : "Acheteur"}`
         )}
       </Button>
 
       <p className="text-xs text-neutral-500 text-center">
         Rôle sélectionné :{" "}
-        <span className="text-white font-medium capitalize">{role}</span>
+        <span className="text-white font-medium capitalize">
+          {role === "seller" ? "Vendeur" : "Acheteur"}
+        </span>
       </p>
     </form>
   );
