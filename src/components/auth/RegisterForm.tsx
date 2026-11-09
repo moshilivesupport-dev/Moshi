@@ -22,12 +22,14 @@ const schema = z.object({
   username: z.string().min(3, "Minimum 3 caractères").max(30),
   full_name: z.string().min(2, "Nom requis"),
   age: z.coerce.number().min(18, "Vous devez avoir au moins 18 ans"),
-  role: z.enum(["buyer", "seller"]), // Ajout du choix du rôle
+  role: z.enum(["buyer", "seller"]),
   password: z.string().refine((val) => checkPasswordStrength(val).isValid, {
     message: "Mot de passe trop faible",
   }),
   terms: z.literal(true, {
-    errorMap: () => ({ message: "Vous devez accepter les CGU et la Politique de confidentialité" }),
+    errorMap: () => ({
+      message: "Vous devez accepter les CGU et la Politique de confidentialité",
+    }),
   }),
 });
 
@@ -47,9 +49,7 @@ export function RegisterForm() {
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: {
-      role: "buyer", // Par défaut acheteur
-    },
+    defaultValues: { role: "buyer" },
   });
 
   const password = watch("password", "");
@@ -59,6 +59,8 @@ export function RegisterForm() {
     setLoading(true);
     setError(null);
     try {
+      const isSeller = data.role === "seller";
+
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -68,8 +70,8 @@ export function RegisterForm() {
             username: data.username,
             full_name: data.full_name,
             age: data.age,
-            role: data.role, // Transmet 'seller' ou 'buyer' au trigger de la base de données
-            seller_status: data.role === "seller" ? "approved" : "pending", // Si vendeur, on approuve directement ou met en pending selon ta logique
+            role: data.role,
+            seller_status: isSeller ? "approved" : null,
             terms_accepted: true,
             terms_version: TERMS_VERSION,
           },
@@ -77,19 +79,41 @@ export function RegisterForm() {
       });
       if (signUpError) throw signUpError;
 
-      if (signUpData.user && signUpData.user.identities && signUpData.user.identities.length === 0) {
-        setError("Un compte existe déjà avec cet e-mail. Connectez-vous ou réinitialisez votre mot de passe.");
+      if (
+        signUpData.user &&
+        signUpData.user.identities &&
+        signUpData.user.identities.length === 0
+      ) {
+        setError(
+          "Un compte existe déjà avec cet e-mail. Connectez-vous ou réinitialisez votre mot de passe."
+        );
         return;
       }
 
+      // Sécurise le profil même si le trigger n'a pas tout écrit
+      if (signUpData.user) {
+        await supabase
+          .from("profiles")
+          .update({
+            username: data.username,
+            full_name: data.full_name,
+            age: data.age,
+            role: isSeller ? "seller" : "buyer",
+            seller_status: isSeller ? "approved" : null,
+            terms_accepted_at: new Date().toISOString(),
+            terms_version: TERMS_VERSION,
+          })
+          .eq("id", signUpData.user.id);
+      }
+
       if (signUpData.session) {
-        router.push("/");
+        router.push(isSeller ? "/seller" : "/");
         router.refresh();
         return;
       }
 
       router.push(`/auth/verify?email=${encodeURIComponent(data.email)}`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setError(authErrorMessage(e) || "Erreur lors de l'inscription");
     } finally {
       setLoading(false);
@@ -98,13 +122,14 @@ export function RegisterForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      {/* Choix du profil : Acheteur ou Vendeur */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-muted">Je souhaite m'inscrire en tant que :</label>
+        <label className="block text-sm font-medium text-muted">
+          Je m&apos;inscris en tant que
+        </label>
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => setValue("role", "buyer")}
+            onClick={() => setValue("role", "buyer", { shouldValidate: true })}
             className={`flex flex-col items-center justify-center p-3 rounded-xl border transition ${
               currentRole === "buyer"
                 ? "border-coral bg-coral/10 text-white"
@@ -114,20 +139,22 @@ export function RegisterForm() {
             <ShoppingBag className="w-5 h-5 mb-1 text-coral" />
             <span className="text-sm font-medium">Acheteur</span>
           </button>
-
           <button
             type="button"
-            onClick={() => setValue("role", "seller")}
+            onClick={() => setValue("role", "seller", { shouldValidate: true })}
             className={`flex flex-col items-center justify-center p-3 rounded-xl border transition ${
               currentRole === "seller"
-                ? "border-coral bg-coral/10 text-white"
+                ? "border-champagne bg-champagne/10 text-white"
                 : "border-white/10 bg-onyx text-muted hover:border-white/20"
             }`}
           >
-            <Store className="w-5 h-5 mb-1 text-coral" />
-            <span className="text-sm font-medium">Vendeur (Live / Boutique)</span>
+            <Store className="w-5 h-5 mb-1 text-champagne" />
+            <span className="text-sm font-medium">Vendeur</span>
           </button>
         </div>
+        {errors.role && (
+          <p className="text-xs text-red-400">{errors.role.message}</p>
+        )}
       </div>
 
       <Input
@@ -187,7 +214,9 @@ export function RegisterForm() {
             . Je certifie avoir au moins 18 ans.
           </span>
         </label>
-        {errors.terms && <p className="text-xs text-red-400">{errors.terms.message}</p>}
+        {errors.terms && (
+          <p className="text-xs text-red-400">{errors.terms.message}</p>
+        )}
       </div>
 
       {error && (
