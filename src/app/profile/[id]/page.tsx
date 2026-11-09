@@ -2,13 +2,13 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
 interface ProfilePageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export default async function ProfilePage({ params }: ProfilePageProps) {
-  const { id } = params;
+  const { id } = await params;
   const supabase = await createClient();
 
   // Récupérer les informations du profil depuis la base de données
