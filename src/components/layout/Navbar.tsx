@@ -8,7 +8,7 @@ import {
   Plus,
   ShoppingBag,
   User,
-  Store, // Ajouté si tu veux un lien dashboard vendeur
+  Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +20,7 @@ interface NavbarProps {
 export default function Navbar({ role, sellerStatus }: NavbarProps) {
   const pathname = usePathname();
 
-  // Liste de base des liens
+  // Liste des liens de navigation mis à jour avec les bons dossiers
   const links = [
     {
       href: "/",
@@ -39,11 +39,11 @@ export default function Navbar({ role, sellerStatus }: NavbarProps) {
       isCentral: true,
     },
     {
-      href: "/boutique",
+      href: "/shop", // Corrigé pour pointer vers le dossier src/app/shop
       label: "Boutique",
       icon: ShoppingBag,
     },
-    // Si c'est un vendeur, on peut adapter le lien profil ou ajouter un lien dashboard
+    // Ajout dynamique du lien dashboard si l'utilisateur est un vendeur
     ...(role === "seller"
       ? [
           {
@@ -54,7 +54,7 @@ export default function Navbar({ role, sellerStatus }: NavbarProps) {
         ]
       : []),
     {
-      href: "/profil",
+      href: "/profil/me", // Corrigé pour rediriger proprement via src/app/profil/[id]
       label: "Profil",
       icon: User,
     },
