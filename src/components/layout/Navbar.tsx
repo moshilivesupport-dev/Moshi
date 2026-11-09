@@ -33,7 +33,7 @@ export default function Navbar({ role, sellerStatus }: NavbarProps) {
       icon: Radio,
     },
     {
-      href: "/create",
+      href: "/videos/new", // Corrigé ici pour éviter le 404 du bouton central
       label: "Créer",
       icon: Plus,
       isCentral: true,
@@ -54,7 +54,7 @@ export default function Navbar({ role, sellerStatus }: NavbarProps) {
         ]
       : []),
     {
-      href: "/profile/me", // Corrigé ici avec un "e" pour correspondre au dossier src/app/profile
+      href: "/profile/me", // Corrigé avec un "e" pour correspondre au dossier src/app/profile
       label: "Profil",
       icon: User,
     },
