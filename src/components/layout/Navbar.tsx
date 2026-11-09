@@ -8,43 +8,57 @@ import {
   Plus,
   ShoppingBag,
   User,
+  Store, // Ajouté si tu veux un lien dashboard vendeur
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const links = [
-  {
-    href: "/",
-    label: "Accueil",
-    icon: Home,
-  },
-  {
-    href: "/live",
-    label: "Live",
-    icon: Radio,
-  },
-  {
-    href: "/create",          // ou /videos/new selon ton routing
-    label: "Créer",
-    icon: Plus,
-    isCentral: true,
-  },
-  {
-    href: "/boutique",
-    label: "Boutique",
-    icon: ShoppingBag,
-  },
-  {
-    href: "/profil",          // redirige vers le profil de l'utilisateur connecté
-    label: "Profil",
-    icon: User,
-  },
-];
+interface NavbarProps {
+  role?: string | null;
+  sellerStatus?: string | null;
+}
 
-export default function BottomNav() {
+export default function Navbar({ role, sellerStatus }: NavbarProps) {
   const pathname = usePathname();
 
-  // Cacher la nav sur certaines pages (ex: feed immersif plein écran si besoin)
-  // if (pathname.startsWith("/videos") && !pathname.includes("/new")) return null;
+  // Liste de base des liens
+  const links = [
+    {
+      href: "/",
+      label: "Accueil",
+      icon: Home,
+    },
+    {
+      href: "/live",
+      label: "Live",
+      icon: Radio,
+    },
+    {
+      href: "/create",
+      label: "Créer",
+      icon: Plus,
+      isCentral: true,
+    },
+    {
+      href: "/boutique",
+      label: "Boutique",
+      icon: ShoppingBag,
+    },
+    // Si c'est un vendeur, on peut adapter le lien profil ou ajouter un lien dashboard
+    ...(role === "seller"
+      ? [
+          {
+            href: "/seller/dashboard",
+            label: "Vendeur",
+            icon: Store,
+          },
+        ]
+      : []),
+    {
+      href: "/profil",
+      label: "Profil",
+      icon: User,
+    },
+  ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 backdrop-blur border-t border-neutral-800 safe-area-bottom">
