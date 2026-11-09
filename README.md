@@ -1,93 +1,114 @@
-# Moshi – Module Vidéos (max 45 s)
+# Moshi – Fixes 1 · 2 · 3 · 4
 
-Pack **uniquement vidéos** à intégrer dans le projet Moshi existant  
-(compatible migrations 001–008, auth, profiles, products).
+Pack prêt à coller pour corriger :
 
-**Qui peut poster :** acheteurs **et** vendeurs (tout compte connecté).
+1. **Bug création de compte** (rôle Vendeur / Acheteur)
+2. **Barre de navigation** (5 onglets max, style TikTok)
+3. **Accueil type TikTok** (feed vertical immersif)
+4. **Profils** (voir les autres + photo de profil modifiable)
+
+Compatible avec tes migrations actuelles (jusqu’à 012).
 
 ---
 
 ## Contenu
 
 ```
-src/components/video/
-  VideoUploadForm.tsx   Upload + contrôle durée ≤ 45s
-  VideoFeed.tsx         Feed vertical (snap + autoplay)
-
-src/app/videos/
-  page.tsx              Feed /videos
-  new/page.tsx          Publier /videos/new
-  [id]/page.tsx         Détail /videos/[id]
-
 supabase/migrations/
-  009_short_videos.sql  Tables videos, likes, comments + RLS
+  013_profile_role_and_avatar.sql
+
+src/components/
+  auth/SignupForm.tsx
+  layout/BottomNav.tsx
+  home/HomeFeed.tsx
+  profile/ProfileView.tsx
+
+src/app/
+  page.tsx                        ← Nouvel Accueil (feed)
+  auth/signup/page.tsx
+  profil/page.tsx                 ← Redirige vers son propre profil
+  profil/[id]/page.tsx            ← Profil public / privé
 ```
 
 ---
 
 ## Installation
 
-### 1. Copier les fichiers dans ton repo Moshi
+### 1. Migration SQL
 
-| Source (ce ZIP) | Destination (projet Moshi) |
-|-----------------|----------------------------|
-| `src/components/video/*` | `src/components/video/` |
-| `src/app/videos/*` | `src/app/videos/` |
-| `supabase/migrations/009_short_videos.sql` | `supabase/migrations/` |
+Dans le **SQL Editor** Supabase :
 
-### 2. SQL Supabase
+→ Exécuter `013_profile_role_and_avatar.sql`
 
-Dans le **SQL Editor**, après les migrations 001→008 :
+### 2. Storage – Bucket `avatars`
 
-→ exécuter `009_short_videos.sql`  
-→ choisir **Run and enable RLS**
+Dashboard Supabase → Storage → New bucket :
 
-### 3. Storage
-
-Dashboard Supabase → **Storage** → New bucket :
-
-- Nom : `videos`
+- Nom : `avatars`
 - **Public** : oui
 
-Policies Storage recommandées :
-- **SELECT** : public
-- **INSERT** : authenticated, chemin commençant par `{user_id}/`
+Policy recommandée (INSERT) :
+```sql
+create policy "Users can upload their avatar"
+on storage.objects for insert
+to authenticated
+with check (
+  bucket_id = 'avatars' and
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+```
 
-### 4. Navbar (optionnel)
+### 3. Copier les fichiers
 
-Dans `src/components/layout/Navbar.tsx` :
+| Source | Destination |
+|--------|-------------|
+| `src/components/auth/SignupForm.tsx` | `src/components/auth/` |
+| `src/components/layout/BottomNav.tsx` | `src/components/layout/` |
+| `src/components/home/HomeFeed.tsx` | `src/components/home/` |
+| `src/components/profile/ProfileView.tsx` | `src/components/profile/` |
+| `src/app/page.tsx` | `src/app/page.tsx` (remplace l’ancien) |
+| `src/app/auth/signup/page.tsx` | `src/app/auth/signup/` |
+| `src/app/profil/*` | `src/app/profil/` |
+
+### 4. Intégrer la BottomNav
+
+Dans ton layout principal (`src/app/layout.tsx` ou un `MainLayout`) :
 
 ```tsx
-import { Clapperboard } from "lucide-react";
+import BottomNav from "@/components/layout/BottomNav";
 
-// dans le tableau links :
-{ href: "/videos", label: "Vidéos", icon: Clapperboard },
+// ...
+<body>
+  {children}
+  <BottomNav />
+</body>
 ```
 
-### 5. Tester
+### 5. Adapter les liens de la BottomNav (si besoin)
 
-```bash
-npm run dev
-```
+Dans `BottomNav.tsx`, vérifie les `href` :
 
-- Feed : http://localhost:3000/videos  
-- Publier : http://localhost:3000/videos/new (connecté)
+- `/` → Accueil
+- `/live` → tes lives
+- `/create` ou `/videos/new` → bouton central
+- `/boutique` → ta boutique
+- `/profil` → profil de l’utilisateur connecté
 
 ---
 
-## Règles métier
+## Ce qui est corrigé
 
-| Règle | Détail |
-|-------|--------|
-| Durée max | **45 secondes** (client + `CHECK` SQL) |
-| Taille max | 80 Mo |
-| Formats | MP4, WebM, QuickTime |
-| Auteurs | Tous les profils authentifiés |
+| Point | Solution |
+|-------|----------|
+| 1. Bug rôle | `SignupForm` envoie `role` dans `raw_user_meta_data` + trigger `handle_new_user` le respecte |
+| 2. Navigation | `BottomNav` avec 5 onglets + bouton central + |
+| 3. Accueil TikTok | `HomeFeed` + `page.tsx` → feed vertical snap/autoplay |
+| 4. Profils | Page `/profil/[id]` + upload avatar + voir les autres |
 
 ---
 
-## Dépendances
+## Notes importantes
 
-Déjà présentes dans Moshi : `@supabase/ssr`, `lucide-react`, `@/components/ui/Button`, `@/components/ui/Input`, `@/lib/utils` (`formatNumber`).
-
-
+- Le trigger `handle_new_user` **remplace** l’ancien. Vérifie qu’il n’y a pas de conflit avec une ancienne version.
+- Si tu as déjà une page d’inscription, remplace juste le formulaire par `SignupForm`.
+- Le feed Accueil charge actuellement les **vidéos**. Tu pourras y ajouter les lives plus tard.
