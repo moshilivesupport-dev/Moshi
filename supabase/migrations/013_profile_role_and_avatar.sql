@@ -1,9 +1,13 @@
 -- ============================================================
 -- Moshi – Fix rôle (acheteur/vendeur) + avatar profil
--- Migration 013
+-- Migration 013 (version corrigée)
 -- ============================================================
 
--- 1. S'assurer que la colonne role existe et est correctement contrainte
+-- 1. Supprimer l'ancienne contrainte de rôle (quelle que soit sa définition)
+alter table public.profiles
+  drop constraint if exists profiles_role_check;
+
+-- 2. S'assurer que la colonne role existe
 do $$
 begin
   if not exists (
@@ -13,26 +17,24 @@ begin
       and column_name = 'role'
   ) then
     alter table public.profiles
-      add column role text not null default 'acheteur'
-      check (role in ('acheteur', 'vendeur'));
-  else
-    -- Forcer les valeurs invalides vers 'acheteur'
-    update public.profiles
-    set role = 'acheteur'
-    where role is null or role not in ('acheteur', 'vendeur');
-
-    -- Ajouter la contrainte si elle n'existe pas
-    begin
-      alter table public.profiles
-        add constraint profiles_role_check
-        check (role in ('acheteur', 'vendeur'));
-    exception when duplicate_object then
-      null;
-    end;
+      add column role text not null default 'acheteur';
   end if;
 end $$;
 
--- 2. S'assurer que avatar_url existe
+-- 3. Nettoyer / normaliser les valeurs existantes
+--    On accepte les variantes courantes et on les mappe vers acheteur / vendeur
+update public.profiles
+set role = case
+  when lower(coalesce(role, '')) in ('vendeur', 'seller', 'vendor', 'merchant', 'pro') then 'vendeur'
+  else 'acheteur'
+end;
+
+-- 4. Recréer la contrainte proprement
+alter table public.profiles
+  add constraint profiles_role_check
+  check (role in ('acheteur', 'vendeur'));
+
+-- 5. S'assurer que avatar_url existe
 do $$
 begin
   if not exists (
@@ -46,7 +48,7 @@ begin
   end if;
 end $$;
 
--- 3. S'assurer que username et full_name existent
+-- 6. S'assurer que username, full_name et bio existent
 do $$
 begin
   if not exists (
@@ -77,7 +79,7 @@ begin
   end if;
 end $$;
 
--- 4. Fonction de création de profil qui RESPECTE le rôle choisi
+-- 7. Fonction de création de profil qui RESPECTE le rôle choisi à l'inscription
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -93,7 +95,10 @@ begin
     'acheteur'
   ));
 
-  if chosen_role not in ('acheteur', 'vendeur') then
+  -- Normaliser
+  if chosen_role in ('vendeur', 'seller', 'vendor', 'merchant', 'pro') then
+    chosen_role := 'vendeur';
+  else
     chosen_role := 'acheteur';
   end if;
 
@@ -111,9 +116,9 @@ begin
     new.raw_user_meta_data->>'avatar_url'
   )
   on conflict (id) do update set
-    role = excluded.role,
-    full_name = coalesce(excluded.full_name, profiles.full_name),
-    username = coalesce(excluded.username, profiles.username),
+    role       = excluded.role,
+    full_name  = coalesce(excluded.full_name, profiles.full_name),
+    username   = coalesce(excluded.username, profiles.username),
     avatar_url = coalesce(excluded.avatar_url, profiles.avatar_url);
 
   return new;
@@ -126,7 +131,7 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- 5. RLS profil (lecture publique, écriture propriétaire)
+-- 8. RLS profil
 alter table public.profiles enable row level security;
 
 drop policy if exists "Profiles are viewable by everyone" on public.profiles;
@@ -140,10 +145,6 @@ create policy "Users can update their own profile"
   using (auth.uid() = id)
   with check (auth.uid() = id);
 
--- 6. Bucket avatars (si pas déjà créé)
--- À faire aussi dans le Dashboard Storage si besoin :
--- Bucket name: avatars | Public: oui
-
 -- ============================================================
--- Fin migration 013
+-- Fin migration 013 (version corrigée)
 -- ============================================================
