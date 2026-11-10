@@ -2,51 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --onyx: #0c0c0e;
-  --anthracite: #16161a;
-  --coral: #ff4d4d;
-  --warm-red: #e63946;
-  --champagne: #d4af37;
-  --gold: #c9a227;
-  --text: #f5f5f7;
-  --muted: #a1a1aa;
-}
-
 * {
-  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
-body {
-  background: var(--onyx);
-  color: var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  min-height: 100vh;
+html, body {
+  overscroll-behavior: none;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
+/* Hide scrollbar for feed */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
-::-webkit-scrollbar-track {
-  background: var(--anthracite);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--coral);
-  border-radius: 3px;
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
-@layer components {
-  .btn-primary {
-    @apply bg-coral hover:bg-warm-red text-white font-semibold py-2.5 px-5 rounded-xl transition-all duration-200 shadow-lg shadow-coral/20;
-  }
-  .btn-gold {
-    @apply bg-gradient-to-r from-champagne to-gold text-onyx font-bold py-2.5 px-5 rounded-xl transition-all duration-200;
-  }
-  .card {
-    @apply bg-anthracite border border-white/5 rounded-2xl p-5;
-  }
-  .input-field {
-    @apply w-full bg-onyx border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-muted focus:outline-none focus:border-coral focus:ring-1 focus:ring-coral transition;
-  }
+/* Safe area for iOS */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
 }

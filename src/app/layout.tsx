@@ -1,74 +1,41 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import Navbar from "@/components/layout/Navbar";
-import { PWARegister } from "@/components/layout/PWARegister";
-import { SplashProvider } from "@/components/splash/SplashProvider";
-import { createClient } from "@/lib/supabase/server";
+import BottomNav from "@/components/layout/BottomNav";
 
 export const metadata: Metadata = {
-  title: "Moshi – Live Shopping Platform",
-  description: "Achetez et vendez en direct. Coins, gifts, multi-devises, multi-langues.",
+  title: "Moshi – Live Shopping",
+  description: "Achetez et vendez en direct. Style TikTok + Boutique + Live vendeur.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Moshi",
   },
-  icons: {
-    icon: [
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: "/icons/icon-192.png",
-  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#ff4d4d",
+  themeColor: "#000000",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // Le rôle détermine l'interface : acheteur, vendeur ou admin
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  let role: string | null = null;
-  let sellerStatus: string | null = null;
-  if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, seller_status")
-      .eq("id", user.id)
-      .maybeSingle();
-    role = profile?.role ?? null;
-    sellerStatus = profile?.seller_status ?? null;
-  }
-
   return (
     <html lang="fr">
       <head>
-        <link rel="manifest" href="/manifest.json" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
-      <body className="min-h-screen bg-onyx text-white antialiased">
-        <SplashProvider>
-          <Navbar role={role} sellerStatus={sellerStatus} />
-          <main className="pt-0 md:pt-16 pb-20 md:pb-8 min-h-screen">
-            {children}
-          </main>
-          <PWARegister />
-        </SplashProvider>
+      <body className="min-h-screen bg-black text-white antialiased">
+        <main className="pb-20 min-h-screen">{children}</main>
+        <BottomNav />
       </body>
     </html>
   );
