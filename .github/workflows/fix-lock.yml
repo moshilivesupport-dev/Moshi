@@ -13,10 +13,10 @@ jobs:
       - run: npm install -g npm@10.9.2
       - run: npm --version
       - run: rm -f package-lock.json
-      - run: npm install --package-lock-only
+      - run: npm install
       - run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add package-lock.json
-          git commit -m "Regenerate package-lock.json with npm 10.9.2"
+          git commit -m "Regenerate package-lock.json" || echo "No changes"
           git push
