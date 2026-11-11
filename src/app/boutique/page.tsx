@@ -17,7 +17,7 @@ export default function BoutiquePage() {
           La boutique se remplit avec les produits des vendeurs.
         </p>
         <Link
-          href="/create"
+          href="/seller/products/new"
           className="px-6 py-2.5 rounded-full bg-red-500 text-sm font-semibold"
         >
           Ajouter un produit
