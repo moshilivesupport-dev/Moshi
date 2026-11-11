@@ -6,7 +6,7 @@ export default function LivePage() {
     <div className="min-h-[100dvh] bg-black text-white px-4 pt-8 pb-24">
       <h1 className="text-2xl font-bold mb-2">Lives</h1>
       <p className="text-neutral-400 text-sm mb-8">
-        Découvrez les vendeurs en direct
+        Decouvrez les vendeurs en direct
       </p>
 
       <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -16,12 +16,20 @@ export default function LivePage() {
         <p className="text-neutral-400 mb-6">
           Aucun live en cours pour le moment.
         </p>
-        <Link
-          href="/seller/live"
-          className="px-6 py-2.5 rounded-full bg-red-500 text-sm font-semibold"
-        >
-          Lancer un live
-        </Link>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <Link
+            href="/seller/live"
+            className="px-6 py-2.5 rounded-full bg-red-500 text-sm font-semibold text-center"
+          >
+            Lancer un live
+          </Link>
+          <Link
+            href="/seller/onboard"
+            className="px-6 py-2.5 rounded-full border border-neutral-700 text-sm font-medium text-center text-neutral-300"
+          >
+            Devenir vendeur d abord
+          </Link>
+        </div>
       </div>
     </div>
   );
