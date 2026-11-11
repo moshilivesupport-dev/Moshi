@@ -4,16 +4,9 @@ import { useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatNumber } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
-import {
-  Camera,
-  Loader2,
-  Store,
-  ShoppingBag,
-  Settings,
-} from "lucide-react";
+import { Camera, Loader2, Store, ShoppingBag, Settings } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
 
 export type ProfileData = {
   id: string;
@@ -21,7 +14,7 @@ export type ProfileData = {
   full_name: string | null;
   avatar_url: string | null;
   bio: string | null;
-  role: "acheteur" | "vendeur";
+  role: "acheteur" | "vendeur" | "seller" | string;
   created_at?: string;
 };
 
@@ -48,8 +41,8 @@ export default function ProfileView({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const displayName =
-    profile.full_name || profile.username || "Utilisateur";
+  const displayName = profile.full_name || profile.username || "Utilisateur";
+  const isSeller = profile.role === "vendeur" || profile.role === "seller";
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -73,10 +66,7 @@ export default function ProfileView({
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(path, file, {
-          upsert: true,
-          contentType: file.type,
-        });
+        .upload(path, file, { upsert: true, contentType: file.type });
 
       if (uploadError) throw uploadError;
 
@@ -84,7 +74,6 @@ export default function ProfileView({
         data: { publicUrl },
       } = supabase.storage.from("avatars").getPublicUrl(path);
 
-      // Cache bust
       const urlWithTs = `${publicUrl}?t=${Date.now()}`;
 
       const { error: updateError } = await supabase
@@ -96,9 +85,10 @@ export default function ProfileView({
 
       setAvatarUrl(urlWithTs);
       router.refresh();
-    } catch (err: any) {
-      console.error(err);
-      setError(err?.message || "Erreur lors de l'upload.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors de l'upload.";
+      setError(message);
     } finally {
       setUploading(false);
     }
@@ -106,10 +96,8 @@ export default function ProfileView({
 
   return (
     <div className="bg-black text-white min-h-[100dvh] pb-24">
-      {/* Header */}
       <div className="px-4 pt-6 pb-4">
         <div className="flex items-start gap-4">
-          {/* Avatar */}
           <div className="relative shrink-0">
             <div className="w-24 h-24 rounded-full overflow-hidden bg-neutral-800 border-2 border-neutral-700">
               {avatarUrl ? (
@@ -150,100 +138,7 @@ export default function ProfileView({
             )}
           </div>
 
-          {/* Infos */}
           <div className="flex-1 min-w-0 pt-1">
             <h1 className="text-xl font-bold truncate">{displayName}</h1>
             {profile.username && (
-              <p className="text-neutral-400 text-sm">@{profile.username}</p>
-            )}
-
-            <div className="flex items-center gap-1.5 mt-2">
-              {profile.role === "vendeur" ? (
-                <span className="inline-flex items-center gap-1 text-xs bg-red-500/15 text-red-400 px-2 py-0.5 rounded-full">
-                  <Store className="w-3 h-3" />
-                  Vendeur
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-xs bg-neutral-800 text-neutral-400 px-2 py-0.5 rounded-full">
-                  <ShoppingBag className="w-3 h-3" />
-                  Acheteur
-                </span>
-              )}
-            </div>
-          </div>
-
-          {isOwnProfile && (
-            <Link
-              href="/profil/edit"
-              className="p-2 rounded-full hover:bg-neutral-800 transition"
-            >
-              <Settings className="w-5 h-5 text-neutral-400" />
-            </Link>
-          )}
-        </div>
-
-        {profile.bio && (
-          <p className="mt-4 text-sm text-neutral-300 leading-relaxed">
-            {profile.bio}
-          </p>
-        )}
-
-        {/* Stats */}
-        <div className="flex gap-6 mt-5">
-          <div className="text-center">
-            <p className="font-bold text-lg">
-              {formatNumber(stats.videos_count || 0)}
-            </p>
-            <p className="text-xs text-neutral-500">Vidéos</p>
-          </div>
-          <div className="text-center">
-            <p className="font-bold text-lg">
-              {formatNumber(stats.followers_count || 0)}
-            </p>
-            <p className="text-xs text-neutral-500">Abonnés</p>
-          </div>
-          <div className="text-center">
-            <p className="font-bold text-lg">
-              {formatNumber(stats.following_count || 0)}
-            </p>
-            <p className="text-xs text-neutral-500">Abonnements</p>
-          </div>
-        </div>
-
-        {error && (
-          <p className="mt-3 text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
-            {error}
-          </p>
-        )}
-
-        {isOwnProfile && (
-          <div className="mt-5 flex gap-3">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? "Upload..." : "Changer la photo"}
-            </Button>
-            <Link href="/profil/edit" className="flex-1">
-              <Button variant="outline" className="w-full">
-                Modifier le profil
-              </Button>
-            </Link>
-          </div>
-        )}
-      </div>
-
-      {/* Séparateur */}
-      <div className="h-px bg-neutral-800" />
-
-      {/* Contenu (vidéos de l'utilisateur) – à enrichir plus tard */}
-      <div className="px-4 py-6">
-        <p className="text-sm text-neutral-500 text-center">
-          Les vidéos de {isOwnProfile ? "vous" : displayName} apparaîtront ici.
-        </p>
-      </div>
-    </div>
-  );
-}
+              <p className="text-neutral-400 text-sm">@{profile.username}</
