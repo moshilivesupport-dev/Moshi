@@ -24,7 +24,6 @@ export async function getRecommendedVideos(
 ): Promise<ScoredVideo[]> {
   const supabase = createClient();
 
-  // 1. Charger un pool de vidéos récentes + populaires
   const { data: videos } = await supabase
     .from("videos")
     .select(
@@ -41,8 +40,7 @@ export async function getRecommendedVideos(
 
   if (!videos?.length) return [];
 
-  // 2. Intérêts utilisateur (si connecté)
-  let interests: Record<string, number> = {};
+  const interests: Record<string, number> = {};
   let followingIds: string[] = [];
 
   if (userId) {
@@ -57,18 +55,16 @@ export async function getRecommendedVideos(
     followingIds = (follows || []).map((f) => f.following_id);
   }
 
-  // 3. Scoring
   const now = Date.now();
   const scored = videos.map((v: any) => {
     const ageHours = (now - new Date(v.created_at).getTime()) / 3_600_000;
-    const recency = Math.max(0, 48 - ageHours) / 48; // 0→1 sur 48h
+    const recency = Math.max(0, 48 - ageHours) / 48;
     const popularity =
       Math.log10((v.views_count || 0) + 10) / 5 +
       Math.log10((v.likes_count || 0) + 5) / 4;
 
     const followingBoost = followingIds.includes(v.user_id) ? 0.35 : 0;
 
-    // Intérêts simples (mots du titre)
     let interestBoost = 0;
     const text = `${v.title || ""} ${v.description || ""}`.toLowerCase();
     Object.entries(interests).forEach(([tag, score]) => {
@@ -85,7 +81,6 @@ export async function getRecommendedVideos(
   return scored.slice(0, limit);
 }
 
-/** Enregistrer un signal d'intérêt (à appeler après un like / watch long) */
 export async function trackInterest(userId: string, tags: string[]) {
   if (!userId || !tags.length) return;
   const supabase = createClient();
