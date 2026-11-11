@@ -13,13 +13,12 @@ export default async function ProfilePage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // Si l'id est "me", rediriger vers le vrai id
   if (id === "me") {
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) redirect("/auth/login");
-    redirect(`/profil/${user.id}`);
+    redirect(`/profile/${user.id}`);
   }
 
   const { data: profile, error } = await supabase
@@ -38,12 +37,31 @@ export default async function ProfilePage({ params }: PageProps) {
 
   const isOwnProfile = user?.id === profile.id;
 
-  // Stats basiques (vidéos)
   const { count: videosCount } = await supabase
     .from("videos")
     .select("*", { count: "exact", head: true })
     .eq("user_id", profile.id)
     .eq("is_public", true);
+
+  let followers_count = 0;
+  let following_count = 0;
+
+  try {
+    const [{ count: followers }, { count: following }] = await Promise.all([
+      supabase
+        .from("follows")
+        .select("*", { count: "exact", head: true })
+        .eq("following_id", profile.id),
+      supabase
+        .from("follows")
+        .select("*", { count: "exact", head: true })
+        .eq("follower_id", profile.id),
+    ]);
+    followers_count = followers || 0;
+    following_count = following || 0;
+  } catch {
+    // table follows peut ne pas exister encore
+  }
 
   return (
     <ProfileView
@@ -51,8 +69,8 @@ export default async function ProfilePage({ params }: PageProps) {
       isOwnProfile={isOwnProfile}
       stats={{
         videos_count: videosCount || 0,
-        followers_count: 0, // à brancher plus tard
-        following_count: 0,
+        followers_count,
+        following_count,
       }}
     />
   );
