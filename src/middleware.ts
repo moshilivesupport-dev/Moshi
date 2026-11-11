@@ -6,17 +6,19 @@ export async function middleware(request: NextRequest) {
   const response = await updateSession(request);
   const pathname = request.nextUrl.pathname;
 
-  // Routes vendeur accessibles SANS être déjà vendeur
-  const sellerPublicPaths = [
+  // Ouvert sans être vendeur
+  const openSellerPaths = [
     "/seller/onboard",
     "/seller/pending",
+    "/seller/live", // tout le monde peut démarrer un live
   ];
 
-  const isSellerPublic = sellerPublicPaths.some(
+  const isOpen = openSellerPaths.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
 
-  if (pathname.startsWith("/seller") && !isSellerPublic) {
+  // Produits / dashboard vendeur = toujours réservé vendeur
+  if (pathname.startsWith("/seller") && !isOpen) {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -46,7 +48,7 @@ export async function middleware(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    const role = profile?.role;
+    const role = (profile?.role || "").toLowerCase();
     const isSeller = role === "vendeur" || role === "seller";
 
     if (!isSeller) {
