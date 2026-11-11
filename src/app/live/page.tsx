@@ -17,7 +17,7 @@ export default function LivePage() {
           Aucun live en cours pour le moment.
         </p>
         <Link
-          href="/create"
+          href="/seller/live"
           className="px-6 py-2.5 rounded-full bg-red-500 text-sm font-semibold"
         >
           Lancer un live
