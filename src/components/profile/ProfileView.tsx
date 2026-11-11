@@ -117,6 +117,7 @@ export default function ProfileView({
             {isOwnProfile && (
               <>
                 <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
                   className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-red-500 flex items-center justify-center border-2 border-black"
@@ -141,4 +142,94 @@ export default function ProfileView({
           <div className="flex-1 min-w-0 pt-1">
             <h1 className="text-xl font-bold truncate">{displayName}</h1>
             {profile.username && (
-              <p className="text-neutral-400 text-sm">@{profile.username}</
+              <p className="text-neutral-400 text-sm">@{profile.username}</p>
+            )}
+
+            <div className="flex items-center gap-1.5 mt-2">
+              {isSeller ? (
+                <span className="inline-flex items-center gap-1 text-xs bg-red-500/15 text-red-400 px-2 py-0.5 rounded-full">
+                  <Store className="w-3 h-3" />
+                  Vendeur
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs bg-neutral-800 text-neutral-400 px-2 py-0.5 rounded-full">
+                  <ShoppingBag className="w-3 h-3" />
+                  Acheteur
+                </span>
+              )}
+            </div>
+          </div>
+
+          {isOwnProfile && (
+            <Link
+              href="/settings"
+              className="p-2 rounded-full hover:bg-neutral-800 transition"
+              aria-label="Parametres"
+            >
+              <Settings className="w-5 h-5 text-neutral-400" />
+            </Link>
+          )}
+        </div>
+
+        {profile.bio && (
+          <p className="mt-4 text-sm text-neutral-300 leading-relaxed">
+            {profile.bio}
+          </p>
+        )}
+
+        <div className="flex gap-6 mt-5">
+          <div className="text-center">
+            <p className="font-bold text-lg">
+              {formatNumber(stats.videos_count || 0)}
+            </p>
+            <p className="text-xs text-neutral-500">Videos</p>
+          </div>
+          <div className="text-center">
+            <p className="font-bold text-lg">
+              {formatNumber(stats.followers_count || 0)}
+            </p>
+            <p className="text-xs text-neutral-500">Abonnes</p>
+          </div>
+          <div className="text-center">
+            <p className="font-bold text-lg">
+              {formatNumber(stats.following_count || 0)}
+            </p>
+            <p className="text-xs text-neutral-500">Abonnements</p>
+          </div>
+        </div>
+
+        {error && (
+          <p className="mt-3 text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        {isOwnProfile && (
+          <div className="mt-5 flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? "Upload..." : "Changer la photo"}
+            </Button>
+            <Link href="/profile/edit" className="flex-1">
+              <Button variant="outline" className="w-full">
+                Modifier le profil
+              </Button>
+            </Link>
+          </div>
+        )}
+      </div>
+
+      <div className="h-px bg-neutral-800" />
+
+      <div className="px-4 py-6">
+        <p className="text-sm text-neutral-500 text-center">
+          Les videos de {isOwnProfile ? "vous" : displayName} apparaitront ici.
+        </p>
+      </div>
+    </div>
+  );
+}
