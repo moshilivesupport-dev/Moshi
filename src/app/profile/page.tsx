@@ -3,15 +3,15 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProfilRedirectPage() {
+export default async function ProfileRedirectPage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/auth/login?next=/profil");
+    redirect("/auth/login?next=/profile");
   }
 
-  redirect(`/profil/${user.id}`);
+  redirect(`/profile/${user.id}`);
 }
