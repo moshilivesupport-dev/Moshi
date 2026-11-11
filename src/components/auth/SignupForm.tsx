@@ -7,7 +7,9 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
+import { Loader2, Store, ShoppingBag } from "lucide-react";
+
+type Role = "acheteur" | "vendeur";
 
 interface SignupFormProps {
   className?: string;
@@ -17,11 +19,11 @@ export default function SignupForm({ className }: SignupFormProps) {
   const router = useRouter();
   const supabase = createClient();
 
-  const [step, setStep] = useState<1 | 2>(1);
+  const [role, setRole] = useState<Role>("acheteur");
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
-  const [birthday, setBirthday] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,47 +34,36 @@ export default function SignupForm({ className }: SignupFormProps) {
       .replace(/[^a-z0-9._]/g, "")
       .slice(0, 24);
 
-  const handleContinue = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (!email.trim() || !password || password.length < 6) {
-      setError("Email et mot de passe (6 caractères min.) requis.");
-      return;
-    }
-
-    if (!username.trim()) {
-      setUsername(normalizeUsername(email.split("@")[0] || "user"));
-    }
-
-    setStep(2);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    const cleanUsername = normalizeUsername(username || email.split("@")[0]);
+    const cleanUsername = normalizeUsername(
+      username || email.split("@")[0] || "user"
+    );
 
     if (cleanUsername.length < 3) {
-      setError("Le nom d’utilisateur doit faire au moins 3 caractères.");
+      setError("Nom d'utilisateur : 3 caractères minimum.");
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Mot de passe : 6 caractères minimum.");
       setLoading(false);
       return;
     }
 
     try {
-      // Compte standard type TikTok — rôle acheteur par défaut
-      // Devenir vendeur = parcours /seller plus tard
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
           data: {
-            role: "acheteur",
+            role,
+            full_name: fullName.trim() || cleanUsername,
             username: cleanUsername,
-            full_name: cleanUsername,
-            birthday: birthday || null,
           },
         },
       });
@@ -80,21 +71,29 @@ export default function SignupForm({ className }: SignupFormProps) {
       if (signUpError) throw signUpError;
 
       if (data.user) {
+        // Force le rôle en base (si le trigger rate)
         await supabase
           .from("profiles")
           .update({
-            role: "acheteur",
+            role,
             username: cleanUsername,
-            full_name: cleanUsername,
+            full_name: fullName.trim() || cleanUsername,
+            seller_status: role === "vendeur" ? "approved" : "none",
           })
           .eq("id", data.user.id);
 
-        router.push("/");
+        if (role === "vendeur") {
+          router.push("/seller/live");
+        } else {
+          router.push("/");
+        }
         router.refresh();
       }
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Erreur lors de la création du compte.";
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de la création du compte.";
       setError(message);
     } finally {
       setLoading(false);
@@ -102,103 +101,111 @@ export default function SignupForm({ className }: SignupFormProps) {
   };
 
   return (
-    <div className={cn("w-full max-w-md mx-auto", className)}>
-      {step === 1 ? (
-        <form onSubmit={handleContinue} className="space-y-4">
-          <Input
-            type="email"
-            label="E-mail"
-            placeholder="Ex. nom@email.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            required
-            disabled={loading}
-          />
-          <Input
-            type="password"
-            label="Mot de passe"
-            placeholder="6 caractères minimum"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            required
-            minLength={6}
-            disabled={loading}
-          />
-
-          {error && (
-            <p className="text-sm text-red-400 text-center bg-red-500/10 rounded-xl py-2.5 px-3">
-              {error}
-            </p>
-          )}
-
-          <Button type="submit" className="w-full" size="lg">
-            Continuer
-          </Button>
-
-          <p className="text-[11px] text-neutral-500 text-center leading-relaxed">
-            En continuant, vous acceptez les{" "}
-            <Link href="/legal/terms" className="text-neutral-300 underline">
-              Conditions d’utilisation
-            </Link>{" "}
-            et la{" "}
-            <Link href="/legal/privacy" className="text-neutral-300 underline">
-              Politique de confidentialité
-            </Link>{" "}
-            de Moshi.
-          </p>
-        </form>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      className={cn("flex flex-col gap-5 max-w-md mx-auto", className)}
+    >
+      <div>
+        <p className="text-sm text-neutral-400 mb-3 text-center">
+          Je crée un compte en tant que :
+        </p>
+        <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => setStep(1)}
-            className="text-sm text-neutral-400 hover:text-white mb-2"
+            onClick={() => setRole("acheteur")}
+            className={cn(
+              "flex flex-col items-center gap-2 rounded-2xl border-2 p-4 transition",
+              role === "acheteur"
+                ? "border-red-500 bg-red-500/10 text-white"
+                : "border-neutral-700 bg-neutral-900 text-neutral-400 hover:border-neutral-500"
+            )}
           >
-            ← Retour
+            <ShoppingBag className="w-7 h-7" />
+            <span className="font-semibold text-sm">Acheteur</span>
           </button>
 
-          <Input
-            type="text"
-            label="Nom d’utilisateur"
-            placeholder="Ex. moussa_dev"
-            value={username}
-            onChange={(e) => setUsername(normalizeUsername(e.target.value))}
-            autoComplete="username"
-            required
-            disabled={loading}
-          />
-          <Input
-            type="date"
-            label="Date de naissance"
-            value={birthday}
-            onChange={(e) => setBirthday(e.target.value)}
-            disabled={loading}
-          />
-
-          {error && (
-            <p className="text-sm text-red-400 text-center bg-red-500/10 rounded-xl py-2.5 px-3">
-              {error}
-            </p>
-          )}
-
-          <Button type="submit" className="w-full" size="lg" loading={loading}>
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Création...
-              </>
-            ) : (
-              "S’inscrire"
+          <button
+            type="button"
+            onClick={() => setRole("vendeur")}
+            className={cn(
+              "flex flex-col items-center gap-2 rounded-2xl border-2 p-4 transition",
+              role === "vendeur"
+                ? "border-red-500 bg-red-500/10 text-white"
+                : "border-neutral-700 bg-neutral-900 text-neutral-400 hover:border-neutral-500"
             )}
-          </Button>
+          >
+            <Store className="w-7 h-7" />
+            <span className="font-semibold text-sm">Vendeur</span>
+          </button>
+        </div>
+      </div>
 
-          <p className="text-xs text-neutral-500 text-center">
-            Vous pourrez devenir vendeur plus tard depuis votre profil.
-          </p>
-        </form>
+      <Input
+        label="Nom affiché"
+        type="text"
+        placeholder="Votre nom"
+        value={fullName}
+        onChange={(e) => setFullName(e.target.value)}
+        disabled={loading}
+      />
+      <Input
+        label="Nom d'utilisateur"
+        type="text"
+        placeholder="ex. cosmeticslab"
+        value={username}
+        onChange={(e) => setUsername(normalizeUsername(e.target.value))}
+        disabled={loading}
+      />
+      <Input
+        label="Email"
+        type="email"
+        placeholder="nom@email.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        autoComplete="email"
+        required
+        disabled={loading}
+      />
+      <Input
+        label="Mot de passe"
+        type="password"
+        placeholder="6 caractères minimum"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        autoComplete="new-password"
+        required
+        minLength={6}
+        disabled={loading}
+      />
+
+      {error && (
+        <p className="text-sm text-red-400 text-center bg-red-500/10 rounded-xl py-2.5 px-3">
+          {error}
+        </p>
       )}
-    </div>
+
+      <Button type="submit" disabled={loading} className="w-full" size="lg">
+        {loading ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Création...
+          </>
+        ) : (
+          `Créer mon compte ${role === "vendeur" ? "Vendeur" : "Acheteur"}`
+        )}
+      </Button>
+
+      <p className="text-[11px] text-neutral-500 text-center leading-relaxed">
+        En continuant, vous acceptez les{" "}
+        <Link href="/legal/terms" className="text-neutral-300 underline">
+          Conditions
+        </Link>{" "}
+        et la{" "}
+        <Link href="/legal/privacy" className="text-neutral-300 underline">
+          Confidentialité
+        </Link>
+        .
+      </p>
+    </form>
   );
 }
