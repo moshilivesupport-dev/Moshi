@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 import { ButtonHTMLAttributes, forwardRef } from "react";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "default" | "outline" | "ghost";
+  variant?: "default" | "outline" | "ghost" | "gold";
   size?: "sm" | "md" | "lg";
   loading?: boolean;
 }
@@ -30,6 +30,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           variant === "outline" &&
             "border border-neutral-600 bg-transparent text-white hover:bg-neutral-800",
           variant === "ghost" && "bg-transparent text-white hover:bg-neutral-800",
+          variant === "gold" &&
+            "bg-gradient-to-r from-amber-400 to-yellow-500 text-black hover:from-amber-300 hover:to-yellow-400",
           size === "sm" && "px-3 py-1.5 text-xs",
           size === "md" && "px-5 py-2.5 text-sm",
           size === "lg" && "px-6 py-3 text-base",
@@ -38,7 +40,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {loading && (
-          <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current" />
         )}
         {children}
       </button>
