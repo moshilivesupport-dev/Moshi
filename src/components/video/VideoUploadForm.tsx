@@ -57,79 +57,80 @@ export default function VideoUploadForm({ className }: VideoUploadFormProps) {
       return;
     }
 
-    const url = URL.createObjectURL(selected);
+    const objectUrl = URL.createObjectURL(selected);
     const video = document.createElement("video");
     video.preload = "metadata";
-    video.src = url;
+    video.src = objectUrl;
 
-    await new Promise<void>((resolve, reject) => {
-      video.onloadedmetadata = () => {
-        window.URL.revokeObjectURL(video.src);
-        resolve();
-      };
-      video.onerror = () => reject(new Error("Impossible de lire la vidéo"));
-    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("Impossible de lire la vidéo"));
+      });
 
-    const dur = Math.round(video.duration);
+      const dur = Math.round(video.duration || 0);
 
-    if (dur > MAX_DURATION_SECONDS) {
-      setError(`La vidéo dure ${dur}s. Maximum autorisé : ${MAX_DURATION_SECONDS} secondes.`);
-      URL.revokeObjectURL(url);
-      return;
+      if (!dur || dur <= 0) {
+        setError("Durée de vidéo invalide.");
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+
+      if (dur > MAX_DURATION_SECONDS) {
+        setError(`Vidéo trop longue (${dur}s). Maximum ${MAX_DURATION_SECONDS}s.`);
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setFile(selected);
+      setPreviewUrl(objectUrl);
+      setDuration(dur);
+    } catch {
+      URL.revokeObjectURL(objectUrl);
+      setError("Impossible de lire la vidéo.");
     }
+  }, [previewUrl]);
 
-    if (dur <= 0) {
-      setError("Durée de la vidéo invalide.");
-      URL.revokeObjectURL(url);
-      return;
-    }
-
-    setFile(selected);
-    setPreviewUrl(url);
-    setDuration(dur);
-  }, []);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
-    if (selected) validateAndSetFile(selected);
+    if (selected) await validateAndSetFile(selected);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     const selected = e.dataTransfer.files?.[0];
-    if (selected) validateAndSetFile(selected);
+    if (selected) await validateAndSetFile(selected);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || duration === null) return;
+    if (!file || duration == null) return;
 
     setUploading(true);
     setError(null);
-    setProgress(0);
+    setProgress(10);
 
     try {
       const {
         data: { user },
-        error: authError,
       } = await supabase.auth.getUser();
 
-      if (authError || !user) {
-        setError("Vous devez être connecté pour publier une vidéo.");
-        setUploading(false);
+      if (!user) {
+        router.push("/auth/login?next=/videos/new");
         return;
       }
 
-      // Upload vers Storage
       const ext = file.name.split(".").pop() || "mp4";
       const filePath = `${user.id}/${Date.now()}.${ext}`;
+
+      setProgress(30);
 
       const { error: uploadError } = await supabase.storage
         .from("videos")
         .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: false,
           contentType: file.type,
+          upsert: false,
         });
 
       if (uploadError) throw uploadError;
@@ -140,16 +141,21 @@ export default function VideoUploadForm({ className }: VideoUploadFormProps) {
         data: { publicUrl },
       } = supabase.storage.from("videos").getPublicUrl(filePath);
 
-      // Insertion en base
+      // Schéma migration 010
+      const caption =
+        [title.trim(), description.trim()].filter(Boolean).join(" — ") || null;
+
       const { data: video, error: insertError } = await supabase
         .from("videos")
         .insert({
           user_id: user.id,
-          title: title.trim() || null,
-          description: description.trim() || null,
-          video_url: publicUrl,
-          duration,
-          is_public: true,
+          url: publicUrl,
+          caption,
+          duration_seconds: duration,
+          status: "published",
+          view_count: 0,
+          like_count: 0,
+          comment_count: 0,
         })
         .select("id")
         .single();
@@ -159,10 +165,12 @@ export default function VideoUploadForm({ className }: VideoUploadFormProps) {
       setProgress(100);
       router.push(`/videos/${video.id}`);
       router.refresh();
-    } catch (err: any) {
-      console.error(err);
-      setError(err?.message || "Erreur lors de l'upload. Réessayez.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors de l'upload. Réessayez.";
+      setError(message);
       setUploading(false);
+      setProgress(0);
     }
   };
 
@@ -171,7 +179,6 @@ export default function VideoUploadForm({ className }: VideoUploadFormProps) {
       onSubmit={handleSubmit}
       className={cn("flex flex-col gap-6 max-w-lg mx-auto", className)}
     >
-      {/* Zone d'upload */}
       {!previewUrl ? (
         <div
           onDragOver={(e) => e.preventDefault()}
@@ -197,113 +204,32 @@ export default function VideoUploadForm({ className }: VideoUploadFormProps) {
           />
         </div>
       ) : (
-        <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] max-h-[420px]">
-          <video
-            ref={videoPreviewRef}
-            src={previewUrl}
-            controls
-            playsInline
-            className="w-full h-full object-contain"
-          />
-          <button
-            type="button"
-            onClick={reset}
-            className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/70 flex items-center justify-center hover:bg-black/90 transition"
-          >
-            <X className="w-5 h-5 text-white" />
-          </button>
-          {duration !== null && (
-            <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-black/70 text-xs text-white flex items-center gap-1.5">
-              <Film className="w-3.5 h-3.5" />
-              {duration}s
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Champs */}
-      {previewUrl && (
         <>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm text-neutral-400 mb-1.5 block">
-                Titre (optionnel)
-              </label>
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Donnez un titre à votre vidéo"
-                maxLength={100}
-                disabled={uploading}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-neutral-400 mb-1.5 block">
-                Description (optionnel)
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Décrivez votre vidéo..."
-                maxLength={500}
-                rows={3}
-                disabled={uploading}
-                className="w-full rounded-xl bg-neutral-900 border border-neutral-700 px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-500/50 resize-none"
-              />
-            </div>
+          <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] max-h-[420px]">
+            <video
+              ref={videoPreviewRef}
+              src={previewUrl}
+              controls
+              playsInline
+              className="w-full h-full object-contain"
+            />
+            <button
+              type="button"
+              onClick={reset}
+              className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/70 flex items-center justify-center hover:bg-black/90 transition"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+            {duration !== null && (
+              <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-black/70 text-xs text-white flex items-center gap-1.5">
+                <Film className="w-3.5 h-3.5" />
+                {duration}s
+              </div>
+            )}
           </div>
 
-          {uploading && (
-            <div className="space-y-2">
-              <div className="h-2 rounded-full bg-neutral-800 overflow-hidden">
-                <div
-                  className="h-full bg-red-500 transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <p className="text-xs text-neutral-500 text-center">
-                Upload en cours... {progress}%
-              </p>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Erreur */}
-      {error && (
-        <div className="flex items-start gap-2.5 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400">
-          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Actions */}
-      {previewUrl && (
-        <div className="flex gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={reset}
-            disabled={uploading}
-            className="flex-1"
-          >
-            Annuler
-          </Button>
-          <Button type="submit" disabled={uploading || !file} className="flex-1">
-            {uploading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Publication...
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                Publier
-              </>
-            )}
-          </Button>
-        </div>
-      )}
-    </form>
-  );
-}
+          <div className="space-y-4">
+            <Input
+              label="Titre (optionnel)"
+              value={title}
+              onChange={(e) => set
