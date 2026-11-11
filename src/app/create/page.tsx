@@ -24,7 +24,7 @@ export default function CreatePage() {
         </Link>
 
         <Link
-          href="/live"
+          href="/seller/live"
           className="flex items-center gap-4 p-5 rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-red-500/50 transition"
         >
           <div className="w-12 h-12 rounded-full bg-red-500/15 flex items-center justify-center">
@@ -37,7 +37,7 @@ export default function CreatePage() {
         </Link>
 
         <Link
-          href="/boutique"
+          href="/seller/products/new"
           className="flex items-center gap-4 p-5 rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-red-500/50 transition"
         >
           <div className="w-12 h-12 rounded-full bg-neutral-800 flex items-center justify-center">
