@@ -6,7 +6,17 @@ export async function middleware(request: NextRequest) {
   const response = await updateSession(request);
   const pathname = request.nextUrl.pathname;
 
-  if (pathname.startsWith("/seller")) {
+  // Routes vendeur accessibles SANS être déjà vendeur
+  const sellerPublicPaths = [
+    "/seller/onboard",
+    "/seller/pending",
+  ];
+
+  const isSellerPublic = sellerPublicPaths.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  );
+
+  if (pathname.startsWith("/seller") && !isSellerPublic) {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -25,7 +35,9 @@ export async function middleware(request: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.redirect(new URL("/auth/login", request.url));
+      const login = new URL("/auth/login", request.url);
+      login.searchParams.set("next", pathname);
+      return NextResponse.redirect(login);
     }
 
     const { data: profile } = await supabase
@@ -38,7 +50,6 @@ export async function middleware(request: NextRequest) {
     const isSeller = role === "vendeur" || role === "seller";
 
     if (!isSeller) {
-      // Acheteur → onboarding vendeur au lieu de bloquer silencieusement
       return NextResponse.redirect(new URL("/seller/onboard", request.url));
     }
   }
