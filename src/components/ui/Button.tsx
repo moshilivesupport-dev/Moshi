@@ -4,13 +4,26 @@ import { ButtonHTMLAttributes, forwardRef } from "react";
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "default" | "outline" | "ghost";
   size?: "sm" | "md" | "lg";
+  loading?: boolean;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "default", size = "md", children, ...props }, ref) => {
+  (
+    {
+      className,
+      variant = "default",
+      size = "md",
+      loading = false,
+      disabled,
+      children,
+      ...props
+    },
+    ref
+  ) => {
     return (
       <button
         ref={ref}
+        disabled={disabled || loading}
         className={cn(
           "inline-flex items-center justify-center rounded-full font-semibold transition active:scale-95 disabled:opacity-50 disabled:pointer-events-none",
           variant === "default" && "bg-red-500 text-white hover:bg-red-600",
@@ -24,6 +37,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         )}
         {...props}
       >
+        {loading && (
+          <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+        )}
         {children}
       </button>
     );
