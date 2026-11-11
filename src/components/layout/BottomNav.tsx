@@ -10,14 +10,11 @@ const links = [
   { href: "/live", label: "Live", icon: Radio },
   { href: "/create", label: "Créer", icon: Plus, isCentral: true },
   { href: "/boutique", label: "Boutique", icon: ShoppingBag },
-  { href: "/profil", label: "Profil", icon: User },
+  { href: "/profile", label: "Profil", icon: User },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
-
-  // Cacher sur certaines pages si besoin (ex: player plein écran)
-  // if (pathname.startsWith("/live/") && pathname !== "/live") return null;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-md border-t border-neutral-800 safe-area-bottom">
