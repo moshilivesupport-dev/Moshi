@@ -1,11 +1,19 @@
+import { notFound } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { LivePlayer } from "@/components/live/LivePlayer";
+
+interface LivePageProps {
+  params: Promise<{ id: string }>;
+}
+
 export default async function LiveStreamPage({ params }: LivePageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // Récupération du live
   const { data: stream, error } = await supabase
     .from("live_streams")
-    .select(`
+    .select(
+      `
       id,
       title,
       seller_id,
@@ -18,7 +26,8 @@ export default async function LiveStreamPage({ params }: LivePageProps) {
         avatar_url,
         followers_count
       )
-    `)
+    `
+    )
     .eq("id", id)
     .single();
 
@@ -27,12 +36,19 @@ export default async function LiveStreamPage({ params }: LivePageProps) {
     notFound();
   }
 
-  const [{ data: { user } }, { data: gifts }] = await Promise.all([
+  const [
+    {
+      data: { user },
+    },
+    { data: gifts },
+  ] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("gifts").select("*").eq("is_active", true)
+    supabase.from("gifts").select("*").eq("is_active", true),
   ]);
 
-  const sellerInfo = Array.isArray(stream.profiles) ? stream.profiles[0] : stream.profiles;
+  const sellerInfo = Array.isArray(stream.profiles)
+    ? stream.profiles[0]
+    : stream.profiles;
 
   return (
     <main className="min-h-[100dvh] bg-black text-white">
