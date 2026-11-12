@@ -12,8 +12,8 @@ export default async function LivePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Récupérer tous les lives en cours
-  const { data: lives } = await supabase
+  // 1. Récupérer tous les lives en cours
+  const { data: rawLives } = await supabase
     .from("live_sessions")
     .select(`
       id,
@@ -33,6 +33,12 @@ export default async function LivePage() {
     `)
     .eq("status", "live")
     .order("viewers_count", { ascending: false });
+
+  // 2. Formater les données : convertir le tableau 'profiles' en objet unique pour correspondre à l'interface LiveSession
+  const lives = rawLives?.map((live: any) => ({
+    ...live,
+    profiles: live.profiles?.[0] || null,
+  })) || [];
 
   // Vérifier si l'utilisateur est connecté
   let isSeller = false;
@@ -70,7 +76,7 @@ export default async function LivePage() {
 
       {/* Contenu */}
       <main className="px-4 py-6">
-        {!lives || lives.length === 0 ? (
+        {lives.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-20 h-20 rounded-full bg-neutral-900 flex items-center justify-center mb-4">
               <Radio className="w-10 h-10 text-neutral-600" />
