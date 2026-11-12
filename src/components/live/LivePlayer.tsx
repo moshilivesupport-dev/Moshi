@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-// ✅ CORRECTION : LiveChat est un export par défaut, donc pas d'accolades
 import LiveChat from "./LiveChat";
 import { GiftOverlay, GiftEvent } from "./GiftOverlay";
 import { FollowButton } from "./FollowButton";
@@ -13,14 +12,14 @@ interface LivePlayerProps {
   hostId: string;
   viewerCount: number;
   isHost?: boolean;
+  currentUserId?: string;
 }
 
-export default function LivePlayer({ sessionId, hostId, viewerCount, isHost = false }: LivePlayerProps) {
+export default function LivePlayer({ sessionId, hostId, viewerCount, isHost = false, currentUserId }: LivePlayerProps) {
   const [giftEvent, setGiftEvent] = useState<GiftEvent | null>(null);
 
   const handleGift = (event: GiftEvent) => {
     setGiftEvent(event);
-    // L'animation se gère dans GiftOverlay
     setTimeout(() => setGiftEvent(null), 3000);
   };
 
@@ -58,7 +57,7 @@ export default function LivePlayer({ sessionId, hostId, viewerCount, isHost = fa
         </div>
         
         {!isHost && (
-          <FollowButton targetUserId={hostId} variant="live" />
+          <FollowButton targetUserId={hostId} currentUserId={currentUserId} size="sm" />
         )}
       </div>
 
