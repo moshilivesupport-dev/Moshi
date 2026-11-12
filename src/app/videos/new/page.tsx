@@ -13,15 +13,15 @@ export default async function NewVideoPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login?next=/videos/new");
+    redirect("/auth/login?next=/videos/new");
   }
 
   return (
-    <div className="min-h-[100dvh] bg-black text-white">
+    <div className="min-h-[100dvh] bg-black text-white pb-24">
       {/* Header */}
       <header className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-black/80 backdrop-blur border-b border-neutral-800">
         <Link
-          href="/videos"
+          href="/"
           className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-neutral-800 transition"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -29,13 +29,14 @@ export default async function NewVideoPage() {
         <h1 className="text-lg font-semibold">Nouvelle vidéo</h1>
       </header>
 
-      <main className="px-4 py-6">
-        <p className="text-sm text-neutral-400 mb-6 text-center">
-          Maximum <span className="text-white font-medium">45 secondes</span> ·
-          MP4, WebM ou MOV
-        </p>
+      <main className="px-4 py-6 max-w-lg mx-auto">
+        <div className="mb-6 text-center">
+          <p className="text-sm text-neutral-400">
+            Partagez un moment avec la communauté Moshi
+          </p>
+        </div>
 
-        <VideoUploadForm />
+        <VideoUploadForm userId={user.id} />
       </main>
     </div>
   );
