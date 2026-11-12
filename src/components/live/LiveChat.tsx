@@ -2,85 +2,49 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
-import { Send } from "lucide-react";
 
-interface Message {
+interface ChatMessage {
   id: string;
-  user_id: string;
-  content: string;
-  username?: string;
-  avatar_url?: string;
-  is_subscriber?: boolean;
+  user_name: string;
+  user_avatar: string | null;
+  message: string;
   created_at: string;
 }
 
-interface Props {
-  streamId: string;
-  currentUserId?: string;
+interface LiveChatProps {
+  sessionId: string;
 }
 
-// Simple auto-translation stub (replace with real API)
-const translateStub = (text: string, _target: string) => text;
-
-export function LiveChat({ streamId, currentUserId }: Props) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+export default function LiveChat({ sessionId }: LiveChatProps) {
   const supabase = createClient();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // 1. Charger l'historique récent
   useEffect(() => {
-    // Load recent messages
-    supabase
-      .from("live_messages")
-      .select("*, profiles(username, avatar_url)")
-      .eq("stream_id", streamId)
-      .order("created_at", { ascending: true })
-      .limit(50)
-      .then(({ data }) => {
-        if (data) {
-          setMessages(
-            data.map((m: any) => ({
-              id: m.id,
-              user_id: m.user_id,
-              content: m.content,
-              username: m.profiles?.username,
-              avatar_url: m.profiles?.avatar_url,
-              created_at: m.created_at,
-            }))
-          );
-        }
-      });
+    const loadMessages = async () => {
+      const { data } = await supabase
+        .from("live_messages")
+        .select("id, user_name, user_avatar, message, created_at")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: true })
+        .limit(50);
+      
+      if (data) setMessages(data);
+    };
+    loadMessages();
+  }, [sessionId, supabase]);
 
-    // Realtime subscription
+  // 2. Écouter les nouveaux messages en temps réel
+  useEffect(() => {
     const channel = supabase
-      .channel(`live-chat-${streamId}`)
+      .channel(`live-chat-${sessionId}`)
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "live_messages",
-          filter: `stream_id=eq.${streamId}`,
-        },
-        async (payload) => {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("username, avatar_url")
-            .eq("id", payload.new.user_id)
-            .single();
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: payload.new.id,
-              user_id: payload.new.user_id,
-              content: payload.new.content,
-              username: profile?.username,
-              avatar_url: profile?.avatar_url,
-              created_at: payload.new.created_at,
-            },
-          ]);
+        { event: "INSERT", schema: "public", table: "live_messages", filter: `session_id=eq.${sessionId}` },
+        (payload) => {
+          setMessages((prev) => [...prev.slice(-49), payload.new as ChatMessage]); // Garde les 50 derniers
         }
       )
       .subscribe();
@@ -88,78 +52,83 @@ export function LiveChat({ streamId, currentUserId }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [streamId]);
+  }, [sessionId, supabase]);
 
+  // 3. Scroll automatique vers le bas
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const send = async () => {
-    if (!input.trim() || !currentUserId || sending) return;
-    setSending(true);
-    try {
-      await supabase.from("live_messages").insert({
-        stream_id: streamId,
-        user_id: currentUserId,
-        content: input.trim(),
-      });
-      setInput("");
-    } finally {
-      setSending(false);
-    }
+  // 4. Envoyer un message
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("username, avatar_url")
+      .eq("id", user.id)
+      .single();
+
+    await supabase.from("live_messages").insert({
+      session_id: sessionId,
+      user_id: user.id,
+      user_name: profile?.username || "Utilisateur",
+      user_avatar: profile?.avatar_url,
+      message: newMessage.trim(),
+    });
+
+    setNewMessage("");
   };
 
   return (
-    <div className="flex flex-col h-full bg-black/40 backdrop-blur-md rounded-2xl overflow-hidden border border-white/5">
-      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">Discussion Live</h3>
-        <span className="text-xs text-muted">{messages.length} messages</span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        {messages.map((m) => (
-          <div key={m.id} className="flex items-start gap-2">
-            <div className="w-7 h-7 rounded-full bg-anthracite overflow-hidden flex-shrink-0">
-              {m.avatar_url ? (
-                <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs text-muted">
-                  {(m.username || "?")[0].toUpperCase()}
-                </div>
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className={cn("text-xs font-semibold", m.is_subscriber ? "text-champagne" : "text-coral")}>
-                  {m.username || "Anonyme"}
-                </span>
-                {m.is_subscriber && (
-                  <span className="text-[10px] bg-gold/20 text-gold px-1.5 py-0.5 rounded-full">Abonné</span>
+    <div className="absolute bottom-20 left-4 right-20 z-30 flex flex-col justify-end h-64 pointer-events-none">
+      {/* Zone des messages (dégradé pour lisibilité) */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide mask-image-gradient pointer-events-auto">
+        <div className="flex flex-col gap-2 pb-2">
+          {messages.map((msg) => (
+            <div key={msg.id} className="flex items-start gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="w-6 h-6 rounded-full bg-neutral-700 overflow-hidden flex-shrink-0">
+                {msg.user_avatar ? (
+                  <img src={msg.user_avatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[10px] font-bold">
+                    {msg.user_name.charAt(0).toUpperCase()}
+                  </div>
                 )}
               </div>
-              <p className="text-sm text-white/90 break-words">{m.content}</p>
+              <div className="bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-2xl rounded-tl-none">
+                <span className="text-xs font-bold text-red-400 mr-1.5">{msg.user_name}</span>
+                <span className="text-xs text-white">{msg.message}</span>
+              </div>
             </div>
-          </div>
-        ))}
-        <div ref={bottomRef} />
+          ))}
+          <div ref={chatEndRef} />
+        </div>
       </div>
 
-      <div className="p-3 border-t border-white/5 flex gap-2">
+      {/* Input d'envoi */}
+      <form onSubmit={sendMessage} className="mt-2 flex items-center gap-2 pointer-events-auto">
         <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Écrire un message..."
-          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted focus:outline-none focus:border-coral"
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder="Dire quelque chose..."
+          className="flex-1 bg-black/50 backdrop-blur-md border border-white/10 rounded-full px-4 py-2 text-sm text-white placeholder-neutral-400 focus:outline-none focus:border-red-500/50 transition-colors"
         />
         <button
-          onClick={send}
-          disabled={!input.trim() || sending}
-          className="w-10 h-10 rounded-xl bg-coral flex items-center justify-center disabled:opacity-40"
+          type="submit"
+          disabled={!newMessage.trim()}
+          className="w-9 h-9 rounded-full bg-red-500 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition"
         >
-          <Send className="w-4 h-4 text-white" />
+          <svg className="w-4 h-4 text-white fill-current" viewBox="0 0 24 24">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+          </svg>
         </button>
-      </div>
+      </form>
     </div>
   );
 }
