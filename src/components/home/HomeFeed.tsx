@@ -13,13 +13,19 @@ import {
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 
-type VideoRow = {
+// 1. On définit et on exporte le type FeedItem pour que FollowingFeed puisse l'utiliser
+export type FeedItem = {
   id: string;
-  url: string;
-  caption: string | null;
-  like_count: number | null;
-  comment_count: number | null;
-  view_count: number | null;
+  type?: "video" | "post";
+  title?: string | null;
+  description?: string | null;
+  media_url?: string | null; // ou video_url selon votre BDD
+  thumbnail_url?: string | null;
+  duration?: number | null;
+  views_count?: number | null;
+  likes_count?: number | null;
+  comments_count?: number | null;
+  created_at?: string;
   user_id: string;
   profiles?: {
     id: string;
@@ -29,16 +35,25 @@ type VideoRow = {
   } | null;
 };
 
-export default function HomeFeed() {
+interface HomeFeedProps {
+  initialItems?: FeedItem[];
+}
+
+export default function HomeFeed({ initialItems }: HomeFeedProps) {
   const supabase = createClient();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [videos, setVideos] = useState<VideoRow[]>([]);
+  
+  // On initialise avec initialItems s'il y en a, sinon un tableau vide
+  const [videos, setVideos] = useState<FeedItem[]>(initialItems || []);
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialItems ? false : true);
 
+  // Si pas de données initiales, on va les chercher
   useEffect(() => {
+    if (initialItems && initialItems.length > 0) return;
+
     (async () => {
       const { data } = await supabase
         .from("videos")
@@ -54,12 +69,16 @@ export default function HomeFeed() {
 
       const rows = (data || []).map((v: any) => ({
         ...v,
+        media_url: v.url, // Mapping pour correspondre au type FeedItem
+        views_count: v.view_count,
+        likes_count: v.like_count,
+        comments_count: v.comment_count,
         profiles: Array.isArray(v.profiles) ? v.profiles[0] : v.profiles,
       }));
       setVideos(rows);
       setLoading(false);
     })();
-  }, [supabase]);
+  }, [supabase, initialItems]);
 
   useEffect(() => {
     const root = containerRef.current;
@@ -89,7 +108,7 @@ export default function HomeFeed() {
           v.id === videoId
             ? {
                 ...v,
-                like_count: (v.like_count || 0) + (liked[videoId] ? -1 : 1),
+                likes_count: (v.likes_count || 0) + (liked[videoId] ? -1 : 1),
               }
             : v
         )
@@ -127,6 +146,8 @@ export default function HomeFeed() {
         const isActive = index === active;
         const author = video.profiles;
         const name = author?.username || author?.full_name || "user";
+        // Utilisation de media_url qui est plus générique dans notre nouveau type
+        const videoUrl = video.media_url || video.thumbnail_url; 
 
         return (
           <section
@@ -134,24 +155,26 @@ export default function HomeFeed() {
             data-index={index}
             className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black"
           >
-            <video
-              src={video.url}
-              className="absolute inset-0 w-full h-full object-cover"
-              playsInline
-              loop
-              muted={muted}
-              autoPlay={isActive}
-              poster={undefined}
-              ref={(el) => {
-                if (!el) return;
-                if (isActive) {
-                  el.play().catch(() => {});
-                } else {
-                  el.pause();
-                  el.currentTime = 0;
-                }
-              }}
-            />
+            {videoUrl && (
+              <video
+                src={videoUrl}
+                className="absolute inset-0 w-full h-full object-cover"
+                playsInline
+                loop
+                muted={muted}
+                autoPlay={isActive}
+                poster={undefined}
+                ref={(el) => {
+                  if (!el) return;
+                  if (isActive) {
+                    el.play().catch(() => {});
+                  } else {
+                    el.pause();
+                    el.currentTime = 0;
+                  }
+                }}
+              />
+            )}
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
 
@@ -187,7 +210,7 @@ export default function HomeFeed() {
                   )}
                 />
                 <span className="text-xs text-white font-semibold">
-                  {formatNumber(video.like_count || 0)}
+                  {formatNumber(video.likes_count || 0)}
                 </span>
               </button>
 
@@ -197,7 +220,7 @@ export default function HomeFeed() {
               >
                 <MessageCircle className="w-8 h-8 text-white" />
                 <span className="text-xs text-white font-semibold">
-                  {formatNumber(video.comment_count || 0)}
+                  {formatNumber(video.comments_count || 0)}
                 </span>
               </Link>
 
@@ -227,9 +250,9 @@ export default function HomeFeed() {
               >
                 @{name}
               </Link>
-              {video.caption && (
+              {(video.description || video.title) && (
                 <p className="mt-1 text-sm text-white/90 line-clamp-3">
-                  {video.caption}
+                  {video.description || video.title}
                 </p>
               )}
             </div>
