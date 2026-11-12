@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { Play, Grid3X3, Heart, Lock, Settings, Share2, UserPlus } from "lucide-react";
+import { Play, Grid3X3, Heart, Lock, Settings, Share2 } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
+import FollowButton from "@/components/social/FollowButton";
 
 export type ProfileData = {
   id: string;
@@ -104,6 +105,7 @@ export default function ProfileView({
           <p className="text-sm text-center text-neutral-300 mb-6 max-w-xs whitespace-pre-wrap">{profile.bio}</p>
         )}
 
+        {/* ✅ Boutons d'action avec FollowButton fonctionnel */}
         <div className="flex items-center gap-3 w-full max-w-xs">
           {isOwnProfile ? (
             <Link 
@@ -113,9 +115,10 @@ export default function ProfileView({
               Modifier le profil
             </Link>
           ) : (
-            <button className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition">
-              <UserPlus className="w-4 h-4" /> S'abonner
-            </button>
+            <FollowButton 
+              targetUserId={profile.id} 
+              variant="profile" 
+            />
           )}
           <button className="w-10 h-10 bg-neutral-800 hover:bg-neutral-700 rounded-lg flex items-center justify-center transition">
             <Share2 className="w-5 h-5" />
