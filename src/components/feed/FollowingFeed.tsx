@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+// L'import est maintenant valide grâce à notre modification de HomeFeed.tsx
 import HomeFeed, { type FeedItem } from "@/components/home/HomeFeed";
 import Link from "next/link";
 
@@ -58,7 +59,7 @@ export default function FollowingFeed() {
         type: "video" as const,
         title: v.title,
         description: v.description,
-        media_url: v.video_url,
+        media_url: v.video_url, // Correspond au champ media_url de notre type FeedItem
         thumbnail_url: v.thumbnail_url,
         duration: v.duration,
         views_count: v.views_count,
