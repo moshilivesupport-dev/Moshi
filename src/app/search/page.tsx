@@ -1,166 +1,149 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Search as SearchIcon } from "lucide-react";
-import Link from "next/link";
-import FollowButton from "@/components/social/FollowButton";
-import { formatNumber } from "@/lib/utils";
+import { Search, X } from "lucide-react";
+import CreatorResult from "@/components/search/CreatorResult";
+import ProductResult from "@/components/search/ProductResult";
+import VideoResult from "@/components/search/VideoResult";
 
-type ProfileResult = {
-  id: string;
-  username: string | null;
-  full_name: string | null;
-  avatar_url: string | null;
-  role: string;
-  followers_count: number;
-};
-
-type VideoResult = {
-  id: string;
-  title: string | null;
-  thumbnail_url: string | null;
-  views_count: number;
-  user_id: string;
-};
+type SearchTab = "creators" | "products" | "videos";
 
 export default function SearchPage() {
   const supabase = createClient();
   const [query, setQuery] = useState("");
-  const [profiles, setProfiles] = useState<ProfileResult[]>([]);
-  const [videos, setVideos] = useState<VideoResult[]>([]);
+  const [activeTab, setActiveTab] = useState<SearchTab>("creators");
+  const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
 
-  const search = async (q: string) => {
-    const term = q.trim();
-    if (!term) {
-      setProfiles([]);
-      setVideos([]);
-      setSearched(false);
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
       return;
     }
 
-    setLoading(true);
-    setSearched(true);
+    const searchTimeout = setTimeout(async () => {
+      setLoading(true);
 
-    const [pRes, vRes] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, username, full_name, avatar_url, role, followers_count")
-        .or(`username.ilike.%${term}%,full_name.ilike.%${term}%`)
-        .limit(20),
-      supabase
-        .from("videos")
-        .select("id, title, thumbnail_url, views_count, user_id")
-        .ilike("title", `%${term}%`)
-        .eq("is_public", true)
-        .order("views_count", { ascending: false })
-        .limit(20),
-    ]);
+      try {
+        let data: any[] = [];
 
-    setProfiles((pRes.data as ProfileResult[]) || []);
-    setVideos((vRes.data as VideoResult[]) || []);
-    setLoading(false);
-  };
+        if (activeTab === "creators") {
+          const { data: creators } = await supabase
+            .from("profiles")
+            .select("id, username, full_name, avatar_url, bio")
+            .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
+            .limit(20);
+          data = creators || [];
+        } else if (activeTab === "products") {
+          const { data: products } = await supabase
+            .from("products")
+            .select("id, name, price, image_url, seller_id, profiles:seller_id(username, avatar_url)")
+            .ilike("name", `%${query}%`)
+            .eq("status", "active")
+            .limit(20);
+          data = products || [];
+        } else if (activeTab === "videos") {
+          const { data: videos } = await supabase
+            .from("videos")
+            .select(`
+              id, url, caption, view_count, like_count, user_id,
+              profiles:user_id (username, avatar_url)
+            `)
+            .ilike("caption", `%${query}%`)
+            .eq("status", "published")
+            .order("view_count", { ascending: false })
+            .limit(20);
+          data = videos || [];
+        }
+
+        setResults(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }, 300); // Debounce 300ms
+
+    return () => clearTimeout(searchTimeout);
+  }, [query, activeTab, supabase]);
 
   return (
-    <div className="min-h-[100dvh] bg-black text-white pb-24">
-      {/* Barre de recherche */}
-      <div className="sticky top-0 z-20 bg-black/95 backdrop-blur px-4 pt-4 pb-3 border-b border-neutral-800">
+    <div className="min-h-[100dvh] bg-black text-white pb-20">
+      {/* Header avec recherche */}
+      <header className="sticky top-0 z-30 bg-black/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3">
         <div className="relative">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" />
           <input
-            type="search"
+            type="text"
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              search(e.target.value);
-            }}
-            placeholder="Rechercher des créateurs, vidéos..."
-            className="w-full bg-neutral-900 border border-neutral-700 rounded-full pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-red-500/50"
-            autoFocus
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher des créateurs, produits, vidéos..."
+            className="w-full bg-neutral-900 border border-neutral-800 rounded-full pl-10 pr-10 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-red-500/50 transition"
           />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-neutral-700 flex items-center justify-center"
+            >
+              <X className="w-3 h-3 text-white" />
+            </button>
+          )}
         </div>
-      </div>
 
-      <div className="px-4 py-4 space-y-8">
-        {loading && (
+        {/* Onglets */}
+        <div className="flex gap-4 mt-3 border-b border-neutral-800">
+          {(["creators", "products", "videos"] as SearchTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`pb-2 text-sm font-semibold transition-colors relative ${
+                activeTab === tab ? "text-white" : "text-neutral-500"
+              }`}
+            >
+              {tab === "creators" ? "Créateurs" : tab === "products" ? "Produits" : "Vidéos"}
+              {activeTab === tab && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-500 rounded-full" />
+              )}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {/* Résultats */}
+      <main className="px-4 py-4">
+        {!query.trim() ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Search className="w-16 h-16 text-neutral-700 mb-4" />
+            <p className="text-neutral-400 text-sm">
+              Recherchez des créateurs, produits ou vidéos
+            </p>
+          </div>
+        ) : loading ? (
           <div className="flex justify-center py-10">
-            <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          </div>
+        ) : results.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <p className="text-neutral-400 text-sm">Aucun résultat pour "{query}"</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {activeTab === "creators" &&
+              results.map((creator) => (
+                <CreatorResult key={creator.id} creator={creator} />
+              ))}
+            {activeTab === "products" &&
+              results.map((product) => (
+                <ProductResult key={product.id} product={product} />
+              ))}
+            {activeTab === "videos" &&
+              results.map((video) => (
+                <VideoResult key={video.id} video={video} />
+              ))}
           </div>
         )}
-
-        {!loading && searched && profiles.length === 0 && videos.length === 0 && (
-          <p className="text-center text-neutral-500 py-10">Aucun résultat</p>
-        )}
-
-        {/* Créateurs */}
-        {profiles.length > 0 && (
-          <section>
-            <h2 className="text-sm font-semibold text-neutral-400 mb-3">Créateurs</h2>
-            <div className="space-y-3">
-              {profiles.map((p) => (
-                <div key={p.id} className="flex items-center gap-3">
-                  <Link href={`/profil/${p.id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-12 h-12 rounded-full overflow-hidden bg-neutral-800 shrink-0">
-                      {p.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-lg font-bold">
-                          {(p.full_name || p.username || "?").charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold truncate">
-                        {p.full_name || p.username}
-                      </p>
-                      <p className="text-xs text-neutral-500 truncate">
-                        @{p.username} · {formatNumber(p.followers_count || 0)} abonnés
-                      </p>
-                    </div>
-                  </Link>
-                  <FollowButton targetUserId={p.id} size="sm" />
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Vidéos */}
-        {videos.length > 0 && (
-          <section>
-            <h2 className="text-sm font-semibold text-neutral-400 mb-3">Vidéos</h2>
-            <div className="grid grid-cols-3 gap-1">
-              {videos.map((v) => (
-                <Link
-                  key={v.id}
-                  href={`/videos/${v.id}`}
-                  className="aspect-[9/16] bg-neutral-900 relative overflow-hidden"
-                >
-                  {v.thumbnail_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={v.thumbnail_url}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-neutral-600 text-xs">
-                      Vidéo
-                    </div>
-                  )}
-                  <span className="absolute bottom-1 left-1 text-[10px] text-white bg-black/50 px-1 rounded">
-                    {formatNumber(v.views_count)}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
+      </main>
     </div>
   );
 }
