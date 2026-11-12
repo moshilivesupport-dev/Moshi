@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ProfileView from "@/components/profile/ProfileView";
-import type { ProfileData } from "@/components/profile/ProfileView";
+import type ProfileData from "@/components/profile/ProfileView";
 
 export const dynamic = "force-dynamic";
 
