@@ -10,14 +10,29 @@ export default async function AdminContent() {
   // Récupérer les dernières vidéos
   const { data: videos } = await supabase
     .from("videos")
-    .select("id, user_id, caption, view_count, created_at, profiles:user_id(username)")
+    .select(`
+      id, 
+      user_id, 
+      caption, 
+      view_count, 
+      created_at, 
+      profiles:user_id (username)
+    `)
     .order("created_at", { ascending: false })
     .limit(50);
 
   // Récupérer les lives récents
   const { data: lives } = await supabase
     .from("live_sessions")
-    .select("id, host_id, title, status, viewers_count, created_at, profiles:host_id(username)")
+    .select(`
+      id, 
+      host_id, 
+      title, 
+      status, 
+      viewers_count, 
+      created_at, 
+      profiles:host_id (username)
+    `)
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -46,24 +61,29 @@ export default async function AdminContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800">
-              {videos?.map((video) => (
-                <tr key={video.id} className="hover:bg-neutral-800/50 transition">
-                  <td className="px-6 py-4 text-white">@{video.profiles?.username || "Inconnu"}</td>
-                  <td className="px-6 py-4 text-neutral-300 max-w-xs truncate">{video.caption || "Aucune description"}</td>
-                  <td className="px-6 py-4 text-neutral-400">{video.view_count || 0}</td>
-                  <td className="px-6 py-4 text-neutral-400">{new Date(video.created_at).toLocaleDateString("fr-FR")}</td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Link href={`/videos/${video.id}`} className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition" title="Voir">
-                        <Eye className="w-4 h-4" />
-                      </Link>
-                      <button className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition" title="Supprimer">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {videos?.map((video: any) => {
+                // ✅ CORRECTION : profiles est un tableau, on prend le premier élément [0]
+                const authorUsername = video.profiles?.[0]?.username || "Inconnu";
+                
+                return (
+                  <tr key={video.id} className="hover:bg-neutral-800/50 transition">
+                    <td className="px-6 py-4 text-white">@{authorUsername}</td>
+                    <td className="px-6 py-4 text-neutral-300 max-w-xs truncate">{video.caption || "Aucune description"}</td>
+                    <td className="px-6 py-4 text-neutral-400">{video.view_count || 0}</td>
+                    <td className="px-6 py-4 text-neutral-400">{new Date(video.created_at).toLocaleDateString("fr-FR")}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link href={`/videos/${video.id}`} className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition" title="Voir">
+                          <Eye className="w-4 h-4" />
+                        </Link>
+                        <button className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition" title="Supprimer">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {(!videos || videos.length === 0) && (
                 <tr>
                   <td colSpan={5} className="px-6 py-8 text-center text-neutral-500">
@@ -94,32 +114,37 @@ export default async function AdminContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800">
-              {lives?.map((live) => (
-                <tr key={live.id} className="hover:bg-neutral-800/50 transition">
-                  <td className="px-6 py-4 text-white">@{live.profiles?.username || "Inconnu"}</td>
-                  <td className="px-6 py-4 text-neutral-300 max-w-xs truncate">{live.title || "Sans titre"}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                      live.status === 'live' ? 'bg-red-500/20 text-red-500 animate-pulse' : 'bg-neutral-700 text-neutral-300'
-                    }`}>
-                      {live.status === 'live' ? 'EN DIRECT' : 'TERMINÉ'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-neutral-400">{live.viewers_count || 0}</td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {live.status === 'live' && (
-                        <Link href={`/live/${live.id}`} className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition" title="Rejoindre">
-                          <Eye className="w-4 h-4" />
-                        </Link>
-                      )}
-                      <button className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition" title="Supprimer la session">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {lives?.map((live: any) => {
+                // ✅ CORRECTION : profiles est un tableau, on prend le premier élément [0]
+                const hostUsername = live.profiles?.[0]?.username || "Inconnu";
+                
+                return (
+                  <tr key={live.id} className="hover:bg-neutral-800/50 transition">
+                    <td className="px-6 py-4 text-white">@{hostUsername}</td>
+                    <td className="px-6 py-4 text-neutral-300 max-w-xs truncate">{live.title || "Sans titre"}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                        live.status === 'live' ? 'bg-red-500/20 text-red-500 animate-pulse' : 'bg-neutral-700 text-neutral-300'
+                      }`}>
+                        {live.status === 'live' ? 'EN DIRECT' : 'TERMINÉ'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-neutral-400">{live.viewers_count || 0}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {live.status === 'live' && (
+                          <Link href={`/live/${live.id}`} className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition" title="Rejoindre">
+                            <Eye className="w-4 h-4" />
+                          </Link>
+                        )}
+                        <button className="p-2 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-red-500 transition" title="Supprimer la session">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {(!lives || lives.length === 0) && (
                 <tr>
                   <td colSpan={5} className="px-6 py-8 text-center text-neutral-500">
