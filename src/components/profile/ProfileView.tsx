@@ -1,17 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { 
-  Settings, 
-  Share2, 
-  UserPlus, 
-  Grid3X3, 
-  Heart, 
-  Lock,
-  Play
-} from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { Play, Grid3X3, Heart, Lock, Settings, Share2, UserPlus } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
 
 export type ProfileData = {
@@ -24,35 +16,31 @@ export type ProfileData = {
   created_at: string;
 };
 
-interface ProfileViewProps {
+export default function ProfileView({
+  profile,
+  isOwnProfile,
+  stats,
+}: {
   profile: ProfileData;
   isOwnProfile: boolean;
-  stats: { 
-    videos_count: number; 
-    followers_count: number; 
-    following_count: number;
-    likes_count?: number;
-  };
-}
-
-export default function ProfileView({ profile, isOwnProfile, stats }: ProfileViewProps) {
+  stats: { videos_count: number; followers_count: number; following_count: number };
+}) {
   const [activeTab, setActiveTab] = useState<"videos" | "favorites">("videos");
-  const [videos, setVideos] = useState<any[]>([]);
+  const [videos, setVideos] = useState<{ id: string; url: string; view_count: number | null; like_count: number | null }[]>([]);
   const supabase = createClient();
 
   useEffect(() => {
     if (activeTab === "videos") {
-      const loadVideos = async () => {
+      (async () => {
         const { data } = await supabase
           .from("videos")
-          .select("id, url, view_count, like_count, created_at")
+          .select("id, url, view_count, like_count")
           .eq("user_id", profile.id)
           .eq("status", "published")
           .order("created_at", { ascending: false })
-          .limit(50);
+          .limit(60);
         setVideos(data || []);
-      };
-      loadVideos();
+      })();
     }
   }, [profile.id, activeTab, supabase]);
 
@@ -61,13 +49,12 @@ export default function ProfileView({ profile, isOwnProfile, stats }: ProfileVie
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-20">
-      {/* Header avec nom et boutons */}
+      {/* Header avec bouton Paramètres */}
       <header className="sticky top-0 z-30 bg-black/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 flex items-center justify-between">
         <Link href="/" className="font-bold text-lg hover:text-neutral-300 transition">
           {handle || "Profil"}
         </Link>
         <div className="flex items-center gap-2">
-          {/* ✅ Bouton Settings bien visible et cliquable */}
           {isOwnProfile && (
             <Link 
               href="/settings" 
@@ -85,22 +72,19 @@ export default function ProfileView({ profile, isOwnProfile, stats }: ProfileVie
 
       {/* Informations du profil */}
       <div className="px-4 py-6 flex flex-col items-center">
-        {/* Avatar */}
         <div className="w-24 h-24 rounded-full bg-neutral-800 overflow-hidden border-2 border-neutral-700 mb-4">
           {profile.avatar_url ? (
-            <img src={profile.avatar_url} alt={name} className="w-full h-full object-cover" />
+            <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-neutral-500">
               {name.charAt(0).toUpperCase()}
             </div>
           )}
         </div>
-
-        {/* Nom et Username */}
+        
         <h1 className="text-xl font-bold">{name}</h1>
         {handle && <p className="text-sm text-neutral-400 mb-4">{handle}</p>}
-
-        {/* Statistiques */}
+        
         <div className="flex items-center gap-8 mb-4">
           <div className="text-center">
             <p className="text-lg font-bold">{stats.following_count || 0}</p>
@@ -111,16 +95,13 @@ export default function ProfileView({ profile, isOwnProfile, stats }: ProfileVie
             <p className="text-xs text-neutral-400">Abonnés</p>
           </div>
           <div className="text-center">
-            <p className="text-lg font-bold">{formatNumber(stats.likes_count || 0)}</p>
+            <p className="text-lg font-bold">{formatNumber(stats.videos_count || 0)}</p>
             <p className="text-xs text-neutral-400">J'aime</p>
           </div>
         </div>
 
-        {/* Bio */}
         {profile.bio && (
-          <p className="text-sm text-center text-neutral-300 mb-6 max-w-xs whitespace-pre-wrap">
-            {profile.bio}
-          </p>
+          <p className="text-sm text-center text-neutral-300 mb-6 max-w-xs whitespace-pre-wrap">{profile.bio}</p>
         )}
 
         {/* Boutons d'action */}
@@ -148,9 +129,7 @@ export default function ProfileView({ profile, isOwnProfile, stats }: ProfileVie
         <button
           onClick={() => setActiveTab("videos")}
           className={`flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold transition border-b-2 ${
-            activeTab === "videos" 
-              ? "text-white border-white" 
-              : "text-neutral-500 border-transparent hover:text-neutral-300"
+            activeTab === "videos" ? "text-white border-white" : "text-neutral-500 border-transparent hover:text-neutral-300"
           }`}
         >
           <Grid3X3 className="w-4 h-4" /> Vidéos
@@ -158,9 +137,7 @@ export default function ProfileView({ profile, isOwnProfile, stats }: ProfileVie
         <button
           onClick={() => setActiveTab("favorites")}
           className={`flex-1 py-3 flex items-center justify-center gap-2 text-sm font-semibold transition border-b-2 ${
-            activeTab === "favorites" 
-              ? "text-white border-white" 
-              : "text-neutral-500 border-transparent hover:text-neutral-300"
+            activeTab === "favorites" ? "text-white border-white" : "text-neutral-500 border-transparent hover:text-neutral-300"
           }`}
         >
           <Heart className="w-4 h-4" /> Favoris
@@ -178,22 +155,22 @@ export default function ProfileView({ profile, isOwnProfile, stats }: ProfileVie
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-0.5">
-                {videos.map((video) => (
-                  <Link 
-                    key={video.id} 
-                    href={`/videos/${video.id}`}
+                {videos.map((v) => (
+                  <Link
+                    key={v.id}
+                    href={`/videos/${v.id}`}
                     className="relative aspect-[3/4] bg-neutral-900 group overflow-hidden"
                   >
-                    <video 
-                      src={video.url} 
-                      className="w-full h-full object-cover group-hover:opacity-80 transition"
+                    <video
+                      src={v.url}
                       muted
                       playsInline
                       preload="metadata"
+                      className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
                     />
-                    <div className="absolute bottom-1 left-1 flex items-center gap-1 text-white text-[10px] font-semibold drop-shadow-md">
+                    <div className="absolute bottom-1 left-1 flex items-center gap-0.5 text-white text-[10px] font-semibold drop-shadow">
                       <Play className="w-3 h-3 fill-white" />
-                      {formatNumber(video.view_count || 0)}
+                      {formatNumber(v.view_count || 0)}
                     </div>
                   </Link>
                 ))}
