@@ -3,52 +3,60 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { UserPlus, UserCheck, Loader2 } from "lucide-react";
+import { Plus, Check, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface FollowButtonProps {
   targetUserId: string;
   currentUserId?: string;
   variant?: "default" | "profile" | "small";
-  onFollowChange?: (isFollowing: boolean) => void; // ✅ NOUVEAU
+  onFollowChange?: (isFollowing: boolean) => void;
 }
 
-export default function FollowButton({ targetUserId, currentUserId, variant = "profile", onFollowChange }: FollowButtonProps) {
+export default function FollowButton({
+  targetUserId,
+  currentUserId,
+  variant = "profile",
+  onFollowChange,
+}: FollowButtonProps) {
   const supabase = createClient();
   const router = useRouter();
-  
+
   const [isFollowing, setIsFollowing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [currentUser, setCurrentUser] = useState<any>(currentUserId || null);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(
+    currentUserId ? { id: currentUserId } : null
+  );
 
   useEffect(() => {
-    if (!currentUser) {
-      const getUser = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        setCurrentUser(user);
-      };
-      getUser();
+    if (currentUserId) {
+      setCurrentUser({ id: currentUserId });
+      return;
     }
-  }, [currentUser, supabase]);
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUser(user ? { id: user.id } : null);
+    })();
+  }, [currentUserId, supabase]);
 
   useEffect(() => {
     if (!currentUser || currentUser.id === targetUserId) {
       setChecking(false);
       return;
     }
-
-    const checkFollow = async () => {
+    (async () => {
       const { data } = await supabase
         .from("follows")
         .select("id")
         .eq("follower_id", currentUser.id)
         .eq("following_id", targetUserId)
         .maybeSingle();
-      
       setIsFollowing(!!data);
       setChecking(false);
-    };
-    checkFollow();
+    })();
   }, [currentUser, targetUserId, supabase]);
 
   const handleFollow = async () => {
@@ -56,74 +64,85 @@ export default function FollowButton({ targetUserId, currentUserId, variant = "p
       router.push("/auth/login");
       return;
     }
-
-    if (currentUser.id === targetUserId) {
-      alert("Vous ne pouvez pas vous abonner à vous-même !");
-      return;
-    }
+    if (currentUser.id === targetUserId) return;
 
     setLoading(true);
-
     try {
       if (isFollowing) {
-        await supabase
+        const { error } = await supabase
           .from("follows")
           .delete()
           .eq("follower_id", currentUser.id)
           .eq("following_id", targetUserId);
+        if (error) throw error;
         setIsFollowing(false);
-        onFollowChange?.(false); // ✅ Notifie le parent
+        onFollowChange?.(false);
       } else {
-        await supabase
-          .from("follows")
-          .insert({
-            follower_id: currentUser.id,
-            following_id: targetUserId,
-          });
+        const { error } = await supabase.from("follows").insert({
+          follower_id: currentUser.id,
+          following_id: targetUserId,
+        });
+        if (error) throw error;
         setIsFollowing(true);
-        onFollowChange?.(true); // ✅ Notifie le parent
+        onFollowChange?.(true);
       }
     } catch (err) {
-      console.error("Erreur follow:", err);
-      alert("Une erreur est survenue");
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
+  if (checking) return null;
   if (currentUser?.id === targetUserId) return null;
 
-  if (!currentUser) {
+  // Variante feed TikTok : petit + rouge sous l'avatar
+  if (variant === "small") {
     return (
-      <button onClick={handleFollow} className={`flex items-center justify-center gap-2 font-semibold transition active:scale-95 bg-red-500 hover:bg-red-600 text-white ${variant === "small" ? "px-3 py-1.5 rounded-full text-xs" : variant === "profile" ? "py-2.5 rounded-lg text-sm" : "px-4 py-2 rounded-full text-sm"}`}>
-        <UserPlus className={variant === "small" ? "w-3 h-3" : "w-4 h-4"} />
-        S'abonner
-      </button>
-    );
-  }
-
-  if (checking) {
-    return (
-      <button disabled className={`flex items-center justify-center gap-2 font-semibold bg-neutral-700 text-neutral-400 ${variant === "small" ? "px-3 py-1.5 rounded-full text-xs" : variant === "profile" ? "py-2.5 rounded-lg text-sm" : "px-4 py-2 rounded-full text-sm"}`}>
-        <Loader2 className="w-4 h-4 animate-spin" />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void handleFollow();
+        }}
+        disabled={loading}
+        className={cn(
+          "w-5 h-5 rounded-full flex items-center justify-center border-2 border-black shadow active:scale-90 transition",
+          isFollowing ? "bg-neutral-600" : "bg-red-500"
+        )}
+        aria-label={isFollowing ? "Abonne" : "Suivre"}
+      >
+        {loading ? (
+          <Loader2 className="w-3 h-3 text-white animate-spin" />
+        ) : isFollowing ? (
+          <Check className="w-3 h-3 text-white" strokeWidth={3} />
+        ) : (
+          <Plus className="w-3.5 h-3.5 text-white" strokeWidth={3} />
+        )}
       </button>
     );
   }
 
   return (
-    <button onClick={handleFollow} disabled={loading} className={`flex items-center justify-center gap-2 font-semibold transition active:scale-95 disabled:opacity-70 ${isFollowing ? (variant === "small" ? "bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1.5 rounded-full text-xs" : variant === "profile" ? "bg-neutral-800 hover:bg-neutral-700 text-white py-2.5 rounded-lg text-sm border border-neutral-700" : "bg-neutral-700 hover:bg-neutral-600 text-white px-4 py-2 rounded-full text-sm") : (variant === "small" ? "bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-full text-xs" : variant === "profile" ? "bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg text-sm" : "bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-full text-sm")}`}>
+    <button
+      type="button"
+      onClick={() => void handleFollow()}
+      disabled={loading}
+      className={cn(
+        "flex items-center justify-center gap-1.5 font-semibold transition active:scale-95 disabled:opacity-70",
+        variant === "profile" ? "py-2.5 rounded-lg text-sm w-full" : "px-4 py-2 rounded-full text-sm",
+        isFollowing
+          ? "bg-neutral-800 text-white border border-neutral-700"
+          : "bg-red-500 text-white"
+      )}
+    >
       {loading ? (
         <Loader2 className="w-4 h-4 animate-spin" />
       ) : isFollowing ? (
-        <>
-          <UserCheck className={variant === "small" ? "w-3 h-3" : "w-4 h-4"} />
-          {variant === "small" ? "Suivi" : "Abonné"}
-        </>
+        "Abonne"
       ) : (
-        <>
-          <UserPlus className={variant === "small" ? "w-3 h-3" : "w-4 h-4"} />
-          S'abonner
-        </>
+        "S'abonner"
       )}
     </button>
   );
