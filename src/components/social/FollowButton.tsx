@@ -1,92 +1,171 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { UserPlus, UserCheck, Loader2 } from "lucide-react";
 
 interface FollowButtonProps {
   targetUserId: string;
-  initialFollowing?: boolean;
-  className?: string;
-  size?: "sm" | "md";
+  currentUserId?: string;
+  variant?: "default" | "profile" | "small";
 }
 
-export default function FollowButton({
-  targetUserId,
-  initialFollowing = false,
-  className,
-  size = "md",
-}: FollowButtonProps) {
+export default function FollowButton({ targetUserId, currentUserId, variant = "profile" }: FollowButtonProps) {
   const supabase = createClient();
-  const [following, setFollowing] = useState(initialFollowing);
+  const router = useRouter();
+  
+  const [isFollowing, setIsFollowing] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(currentUserId || null);
 
+  // Charger l'utilisateur connecté si non fourni
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
-    });
-  }, [supabase]);
+    if (!currentUser) {
+      const getUser = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        setCurrentUser(user);
+      };
+      getUser();
+    }
+  }, [currentUser, supabase]);
 
+  // Vérifier si on suit déjà cet utilisateur
   useEffect(() => {
-    if (!currentUserId || currentUserId === targetUserId) return;
+    if (!currentUser || currentUser.id === targetUserId) {
+      setChecking(false);
+      return;
+    }
 
-    supabase
-      .from("follows")
-      .select("id")
-      .eq("follower_id", currentUserId)
-      .eq("following_id", targetUserId)
-      .maybeSingle()
-      .then(({ data }) => {
-        setFollowing(!!data);
-      });
-  }, [currentUserId, targetUserId, supabase]);
+    const checkFollow = async () => {
+      const { data } = await supabase
+        .from("follows")
+        .select("id")
+        .eq("follower_id", currentUser.id)
+        .eq("following_id", targetUserId)
+        .maybeSingle();
+      
+      setIsFollowing(!!data);
+      setChecking(false);
+    };
+    checkFollow();
+  }, [currentUser, targetUserId, supabase]);
 
-  if (!currentUserId || currentUserId === targetUserId) return null;
+  const handleFollow = async () => {
+    if (!currentUser) {
+      router.push("/auth/login");
+      return;
+    }
 
-  const toggle = async () => {
-    if (loading) return;
+    if (currentUser.id === targetUserId) {
+      alert("Vous ne pouvez pas vous abonner à vous-même !");
+      return;
+    }
+
     setLoading(true);
 
-    if (following) {
-      await supabase
-        .from("follows")
-        .delete()
-        .eq("follower_id", currentUserId)
-        .eq("following_id", targetUserId);
-      setFollowing(false);
-    } else {
-      await supabase.from("follows").insert({
-        follower_id: currentUserId,
-        following_id: targetUserId,
-      });
-      await supabase.from("notifications").insert({
-        user_id: targetUserId,
-        actor_id: currentUserId,
-        type: "follow",
-        message: "a commencé à vous suivre",
-        link: `/profil/${currentUserId}`,
-      });
-      setFollowing(true);
+    try {
+      if (isFollowing) {
+        // Se désabonner
+        await supabase
+          .from("follows")
+          .delete()
+          .eq("follower_id", currentUser.id)
+          .eq("following_id", targetUserId);
+        setIsFollowing(false);
+      } else {
+        // S'abonner
+        await supabase
+          .from("follows")
+          .insert({
+            follower_id: currentUser.id,
+            following_id: targetUserId,
+          });
+        setIsFollowing(true);
+      }
+    } catch (err) {
+      console.error("Erreur follow:", err);
+      alert("Une erreur est survenue");
     }
 
     setLoading(false);
   };
 
+  // Si c'est son propre profil, ne rien afficher
+  if (currentUser?.id === targetUserId) {
+    return null;
+  }
+
+  // Si pas connecté, afficher "S'abonner" qui redirigera vers login
+  if (!currentUser) {
+    return (
+      <button
+        onClick={handleFollow}
+        className={`flex items-center justify-center gap-2 font-semibold transition active:scale-95 ${
+          variant === "small"
+            ? "bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-full text-xs"
+            : variant === "profile"
+            ? "bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg text-sm"
+            : "bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-full text-sm"
+        }`}
+      >
+        <UserPlus className={variant === "small" ? "w-3 h-3" : "w-4 h-4"} />
+        S'abonner
+      </button>
+    );
+  }
+
+  // Pendant le chargement initial
+  if (checking) {
+    return (
+      <button
+        disabled
+        className={`flex items-center justify-center gap-2 font-semibold bg-neutral-700 text-neutral-400 ${
+          variant === "small"
+            ? "px-3 py-1.5 rounded-full text-xs"
+            : variant === "profile"
+            ? "py-2.5 rounded-lg text-sm"
+            : "px-4 py-2 rounded-full text-sm"
+        }`}
+      >
+        <Loader2 className="w-4 h-4 animate-spin" />
+      </button>
+    );
+  }
+
+  // Bouton principal
   return (
     <button
-      onClick={toggle}
+      onClick={handleFollow}
       disabled={loading}
-      className={cn(
-        "rounded-full font-semibold transition active:scale-95 disabled:opacity-60",
-        size === "sm" ? "px-3 py-1 text-xs" : "px-5 py-1.5 text-sm",
-        following
-          ? "bg-neutral-800 text-white border border-neutral-600"
-          : "bg-red-500 text-white",
-        className
-      )}
+      className={`flex items-center justify-center gap-2 font-semibold transition active:scale-95 disabled:opacity-70 ${
+        isFollowing
+          ? variant === "small"
+            ? "bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1.5 rounded-full text-xs"
+            : variant === "profile"
+            ? "bg-neutral-800 hover:bg-neutral-700 text-white py-2.5 rounded-lg text-sm border border-neutral-700"
+            : "bg-neutral-700 hover:bg-neutral-600 text-white px-4 py-2 rounded-full text-sm"
+          : variant === "small"
+          ? "bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-full text-xs"
+          : variant === "profile"
+          ? "bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg text-sm"
+          : "bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-full text-sm"
+      }`}
     >
-      {following ? "Suivi" : "Suivre"}
+      {loading ? (
+        <Loader2 className="w-4 h-4 animate-spin" />
+      ) : isFollowing ? (
+        <>
+          <UserCheck className={variant === "small" ? "w-3 h-3" : "w-4 h-4"} />
+          {variant === "small" ? "Suivi" : "Abonné"}
+        </>
+      ) : (
+        <>
+          <UserPlus className={variant === "small" ? "w-3 h-3" : "w-4 h-4"} />
+          S'abonner
+        </>
+      )}
     </button>
   );
 }
