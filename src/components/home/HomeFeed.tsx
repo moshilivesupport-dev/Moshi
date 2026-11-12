@@ -12,6 +12,7 @@ export type FeedItem = {
   id: string;
   title?: string | null;
   description?: string | null;
+  caption?: string | null; // ✅ AJOUTÉ ICI
   media_url?: string | null;
   views_count?: number | null;
   likes_count?: number | null;
@@ -28,7 +29,6 @@ interface HomeFeedProps {
   initialItems?: FeedItem[];
 }
 
-// ✅ CORRECTION : Ajout de { initialItems }: HomeFeedProps ici
 export default function HomeFeed({ initialItems }: HomeFeedProps) {
   const supabase = createClient();
   const router = useRouter();
