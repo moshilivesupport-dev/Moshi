@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Plus, Image as ImageIcon } from "lucide-react";
 
 export default function StoriesPage() {
   const supabase = createClient();
@@ -22,7 +22,6 @@ export default function StoriesPage() {
       }
       setUser(user);
 
-      // Charger les stories des dernières 24h
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("stories")
@@ -39,7 +38,6 @@ export default function StoriesPage() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
-    // Vérifications
     if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
       alert("Format non supporté. Utilisez une image ou une vidéo.");
       return;
@@ -72,7 +70,6 @@ export default function StoriesPage() {
 
       alert("Story publiée !");
       
-      // Recharger la page
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("stories")
@@ -98,7 +95,6 @@ export default function StoriesPage() {
       </header>
 
       <div className="p-4">
-        {/* Créer une story */}
         <div className="mb-6">
           <input
             type="file"
@@ -126,7 +122,6 @@ export default function StoriesPage() {
           </button>
         </div>
 
-        {/* Liste des stories */}
         {stories.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-neutral-500">
             <ImageIcon className="w-16 h-16 mb-4 opacity-50" />
