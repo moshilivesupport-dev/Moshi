@@ -24,16 +24,21 @@ export type FeedItem = {
   } | null;
 };
 
-export default function HomeFeed() {
+interface HomeFeedProps {
+  initialItems?: FeedItem[];
+}
+
+// ✅ CORRECTION : Ajout de { initialItems }: HomeFeedProps ici
+export default function HomeFeed({ initialItems }: HomeFeedProps) {
   const supabase = createClient();
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const [videos, setVideos] = useState<FeedItem[]>([]);
+  const [videos, setVideos] = useState<FeedItem[]>(initialItems || []);
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialItems ? false : true);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
@@ -45,6 +50,7 @@ export default function HomeFeed() {
   }, [supabase]);
 
   const loadVideos = useCallback(async () => {
+    if (initialItems && initialItems.length > 0) return;
     setLoading(true);
     const { data, error } = await supabase
       .from("videos")
@@ -69,7 +75,7 @@ export default function HomeFeed() {
     }));
     setVideos(rows);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, initialItems]);
 
   useEffect(() => { loadVideos(); }, [loadVideos]);
 
@@ -178,7 +184,7 @@ export default function HomeFeed() {
 
             <div className="absolute left-4 right-24 bottom-16 z-20 space-y-2">
               <Link href={`/profile/${video.user_id}`} className="font-bold text-white text-base hover:underline drop-shadow-md inline-block">@{name}</Link>
-              {(video.description || video.title) && <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">{video.description || video.title}</p>}
+              {(video.description || video.title || video.caption) && <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">{video.description || video.title || video.caption}</p>}
               <div className="flex items-center gap-2">
                 <Music className="w-3.5 h-3.5 text-white" />
                 <p className="text-xs text-white/80 truncate max-w-[200px]">Son original - {name}</p>
