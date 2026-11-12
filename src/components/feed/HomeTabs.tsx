@@ -1,59 +1,64 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { motion } from "framer-motion";
 import HomeFeed from "@/components/home/HomeFeed";
-import FollowingFeed from "@/components/feed/FollowingFeed";
-import Link from "next/link";
-import { Search } from "lucide-react";
-
-type Tab = "foryou" | "following";
+import FollowingFeed from "./FollowingFeed";
 
 export default function HomeTabs() {
-  const [tab, setTab] = useState<Tab>("foryou");
+  const [activeTab, setActiveTab] = useState<"foryou" | "following">("foryou");
 
   return (
     <div className="relative h-[100dvh] bg-black overflow-hidden">
-      <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-center pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 bg-gradient-to-b from-black/80 to-transparent">
-        <Link
-          href="/search"
-          className="absolute left-3 p-2 text-white/80"
-          aria-label="Recherche"
-        >
-          <Search className="w-5 h-5" />
-        </Link>
-
-        <div className="flex items-center gap-6">
+      {/* Header avec onglets */}
+      <header className="absolute top-0 left-0 right-0 z-40 pt-4 pb-2">
+        <div className="flex items-center justify-center gap-8">
           <button
-            type="button"
-            onClick={() => setTab("following")}
-            className={cn(
-              "text-[15px] font-semibold transition",
-              tab === "following" ? "text-white" : "text-white/50"
-            )}
+            onClick={() => setActiveTab("following")}
+            className={`relative text-base font-semibold transition-colors ${
+              activeTab === "following" ? "text-white" : "text-neutral-400"
+            }`}
           >
             Suivis
-            {tab === "following" && (
-              <div className="mx-auto mt-1 h-0.5 w-8 rounded-full bg-white" />
+            {activeTab === "following" && (
+              <motion.div
+                layoutId="tab-indicator"
+                className="absolute -bottom-1 left-0 right-0 h-0.5 bg-white rounded-full"
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              />
             )}
           </button>
           <button
-            type="button"
-            onClick={() => setTab("foryou")}
-            className={cn(
-              "text-[15px] font-semibold transition",
-              tab === "foryou" ? "text-white" : "text-white/50"
-            )}
+            onClick={() => setActiveTab("foryou")}
+            className={`relative text-base font-semibold transition-colors ${
+              activeTab === "foryou" ? "text-white" : "text-neutral-400"
+            }`}
           >
             Pour toi
-            {tab === "foryou" && (
-              <div className="mx-auto mt-1 h-0.5 w-8 rounded-full bg-white" />
+            {activeTab === "foryou" && (
+              <motion.div
+                layoutId="tab-indicator"
+                className="absolute -bottom-1 left-0 right-0 h-0.5 bg-white rounded-full"
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              />
             )}
           </button>
         </div>
-      </div>
+      </header>
 
-      {tab === "foryou" ? <HomeFeed /> : <FollowingFeed />}
+      {/* Contenu des onglets avec transition */}
+      <div className="relative h-full">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0, x: activeTab === "foryou" ? 20 : -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: activeTab === "foryou" ? -20 : 20 }}
+          transition={{ duration: 0.2 }}
+          className="h-full"
+        >
+          {activeTab === "foryou" ? <HomeFeed /> : <FollowingFeed />}
+        </motion.div>
+      </div>
     </div>
   );
 }
