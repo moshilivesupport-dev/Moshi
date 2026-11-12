@@ -9,9 +9,10 @@ interface FollowButtonProps {
   targetUserId: string;
   currentUserId?: string;
   variant?: "default" | "profile" | "small";
+  onFollowChange?: (isFollowing: boolean) => void; // ✅ NOUVEAU
 }
 
-export default function FollowButton({ targetUserId, currentUserId, variant = "profile" }: FollowButtonProps) {
+export default function FollowButton({ targetUserId, currentUserId, variant = "profile", onFollowChange }: FollowButtonProps) {
   const supabase = createClient();
   const router = useRouter();
   
@@ -20,7 +21,6 @@ export default function FollowButton({ targetUserId, currentUserId, variant = "p
   const [checking, setChecking] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(currentUserId || null);
 
-  // Charger l'utilisateur connecté si non fourni
   useEffect(() => {
     if (!currentUser) {
       const getUser = async () => {
@@ -31,7 +31,6 @@ export default function FollowButton({ targetUserId, currentUserId, variant = "p
     }
   }, [currentUser, supabase]);
 
-  // Vérifier si on suit déjà cet utilisateur
   useEffect(() => {
     if (!currentUser || currentUser.id === targetUserId) {
       setChecking(false);
@@ -67,15 +66,14 @@ export default function FollowButton({ targetUserId, currentUserId, variant = "p
 
     try {
       if (isFollowing) {
-        // Se désabonner
         await supabase
           .from("follows")
           .delete()
           .eq("follower_id", currentUser.id)
           .eq("following_id", targetUserId);
         setIsFollowing(false);
+        onFollowChange?.(false); // ✅ Notifie le parent
       } else {
-        // S'abonner
         await supabase
           .from("follows")
           .insert({
@@ -83,6 +81,7 @@ export default function FollowButton({ targetUserId, currentUserId, variant = "p
             following_id: targetUserId,
           });
         setIsFollowing(true);
+        onFollowChange?.(true); // ✅ Notifie le parent
       }
     } catch (err) {
       console.error("Erreur follow:", err);
@@ -92,67 +91,27 @@ export default function FollowButton({ targetUserId, currentUserId, variant = "p
     setLoading(false);
   };
 
-  // Si c'est son propre profil, ne rien afficher
-  if (currentUser?.id === targetUserId) {
-    return null;
-  }
+  if (currentUser?.id === targetUserId) return null;
 
-  // Si pas connecté, afficher "S'abonner" qui redirigera vers login
   if (!currentUser) {
     return (
-      <button
-        onClick={handleFollow}
-        className={`flex items-center justify-center gap-2 font-semibold transition active:scale-95 ${
-          variant === "small"
-            ? "bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-full text-xs"
-            : variant === "profile"
-            ? "bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg text-sm"
-            : "bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-full text-sm"
-        }`}
-      >
+      <button onClick={handleFollow} className={`flex items-center justify-center gap-2 font-semibold transition active:scale-95 bg-red-500 hover:bg-red-600 text-white ${variant === "small" ? "px-3 py-1.5 rounded-full text-xs" : variant === "profile" ? "py-2.5 rounded-lg text-sm" : "px-4 py-2 rounded-full text-sm"}`}>
         <UserPlus className={variant === "small" ? "w-3 h-3" : "w-4 h-4"} />
         S'abonner
       </button>
     );
   }
 
-  // Pendant le chargement initial
   if (checking) {
     return (
-      <button
-        disabled
-        className={`flex items-center justify-center gap-2 font-semibold bg-neutral-700 text-neutral-400 ${
-          variant === "small"
-            ? "px-3 py-1.5 rounded-full text-xs"
-            : variant === "profile"
-            ? "py-2.5 rounded-lg text-sm"
-            : "px-4 py-2 rounded-full text-sm"
-        }`}
-      >
+      <button disabled className={`flex items-center justify-center gap-2 font-semibold bg-neutral-700 text-neutral-400 ${variant === "small" ? "px-3 py-1.5 rounded-full text-xs" : variant === "profile" ? "py-2.5 rounded-lg text-sm" : "px-4 py-2 rounded-full text-sm"}`}>
         <Loader2 className="w-4 h-4 animate-spin" />
       </button>
     );
   }
 
-  // Bouton principal
   return (
-    <button
-      onClick={handleFollow}
-      disabled={loading}
-      className={`flex items-center justify-center gap-2 font-semibold transition active:scale-95 disabled:opacity-70 ${
-        isFollowing
-          ? variant === "small"
-            ? "bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1.5 rounded-full text-xs"
-            : variant === "profile"
-            ? "bg-neutral-800 hover:bg-neutral-700 text-white py-2.5 rounded-lg text-sm border border-neutral-700"
-            : "bg-neutral-700 hover:bg-neutral-600 text-white px-4 py-2 rounded-full text-sm"
-          : variant === "small"
-          ? "bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-full text-xs"
-          : variant === "profile"
-          ? "bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg text-sm"
-          : "bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-full text-sm"
-      }`}
-    >
+    <button onClick={handleFollow} disabled={loading} className={`flex items-center justify-center gap-2 font-semibold transition active:scale-95 disabled:opacity-70 ${isFollowing ? (variant === "small" ? "bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1.5 rounded-full text-xs" : variant === "profile" ? "bg-neutral-800 hover:bg-neutral-700 text-white py-2.5 rounded-lg text-sm border border-neutral-700" : "bg-neutral-700 hover:bg-neutral-600 text-white px-4 py-2 rounded-full text-sm") : (variant === "small" ? "bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-full text-xs" : variant === "profile" ? "bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg text-sm" : "bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-full text-sm")}`}>
       {loading ? (
         <Loader2 className="w-4 h-4 animate-spin" />
       ) : isFollowing ? (
