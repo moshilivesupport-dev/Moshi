@@ -19,6 +19,7 @@ export default async function LivePage() {
       id,
       title,
       room_name,
+      thumbnail_url,
       viewers_count,
       started_at,
       host_role,
