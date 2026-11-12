@@ -1,79 +1,138 @@
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/Button";
-import { Sparkles } from "lucide-react";
+"use client";
 
-interface StoryRow {
-  id: string;
-  media_url: string;
-  media_type: string;
-  caption: string | null;
-  expires_at: string;
-  profiles: { username: string | null } | { username: string | null }[] | null;
-}
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Plus, X } from "lucide-react";
 
-export default async function StoriesPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default function StoriesPage() {
+  const supabase = createClient();
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [stories, setStories] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useState<HTMLInputElement | null>(null);
 
-  let canCreate = false;
-  if (user) {
-    const { data: p } = await supabase.from("profiles").select("role, seller_status").eq("id", user.id).maybeSingle();
-    canCreate = p?.role === "admin" || (p?.role === "seller" && p?.seller_status === "approved");
-  }
+  useEffect(() => {
+    const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/auth/login"); return; }
+      setUser(user);
 
-  const { data } = await supabase
-    .from("stories")
-    .select("id, media_url, media_type, caption, expires_at, profiles(username)")
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
-    .limit(60);
-  const stories = (data || []) as unknown as StoryRow[];
+      // Charger les stories des dernières 24h
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data } = await supabase
+        .from("stories")
+        .select("*, profiles:user_id(username, avatar_url)")
+        .gte("created_at", twentyFourHoursAgo)
+        .order("created_at", { ascending: false });
+      
+      setStories(data || []);
+    };
+    load();
+  }, [supabase, router]);
+
+  const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploading(true);
+
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+      const { error } = await supabase.storage
+        .from("stories")
+        .upload(fileName, file, { upsert: true });
+
+      if (error) throw error;
+
+      const { data } = supabase.storage.from("stories").getPublicUrl(fileName);
+
+      await supabase.from("stories").insert({
+        user_id: user.id,
+        media_url: data.publicUrl,
+        media_type: file.type.startsWith("video/") ? "video" : "image",
+      });
+
+      alert("Story publiée !");
+      router.refresh();
+    } catch (err: any) {
+      alert("Erreur: " + err.message);
+    }
+
+    setUploading(false);
+  };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Stories</h1>
-        {canCreate && (
-          <Link href="/stories/new">
-            <Button size="sm" variant="gold">
-              <Sparkles className="w-4 h-4 mr-1.5" /> Ajouter
-            </Button>
-          </Link>
-        )}
-      </div>
+    <div className="min-h-[100dvh] bg-black text-white pb-20">
+      <header className="sticky top-0 z-30 bg-black/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 flex items-center gap-3">
+        <button onClick={() => router.back()} className="p-2 hover:bg-neutral-800 rounded-full">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="text-lg font-bold">Stories</h1>
+      </header>
 
-      {stories.length === 0 ? (
-        <div className="card text-center py-12 text-muted text-sm">
-          Aucune story pour le moment.
-          <br />
-          <span className="text-xs">Les stories disparaissent après 24 h.</span>
+      <div className="p-4">
+        {/* Créer une story */}
+        <div className="mb-6">
+          <input
+            type="file"
+            accept="image/*,video/*"
+            onChange={handleStoryUpload}
+            className="hidden"
+            ref={(el) => { if (el) fileInputRef = el; }}
+          />
+          <button
+            onClick={() => fileInputRef?.click()}
+            disabled={uploading}
+            className="w-full bg-neutral-900 hover:bg-neutral-800 rounded-xl p-4 flex items-center gap-3 disabled:opacity-50"
+          >
+            <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+              {uploading ? (
+                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Plus className="w-6 h-6 text-white" />
+              )}
+            </div>
+            <div className="text-left">
+              <p className="font-semibold">Créer une story</p>
+              <p className="text-xs text-neutral-400">Photo ou vidéo (24h)</p>
+            </div>
+          </button>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3">
-          {stories.map((s) => {
-            const author = Array.isArray(s.profiles) ? s.profiles[0] : s.profiles;
-            const hours = Math.max(1, Math.ceil((new Date(s.expires_at).getTime() - Date.now()) / 3600000));
-            return (
-              <div key={s.id} className="relative aspect-[9/16] rounded-2xl overflow-hidden bg-onyx border border-white/5">
-                {s.media_type === "video" ? (
-                  <video src={s.media_url} className="w-full h-full object-cover" muted playsInline controls preload="metadata" />
+
+        {/* Liste des stories */}
+        {stories.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-neutral-500">
+            <p className="text-sm">Aucune story pour le moment</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            {stories.map((story) => (
+              <div key={story.id} className="relative aspect-[3/4] bg-neutral-900 rounded-lg overflow-hidden">
+                {story.media_type === "video" ? (
+                  <video src={story.media_url} className="w-full h-full object-cover" muted loop />
                 ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={s.media_url} alt={s.caption || "Story"} className="w-full h-full object-cover" />
+                  <img src={story.media_url} alt="" className="w-full h-full object-cover" />
                 )}
-                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-                  <p className="text-sm font-semibold text-white">@{author?.username || "vendeur"}</p>
-                  {s.caption && <p className="text-xs text-white/80 line-clamp-2">{s.caption}</p>}
-                  <p className="text-[10px] text-white/50 mt-0.5">encore {hours} h</p>
+                <div className="absolute bottom-1 left-1 flex items-center gap-1">
+                  <div className="w-6 h-6 rounded-full bg-neutral-800 overflow-hidden">
+                    {story.profiles?.avatar_url ? (
+                      <img src={story.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs font-bold">
+                        {story.profiles?.username?.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
