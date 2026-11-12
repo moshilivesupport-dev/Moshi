@@ -1,67 +1,101 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Plus, X } from "lucide-react";
-import { SELLER_ACTIONS } from "@/components/seller/SellerActions";
+import { Video, Radio, Image as ImageIcon, X } from "lucide-react";
 
-/** Bouton « + » flottant (style TikTok) réservé aux vendeurs approuvés et aux admins. */
-export function CreateMenu() {
-  const [open, setOpen] = useState(false);
-  const pathname = usePathname();
+interface CreateMenuProps {
+  open: boolean;
+  onClose: () => void;
+}
 
-  useEffect(() => setOpen(false), [pathname]);
+const items = [
+  {
+    href: "/videos/new",
+    label: "Vidéo",
+    desc: "Publier une vidéo courte",
+    icon: Video,
+    color: "bg-pink-500",
+  },
+  {
+    href: "/seller/live",
+    label: "Live",
+    desc: "Passer en direct",
+    icon: Radio,
+    color: "bg-red-500",
+  },
+  {
+    href: "/stories/new",
+    label: "Story",
+    desc: "Story 24 h",
+    icon: ImageIcon,
+    color: "bg-blue-500",
+  },
+];
 
-  // Pas de bouton sur les pages de création, d'authentification ni pendant le visionnage d'un live
-  const hidden =
-    pathname.startsWith("/seller") ||
-    pathname.startsWith("/auth") ||
-    pathname.startsWith("/videos") ||
-    pathname.startsWith("/live/") ||
-    pathname === "/stories/new";
-  if (hidden) return null;
+export default function CreateMenu({ open, onClose }: CreateMenuProps) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
 
   return (
-    <>
+    <div className="fixed inset-0 z-[100] flex items-end justify-center">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label={open ? "Fermer le menu de création" : "Créer"}
-        className="fixed z-[70] right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] md:bottom-8 w-14 h-14 rounded-full bg-gradient-to-br from-coral to-champagne shadow-lg shadow-coral/30 flex items-center justify-center active:scale-95 transition"
-      >
-        {open ? <X className="w-7 h-7 text-onyx" /> : <Plus className="w-7 h-7 text-onyx" />}
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)}>
-          <div className="absolute inset-0 bg-black/60" />
-          <div
-            className="absolute left-0 right-0 bottom-0 rounded-t-3xl bg-anthracite border-t border-white/10 p-4 pb-28 md:max-w-md md:left-auto md:right-4 md:bottom-24 md:rounded-3xl md:pb-4"
-            onClick={(e) => e.stopPropagation()}
+        className="absolute inset-0 bg-black/70"
+        onClick={onClose}
+        aria-label="Fermer"
+      />
+      <div className="relative w-full max-w-lg bg-neutral-950 border-t border-neutral-800 rounded-t-3xl px-4 pt-3 pb-8 animate-in slide-in-from-bottom">
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-neutral-700" />
+        <div className="flex items-center justify-between mb-4 px-1">
+          <h2 className="text-base font-semibold text-white">Créer</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-full hover:bg-neutral-800"
           >
-            <div className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-4 md:hidden" />
-            <p className="text-sm font-semibold text-white mb-3 px-1">Créer</p>
-            <div className="space-y-2">
-              {SELLER_ACTIONS.map(({ href, label, desc, icon: Icon }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className="flex items-center gap-3 rounded-2xl bg-onyx border border-white/5 p-3 hover:border-coral/40 transition"
-                >
-                  <div className="w-11 h-11 rounded-xl bg-coral/15 flex items-center justify-center shrink-0">
-                    <Icon className="w-5 h-5 text-coral" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">{label}</p>
-                    <p className="text-xs text-muted">{desc}</p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
+            <X className="w-5 h-5 text-neutral-400" />
+          </button>
         </div>
-      )}
-    </>
+
+        <div className="grid grid-cols-3 gap-3">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className="flex flex-col items-center gap-2 rounded-2xl bg-neutral-900 border border-neutral-800 px-2 py-4 active:scale-95 transition"
+              >
+                <div
+                  className={`w-12 h-12 rounded-full ${item.color} flex items-center justify-center`}
+                >
+                  <Icon className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm font-semibold text-white">
+                  {item.label}
+                </span>
+                <span className="text-[10px] text-neutral-500 text-center leading-tight">
+                  {item.desc}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
