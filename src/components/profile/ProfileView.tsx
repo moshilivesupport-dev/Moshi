@@ -40,7 +40,6 @@ export default function ProfileView({ profile, isOwnProfile, stats }: ProfileVie
   const [videos, setVideos] = useState<any[]>([]);
   const supabase = createClient();
 
-  // Charger les vidéos quand on est sur l'onglet "vidéos"
   useEffect(() => {
     if (activeTab === "videos") {
       const loadVideos = async () => {
@@ -68,13 +67,18 @@ export default function ProfileView({ profile, isOwnProfile, stats }: ProfileVie
           {handle || "Profil"}
         </Link>
         <div className="flex items-center gap-2">
+          {/* ✅ Bouton Settings bien visible et cliquable */}
           {isOwnProfile && (
-            <Link href="/settings" className="p-2 hover:bg-neutral-800 rounded-full transition">
-              <Settings className="w-6 h-6" />
+            <Link 
+              href="/settings" 
+              className="p-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-full transition active:scale-95"
+              title="Paramètres"
+            >
+              <Settings className="w-5 h-5 text-white" />
             </Link>
           )}
-          <button className="p-2 hover:bg-neutral-800 rounded-full transition">
-            <Share2 className="w-6 h-6" />
+          <button className="p-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-full transition active:scale-95">
+            <Share2 className="w-5 h-5 text-white" />
           </button>
         </div>
       </header>
