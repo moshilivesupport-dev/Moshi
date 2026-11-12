@@ -60,23 +60,19 @@ export default function StoriesPage() {
 
       if (error) throw error;
 
-      const { data } = supabase.storage.from("stories").getPublicUrl(fileName);
+      // ✅ CORRECTION : Renommé en urlData pour éviter le conflit avec 'data'
+      const { data: urlData } = supabase.storage.from("stories").getPublicUrl(fileName);
 
       await supabase.from("stories").insert({
         user_id: user.id,
-        media_url: data.publicUrl,
+        media_url: urlData.publicUrl,
         media_type: file.type.startsWith("video/") ? "video" : "image",
       });
 
       alert("Story publiée !");
       
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase
-        .from("stories")
-        .select("*, profiles:user_id(username, avatar_url)")
-        .gte("created_at", twentyFourHoursAgo)
-        .order("created_at", { ascending: false });
-      setStories(data || []);
+      // ✅ CORRECTION : On utilise router.refresh() pour recharger les données proprement
+      router.refresh();
     } catch (err: any) {
       console.error(err);
       alert("Erreur: " + err.message);
