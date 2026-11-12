@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, Plus, X } from "lucide-react";
 
 export default function StoriesPage() {
   const supabase = createClient();
@@ -11,8 +11,6 @@ export default function StoriesPage() {
   const [user, setUser] = useState<any>(null);
   const [stories, setStories] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
-  
-  // ✅ CORRECTION : Utilisation de useRef au lieu de useState
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
