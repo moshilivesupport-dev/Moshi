@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Heart, MessageCircle, Share2, Play, Music, Volume2, VolumeX } from "lucide-react";
+import { Heart, MessageCircle, Share2, Play, Music, Volume2, VolumeX, Bookmark } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 import FollowButton from "@/components/social/FollowButton";
 
@@ -35,8 +35,9 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
 
   const [videos, setVideos] = useState<FeedItem[]>(initialItems || []);
   const [active, setActive] = useState(0);
-  const [muted, setMuted] = useState(true); // Muted par défaut pour autoplay mobile
+  const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
+  const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(initialItems ? false : true);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
@@ -105,6 +106,10 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
     } catch (err) { console.error("Erreur like:", err); }
   }, [currentUser, liked, supabase, router]);
 
+  const toggleSave = useCallback((videoId: string) => {
+    setSaved((prev) => ({ ...prev, [videoId]: !prev[videoId] }));
+  }, []);
+
   if (loading) {
     return <div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" /></div>;
   }
@@ -128,6 +133,7 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
 
         return (
           <section key={video.id} data-index={index} className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black">
+            {/* ✅ VIDÉO PLEIN ÉCRAN */}
             {video.media_url && (
               <video
                 src={video.media_url}
@@ -140,6 +146,7 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
               />
             )}
 
+            {/* Dégradé pour lisibilité */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
 
             {/* ✅ BOUTON SON (en haut à droite) */}
@@ -150,8 +157,9 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
               {muted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
             </button>
 
-            {/* BOUTONS À DROITE */}
+            {/* ✅ BOUTONS À DROITE (style TikTok) */}
             <div className="absolute right-2 bottom-24 z-20 flex flex-col items-center gap-4">
+              {/* Avatar + Follow */}
               <div className="relative mb-2">
                 <Link href={`/profile/${video.user_id}`} className="relative block w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
                   {author?.avatar_url ? <img src={author.avatar_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-sm font-bold">{name.charAt(0).toUpperCase()}</div>}
@@ -161,27 +169,37 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
                 </div>
               </div>
 
+              {/* Like */}
               <button type="button" onClick={(e) => { e.stopPropagation(); toggleLike(video.id); }} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
                 <Heart className={cn("w-9 h-9 transition-all drop-shadow-lg", liked[video.id] ? "fill-red-500 text-red-500 scale-110" : "text-white")} />
                 <span className="text-xs text-white font-semibold drop-shadow-md">{formatNumber(video.likes_count || 0)}</span>
               </button>
 
+              {/* Commentaires */}
               <Link href={`/videos/${video.id}`} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
                 <MessageCircle className="w-9 h-9 text-white drop-shadow-lg" />
                 <span className="text-xs text-white font-semibold drop-shadow-md">{formatNumber(video.comments_count || 0)}</span>
               </Link>
 
-              <button type="button" className="flex flex-col items-center gap-0.5 active:scale-90 transition">
-                <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">Partager</span>
+              {/* Bookmark */}
+              <button type="button" onClick={(e) => { e.stopPropagation(); toggleSave(video.id); }} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
+                <Bookmark className={cn("w-9 h-9 transition-all drop-shadow-lg", saved[video.id] ? "fill-white text-white" : "text-white")} />
+                <span className="text-xs text-white font-semibold drop-shadow-md">814</span>
               </button>
 
+              {/* Partager */}
+              <button type="button" className="flex flex-col items-center gap-0.5 active:scale-90 transition">
+                <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
+                <span className="text-xs text-white font-semibold drop-shadow-md">57</span>
+              </button>
+
+              {/* Disque musical */}
               <div className="w-11 h-11 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center animate-spin-slow mt-2 shadow-lg">
                 <Music className="w-5 h-5 text-white" />
               </div>
             </div>
 
-            {/* INFOS EN BAS À GAUCHE */}
+            {/* ✅ INFOS EN BAS À GAUCHE (style TikTok) */}
             <div className="absolute left-4 right-24 bottom-16 z-20 space-y-2">
               <Link href={`/profile/${video.user_id}`} className="font-bold text-white text-base hover:underline drop-shadow-md inline-block">@{name}</Link>
               {(video.description || video.title) && <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">{video.description || video.title}</p>}
