@@ -1,72 +1,59 @@
-import { notFound } from "next/navigation";
+import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { LivePlayer } from "@/components/live/LivePlayer";
+import LiveRoom from "@/components/live/LiveRoom";
 
-interface LivePageProps {
+interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function LiveStreamPage({ params }: LivePageProps) {
+export const dynamic = "force-dynamic";
+
+export default async function LivePage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: stream, error } = await supabase
-    .from("live_streams")
-    .select(
-      `
-      id,
-      title,
-      seller_id,
-      viewer_count,
-      stream_url,
-      status,
-      profiles:seller_id (
+  // Récupérer la session de live
+  const { data: session } = await supabase
+    .from("live_sessions")
+    .select(`
+      *,
+      profiles:host_id (
         id,
         username,
+        full_name,
         avatar_url,
-        followers_count
+        role
       )
-    `
-    )
+    `)
     .eq("id", id)
     .single();
 
-  if (error || !stream) {
-    console.error("Erreur de récupération du live :", error);
+  if (!session) {
     notFound();
   }
 
-  const [
-    {
-      data: { user },
-    },
-    { data: gifts },
-  ] = await Promise.all([
-    supabase.auth.getUser(),
-    supabase.from("gifts").select("*").eq("is_active", true),
-  ]);
+  // Si le live est terminé, rediriger vers la page de replay (à créer plus tard)
+  if (session.status === "ended") {
+    redirect(`/live/${id}/replay`);
+  }
 
-  const sellerInfo = Array.isArray(stream.profiles)
-    ? stream.profiles[0]
-    : stream.profiles;
+  // Vérifier si l'utilisateur actuel est le host
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const isHost = user?.id === session.host_id;
+
+  // TODO: Générer le token LiveKit ici si configuré
+  // const token = await generateLiveKitToken(session.room_name, user?.id, isHost);
 
   return (
-    <main className="min-h-[100dvh] bg-black text-white">
-      <div className="max-w-4xl mx-auto px-2 md:px-4 py-4">
-        <LivePlayer
-          stream={{
-            id: stream.id,
-            title: stream.title,
-            seller_id: stream.seller_id,
-            seller: sellerInfo,
-            viewer_count: stream.viewer_count,
-            stream_url: stream.stream_url,
-            status: stream.status,
-          }}
-          currentUserId={user?.id}
-          giftsCatalog={gifts || []}
-        />
-      </div>
-    </main>
+    <LiveRoom
+      sessionId={session.id}
+      isHost={isHost}
+      session={session}
+      // token={token}
+      // serverUrl={process.env.LIVEKIT_URL}
+    />
   );
 }
