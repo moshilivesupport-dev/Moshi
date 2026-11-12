@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 
 export default function StoriesPage() {
   const supabase = createClient();
@@ -11,7 +11,9 @@ export default function StoriesPage() {
   const [user, setUser] = useState<any>(null);
   const [stories, setStories] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useState<HTMLInputElement | null>(null);
+  
+  // ✅ CORRECTION : Utilisation de useRef au lieu de useState
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -59,6 +61,7 @@ export default function StoriesPage() {
       alert("Story publiée !");
       router.refresh();
     } catch (err: any) {
+      console.error(err);
       alert("Erreur: " + err.message);
     }
 
@@ -82,12 +85,12 @@ export default function StoriesPage() {
             accept="image/*,video/*"
             onChange={handleStoryUpload}
             className="hidden"
-            ref={(el) => { if (el) fileInputRef = el; }}
+            ref={fileInputRef}
           />
           <button
-            onClick={() => fileInputRef?.click()}
+            onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="w-full bg-neutral-900 hover:bg-neutral-800 rounded-xl p-4 flex items-center gap-3 disabled:opacity-50"
+            className="w-full bg-neutral-900 hover:bg-neutral-800 rounded-xl p-4 flex items-center gap-3 disabled:opacity-50 transition"
           >
             <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
               {uploading ? (
@@ -115,15 +118,15 @@ export default function StoriesPage() {
                 {story.media_type === "video" ? (
                   <video src={story.media_url} className="w-full h-full object-cover" muted loop />
                 ) : (
-                  <img src={story.media_url} alt="" className="w-full h-full object-cover" />
+                  <img src={story.media_url} alt="Story" className="w-full h-full object-cover" />
                 )}
                 <div className="absolute bottom-1 left-1 flex items-center gap-1">
-                  <div className="w-6 h-6 rounded-full bg-neutral-800 overflow-hidden">
+                  <div className="w-6 h-6 rounded-full bg-neutral-800 overflow-hidden border border-white/20">
                     {story.profiles?.avatar_url ? (
                       <img src={story.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-xs font-bold">
-                        {story.profiles?.username?.charAt(0).toUpperCase()}
+                        {story.profiles?.username?.charAt(0).toUpperCase() || "?"}
                       </div>
                     )}
                   </div>
