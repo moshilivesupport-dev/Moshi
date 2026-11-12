@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
-import { format } from "date-fns"; // Optionnel, sinon on fait une fonction simple
+// ✅ CORRECTION : Suppression de l'import date-fns qui n'est pas installé
 
 interface Conversation {
   id: string;
@@ -39,7 +39,6 @@ export default function ConversationList({ userId }: { userId: string }) {
     const convoIds = participations.map((p) => p.conversation_id);
 
     // 2. Récupérer les détails (autre user + dernier message)
-    // Note: C'est une requête simplifiée. En prod, on utiliserait des RPC pour optimiser.
     const { data: convos } = await supabase
       .from("conversations")
       .select(`
@@ -51,12 +50,11 @@ export default function ConversationList({ userId }: { userId: string }) {
       .order("created_at", { foreignTable: "messages", ascending: false })
       .limit(1, { foreignTable: "messages" });
 
-    // Formatage manuel pour l'exemple (à optimiser avec une vue SQL en prod)
+    // Formatage manuel
     const formatted: Conversation[] = (convos || []).map((c: any) => {
       const participants = c.conversation_participants.map((p: any) => p.user_id);
       const otherUserId = participants.find((id: string) => id !== userId);
       
-      // On doit fetch le profil de l'autre user (simplifié ici)
       return {
         id: c.id,
         other_user: { id: otherUserId, username: "Chargement...", avatar_url: null },
