@@ -4,12 +4,21 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Heart, MessageCircle, Share2, Play, Music, Volume2, VolumeX, Bookmark, Download } from "lucide-react";
+import {
+  Heart,
+  MessageCircle,
+  Share2,
+  Play,
+  Music,
+  Volume2,
+  VolumeX,
+  Bookmark,
+  Download,
+} from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 import FollowButton from "@/components/social/FollowButton";
 import CommentsSheet from "@/components/video/CommentsSheet";
 
-// ✅ 1. AJOUTÉ : Export du type pour que FollowingFeed.tsx puisse l'importer
 export type FeedItem = {
   id: string;
   type?: "video" | "post";
@@ -31,85 +40,128 @@ export type FeedItem = {
   } | null;
 };
 
-// ✅ 2. MODIFIÉ : Ajout de la prop initialItems
-export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }) {
+type VideoRow = {
+  id: string;
+  url?: string | null;
+  media_url?: string | null;
+  caption?: string | null;
+  like_count?: number | null;
+  comment_count?: number | null;
+  view_count?: number | null;
+  share_count?: number | null;
+  user_id: string;
+  profiles?: {
+    id?: string;
+    username: string | null;
+    avatar_url: string | null;
+    full_name: string | null;
+  } | null;
+};
+
+export default function HomeFeed({
+  initialItems,
+}: {
+  initialItems?: FeedItem[];
+}) {
   const supabase = createClient();
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // ✅ 3. MODIFIÉ : Utilisation de initialItems comme valeur initiale
-  const [videos, setVideos] = useState<any[]>(initialItems || []);
+  const [videos, setVideos] = useState<VideoRow[]>(
+    (initialItems as VideoRow[]) || []
+  );
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
-  // ✅ 4. MODIFIÉ : Si on a initialItems, on n'est pas en état de chargement
-  const [loading, setLoading] = useState(initialItems ? false : true);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [commentsOpenVideoId, setCommentsOpenVideoId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(!initialItems);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
+  const [commentsOpenVideoId, setCommentsOpenVideoId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
-    };
-    getUser();
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUser(user ? { id: user.id } : null);
+    })();
   }, [supabase]);
 
+  const loadUserReactions = useCallback(
+    async (userId: string) => {
+      const [{ data: likesData }, { data: bookmarksData }] = await Promise.all([
+        supabase.from("video_likes").select("video_id").eq("user_id", userId),
+        supabase
+          .from("video_bookmarks")
+          .select("video_id")
+          .eq("user_id", userId),
+      ]);
+
+      const likedMap: Record<string, boolean> = {};
+      likesData?.forEach((l: { video_id: string }) => {
+        likedMap[l.video_id] = true;
+      });
+      setLiked(likedMap);
+
+      const savedMap: Record<string, boolean> = {};
+      bookmarksData?.forEach((b: { video_id: string }) => {
+        savedMap[b.video_id] = true;
+      });
+      setSaved(savedMap);
+    },
+    [supabase]
+  );
+
   const loadVideos = useCallback(async () => {
-    // ✅ 5. MODIFIÉ : Si on a déjà les items (depuis FollowingFeed), on ne recharge pas
     if (initialItems && initialItems.length > 0) {
       setLoading(false);
+      if (currentUser) await loadUserReactions(currentUser.id);
       return;
     }
 
     setLoading(true);
+
     const { data, error } = await supabase
       .from("videos")
-      .select(`id, url, caption, like_count, comment_count, view_count, user_id, profiles:user_id (username, avatar_url, full_name)`)
+      .select(
+        `id, url, caption, like_count, comment_count, view_count, user_id,
+         profiles:user_id ( id, username, avatar_url, full_name )`
+      )
       .eq("status", "published")
       .order("created_at", { ascending: false })
       .limit(30);
 
     if (error) {
-      console.error("Erreur:", error);
+      console.error("Erreur videos:", error);
       setLoading(false);
       return;
     }
 
-    const rows = (data || []).map((v: any) => ({
+    const rows: VideoRow[] = (data || []).map((v: any) => ({
       ...v,
       media_url: v.url,
       profiles: Array.isArray(v.profiles) ? v.profiles[0] : v.profiles,
     }));
+
     setVideos(rows);
 
     if (currentUser) {
-      const { data: likesData } = await supabase
-        .from("video_likes")
-        .select("video_id")
-        .eq("user_id", currentUser.id);
-      const likedMap: Record<string, boolean> = {};
-      likesData?.forEach((l: any) => { likedMap[l.video_id] = true; });
-      setLiked(likedMap);
-
-      const { data: bookmarksData } = await supabase
-        .from("video_bookmarks")
-        .select("video_id")
-        .eq("user_id", currentUser.id);
-      const savedMap: Record<string, boolean> = {};
-      bookmarksData?.forEach((b: any) => { savedMap[b.video_id] = true; });
-      setSaved(savedMap);
+      await loadUserReactions(currentUser.id);
     }
 
     setLoading(false);
-  }, [supabase, currentUser, initialItems]);
+  }, [supabase, currentUser, initialItems, loadUserReactions]);
 
-  useEffect(() => { loadVideos(); }, [loadVideos]);
+  useEffect(() => {
+    void loadVideos();
+  }, [loadVideos]);
 
   useEffect(() => {
     const root = containerRef.current;
     if (!root) return;
+
     const obs = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -121,66 +173,150 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
       },
       { root, threshold: 0.65 }
     );
+
     root.querySelectorAll("[data-index]").forEach((el) => obs.observe(el));
     return () => obs.disconnect();
   }, [videos]);
 
-  const toggleLike = useCallback(async (videoId: string) => {
-    if (!currentUser) { router.push("/auth/login"); return; }
-    const isCurrentlyLiked = liked[videoId];
-    setLiked((prev) => ({ ...prev, [videoId]: !isCurrentlyLiked }));
-    setVideos((prev) => prev.map((v) =>
-      v.id === videoId ? { ...v, like_count: (v.like_count || 0) + (isCurrentlyLiked ? -1 : 1) } : v
-    ));
-    try {
-      if (isCurrentlyLiked) {
-        await supabase.from("video_likes").delete().eq("video_id", videoId).eq("user_id", currentUser.id);
-      } else {
-        await supabase.from("video_likes").insert({ video_id: videoId, user_id: currentUser.id });
+  const toggleLike = useCallback(
+    async (videoId: string) => {
+      if (!currentUser) {
+        router.push("/auth/login");
+        return;
       }
-    } catch (err) { console.error("Erreur like:", err); }
-  }, [currentUser, liked, supabase, router]);
 
-  const toggleSave = useCallback(async (videoId: string) => {
-    if (!currentUser) { router.push("/auth/login"); return; }
-    const isCurrentlySaved = saved[videoId];
-    setSaved((prev) => ({ ...prev, [videoId]: !isCurrentlySaved }));
-    try {
-      if (isCurrentlySaved) {
-        await supabase.from("video_bookmarks").delete().eq("video_id", videoId).eq("user_id", currentUser.id);
-      } else {
-        await supabase.from("video_bookmarks").insert({ video_id: videoId, user_id: currentUser.id });
+      const wasLiked = !!liked[videoId];
+
+      setLiked((prev) => ({ ...prev, [videoId]: !wasLiked }));
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.id === videoId
+            ? {
+                ...v,
+                like_count: Math.max(
+                  0,
+                  (v.like_count || 0) + (wasLiked ? -1 : 1)
+                ),
+              }
+            : v
+        )
+      );
+
+      const { error } = wasLiked
+        ? await supabase
+            .from("video_likes")
+            .delete()
+            .eq("video_id", videoId)
+            .eq("user_id", currentUser.id)
+        : await supabase.from("video_likes").insert({
+            video_id: videoId,
+            user_id: currentUser.id,
+          });
+
+      if (error) {
+        console.error("like error:", error);
+        setLiked((prev) => ({ ...prev, [videoId]: wasLiked }));
+        setVideos((prev) =>
+          prev.map((v) =>
+            v.id === videoId
+              ? {
+                  ...v,
+                  like_count: Math.max(
+                    0,
+                    (v.like_count || 0) + (wasLiked ? 1 : -1)
+                  ),
+                }
+              : v
+          )
+        );
+        alert(error.message);
       }
-    } catch (err) { console.error("Erreur bookmark:", err); }
-  }, [currentUser, saved, supabase, router]);
+    },
+    [currentUser, liked, supabase, router]
+  );
+
+  const toggleSave = useCallback(
+    async (videoId: string) => {
+      if (!currentUser) {
+        router.push("/auth/login");
+        return;
+      }
+
+      const wasSaved = !!saved[videoId];
+      setSaved((prev) => ({ ...prev, [videoId]: !wasSaved }));
+
+      const { error } = wasSaved
+        ? await supabase
+            .from("video_bookmarks")
+            .delete()
+            .eq("video_id", videoId)
+            .eq("user_id", currentUser.id)
+        : await supabase.from("video_bookmarks").insert({
+            video_id: videoId,
+            user_id: currentUser.id,
+          });
+
+      if (error) {
+        console.error("bookmark error:", error);
+        setSaved((prev) => ({ ...prev, [videoId]: wasSaved }));
+        alert(error.message);
+      }
+    },
+    [currentUser, saved, supabase, router]
+  );
 
   const handleShare = useCallback(async (videoId: string, videoName: string) => {
     const shareUrl = `${window.location.origin}/videos/${videoId}`;
-    const shareData = { title: `Vidéo de @${videoName}`, text: "Regarde sur Moshi !", url: shareUrl };
-    setVideos((prev) => prev.map((v) =>
-      v.id === videoId ? { ...v, share_count: (v as any).share_count ? (v as any).share_count + 1 : 1 } : v
-    ));
+    const shareData = {
+      title: `Vidéo de @${videoName}`,
+      text: "Regarde sur Moshi !",
+      url: shareUrl,
+    };
+
+    setVideos((prev) =>
+      prev.map((v) =>
+        v.id === videoId
+          ? { ...v, share_count: (v.share_count || 0) + 1 }
+          : v
+      )
+    );
+
     if (typeof navigator !== "undefined" && navigator.share) {
-      try { await navigator.share(shareData); } catch {}
+      try {
+        await navigator.share(shareData);
+      } catch {
+        /* annulé */
+      }
     } else {
-      try { await navigator.clipboard.writeText(shareUrl); alert("Lien copié !"); } catch {}
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Lien copié !");
+      } catch {
+        /* ignore */
+      }
     }
   }, []);
 
-  // ✅ TA CORRECTION EST BIEN LÀ :
-  const handleDownload = useCallback((videoUrl: string | null | undefined, videoId: string) => {
-    if (!videoUrl) return;
-    const link = document.createElement("a");
-    link.href = videoUrl;
-    link.download = `moshi_${videoId}.mp4`;
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, []);
+  const handleDownload = useCallback(
+    (videoUrl: string | null | undefined, videoId: string) => {
+      if (!videoUrl) return;
+      const link = document.createElement("a");
+      link.href = videoUrl;
+      link.download = `moshi_${videoId}.mp4`;
+      link.target = "_blank";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    },
+    []
+  );
 
   if (loading) {
-    return <div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" /></div>;
+    return (
+      <div className="h-[100dvh] bg-black flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      </div>
+    );
   }
 
   if (!videos.length) {
@@ -188,23 +324,36 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
       <div className="h-[100dvh] bg-black flex flex-col items-center justify-center gap-3 px-6 text-center">
         <Play className="w-10 h-10 text-neutral-600" />
         <p className="text-neutral-400">Aucune vidéo pour le moment</p>
-        <Link href="/videos/new" className="text-red-500 font-semibold text-sm">Publier la première</Link>
+        <Link
+          href="/videos/new"
+          className="text-red-500 font-semibold text-sm"
+        >
+          Publier la première
+        </Link>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide">
+    <div
+      ref={containerRef}
+      className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide"
+    >
       {videos.map((video, index) => {
         const isActive = index === active;
         const author = video.profiles;
         const name = author?.username || author?.full_name || "user";
+        const mediaUrl = video.media_url || video.url || "";
 
         return (
-          <section key={video.id} data-index={index} className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black">
-            {video.media_url && (
+          <section
+            key={video.id}
+            data-index={index}
+            className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black"
+          >
+            {mediaUrl ? (
               <video
-                src={video.media_url}
+                src={mediaUrl}
                 className="absolute inset-0 w-full h-full object-cover"
                 playsInline
                 loop
@@ -213,50 +362,139 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
                 ref={(el) => {
                   if (!el) return;
                   if (isActive) el.play().catch(() => {});
-                  else { el.pause(); el.currentTime = 0; }
+                  else {
+                    el.pause();
+                    el.currentTime = 0;
+                  }
                 }}
               />
-            )}
+            ) : null}
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
 
-            <button onClick={() => setMuted(!muted)} className="absolute top-16 right-4 z-30 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-90 transition">
-              {muted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
+            <button
+              type="button"
+              onClick={() => setMuted((m) => !m)}
+              className="absolute top-16 right-4 z-30 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-90 transition"
+            >
+              {muted ? (
+                <VolumeX className="w-5 h-5 text-white" />
+              ) : (
+                <Volume2 className="w-5 h-5 text-white" />
+              )}
             </button>
 
-            <div className="absolute right-2 bottom-24 z-20 flex flex-col items-center gap-4">
-              <div className="relative mb-2">
-                <Link href={`/profile/${video.user_id}`} className="relative block w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
-                  {author?.avatar_url ? <img src={author.avatar_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-sm font-bold">{name.charAt(0).toUpperCase()}</div>}
+            {/* Actions droite style TikTok */}
+            <div className="absolute right-3 bottom-28 z-20 flex flex-col items-center gap-4">
+              <div className="relative mb-1">
+                <Link
+                  href={`/profile/${video.user_id}`}
+                  className="block w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800"
+                >
+                  {author?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={author.avatar_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white">
+                      {name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </Link>
-                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
-                  <FollowButton targetUserId={video.user_id} currentUserId={currentUser?.id} variant="small" />
-                </div>
+                {currentUser?.id !== video.user_id && (
+                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+                    <FollowButton
+                      targetUserId={video.user_id}
+                      currentUserId={currentUser?.id}
+                      variant="small"
+                    />
+                  </div>
+                )}
               </div>
 
-              <button type="button" onClick={(e) => { e.stopPropagation(); toggleLike(video.id); }} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
-                <Heart className={cn("w-9 h-9 transition-all drop-shadow-lg", liked[video.id] ? "fill-red-500 text-red-500 scale-110" : "text-white")} />
-                <span className="text-xs text-white font-semibold drop-shadow-md">{formatNumber(video.like_count || 0)}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void toggleLike(video.id);
+                }}
+                className="flex flex-col items-center gap-0.5 active:scale-90 transition"
+              >
+                <Heart
+                  className={cn(
+                    "w-9 h-9 drop-shadow-lg transition-all",
+                    liked[video.id]
+                      ? "fill-red-500 text-red-500"
+                      : "text-white"
+                  )}
+                />
+                <span className="text-xs text-white font-semibold drop-shadow-md">
+                  {formatNumber(video.like_count || 0)}
+                </span>
               </button>
 
-              <button type="button" onClick={(e) => { e.stopPropagation(); setCommentsOpenVideoId(video.id); }} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCommentsOpenVideoId(video.id);
+                }}
+                className="flex flex-col items-center gap-0.5 active:scale-90 transition"
+              >
                 <MessageCircle className="w-9 h-9 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">{formatNumber(video.comment_count || 0)}</span>
+                <span className="text-xs text-white font-semibold drop-shadow-md">
+                  {formatNumber(video.comment_count || 0)}
+                </span>
               </button>
 
-              <button type="button" onClick={(e) => { e.stopPropagation(); toggleSave(video.id); }} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
-                <Bookmark className={cn("w-9 h-9 transition-all drop-shadow-lg", saved[video.id] ? "fill-white text-white" : "text-white")} />
-                <span className="text-xs text-white font-semibold drop-shadow-md">Enregistrer</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void toggleSave(video.id);
+                }}
+                className="flex flex-col items-center gap-0.5 active:scale-90 transition"
+              >
+                <Bookmark
+                  className={cn(
+                    "w-9 h-9 drop-shadow-lg transition-all",
+                    saved[video.id] ? "fill-white text-white" : "text-white"
+                  )}
+                />
+                <span className="text-xs text-white font-semibold drop-shadow-md">
+                  Enregistrer
+                </span>
               </button>
 
-              <button type="button" onClick={(e) => { e.stopPropagation(); handleShare(video.id, name); }} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleShare(video.id, name);
+                }}
+                className="flex flex-col items-center gap-0.5 active:scale-90 transition"
+              >
                 <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">Partager</span>
+                <span className="text-xs text-white font-semibold drop-shadow-md">
+                  Partager
+                </span>
               </button>
 
-              <button type="button" onClick={(e) => { e.stopPropagation(); handleDownload(video.media_url, video.id); }} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDownload(mediaUrl, video.id);
+                }}
+                className="flex flex-col items-center gap-0.5 active:scale-90 transition"
+              >
                 <Download className="w-7 h-7 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">Télécharger</span>
+                <span className="text-xs text-white font-semibold drop-shadow-md">
+                  Telecharger
+                </span>
               </button>
 
               <div className="w-11 h-11 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center animate-spin-slow mt-2 shadow-lg">
@@ -265,11 +503,22 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
             </div>
 
             <div className="absolute left-4 right-24 bottom-16 z-20 space-y-2">
-              <Link href={`/profile/${video.user_id}`} className="font-bold text-white text-base hover:underline drop-shadow-md inline-block">@{name}</Link>
-              {video.caption && <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">{video.caption}</p>}
+              <Link
+                href={`/profile/${video.user_id}`}
+                className="font-bold text-white text-base hover:underline drop-shadow-md inline-block"
+              >
+                @{name}
+              </Link>
+              {video.caption && (
+                <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">
+                  {video.caption}
+                </p>
+              )}
               <div className="flex items-center gap-2">
                 <Music className="w-3.5 h-3.5 text-white" />
-                <p className="text-xs text-white/80 truncate max-w-[200px]">Son original - {name}</p>
+                <p className="text-xs text-white/80 truncate max-w-[200px]">
+                  Son original - {name}
+                </p>
               </div>
             </div>
           </section>
@@ -283,16 +532,29 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
           onClose={() => setCommentsOpenVideoId(null)}
           currentUser={currentUser}
           onCommentAdded={() => {
-            setVideos((prev) => prev.map((v) =>
-              v.id === commentsOpenVideoId ? { ...v, comment_count: (v.comment_count || 0) + 1 } : v
-            ));
+            setVideos((prev) =>
+              prev.map((v) =>
+                v.id === commentsOpenVideoId
+                  ? { ...v, comment_count: (v.comment_count || 0) + 1 }
+                  : v
+              )
+            );
           }}
         />
       )}
 
       <style jsx>{`
-        @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .animate-spin-slow { animation: spin-slow 5s linear infinite; }
+        @keyframes spin-slow {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        .animate-spin-slow {
+          animation: spin-slow 5s linear infinite;
+        }
       `}</style>
     </div>
   );
