@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import ProfileView from "@/components/profile/ProfileView";
-import type ProfileData from "@/components/profile/ProfileView";
+// 👇 Correction de l'import : on importe le composant par défaut ET le type entre accolades
+import ProfileView, { type ProfileData } from "@/components/profile/ProfileView";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,7 @@ export default async function ProfilePage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
+  // Redirection si l'utilisateur demande son propre profil avec "me"
   if (id === "me") {
     const {
       data: { user },
@@ -21,6 +22,7 @@ export default async function ProfilePage({ params }: PageProps) {
     redirect(`/profile/${user.id}`);
   }
 
+  // Récupération des données du profil
   const { data: profile, error } = await supabase
     .from("profiles")
     .select("id, username, full_name, avatar_url, bio, role, created_at")
@@ -31,18 +33,21 @@ export default async function ProfilePage({ params }: PageProps) {
     notFound();
   }
 
+  // Vérification si c'est le profil de l'utilisateur connecté
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const isOwnProfile = user?.id === profile.id;
 
+  // Comptage des vidéos publiques
   const { count: videosCount } = await supabase
     .from("videos")
     .select("*", { count: "exact", head: true })
     .eq("user_id", profile.id)
     .eq("is_public", true);
 
+  // Comptage des abonnés et abonnements
   let followers_count = 0;
   let following_count = 0;
 
@@ -60,7 +65,7 @@ export default async function ProfilePage({ params }: PageProps) {
     followers_count = followers || 0;
     following_count = following || 0;
   } catch {
-    // table follows peut ne pas exister encore
+    // La table 'follows' peut ne pas exister encore, on ignore l'erreur
   }
 
   return (
