@@ -2,45 +2,30 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import VideoDetail from "@/components/video/VideoDetail";
 
+export const dynamic = "force-dynamic";
+
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export const dynamic = "force-dynamic";
-
-export default async function VideoDetailPage({ params }: PageProps) {
+export default async function VideoPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // Récupérer la vidéo avec les infos de l'auteur
-  const { data: video } = await supabase
+  const { data: video, error } = await supabase
     .from("videos")
-    .select(`
-      *,
-      profiles:user_id (
-        id,
-        username,
-        full_name,
-        avatar_url
-      )
-    `)
+    .select(`*, profiles:user_id (id, username, avatar_url, full_name)`)
     .eq("id", id)
-    .eq("status", "published")
     .single();
 
-  if (!video) {
-    notFound();
-  }
+  if (error || !video) notFound();
 
-  // Incrémenter le compteur de vues (via RPC)
-  try {
-    await supabase.rpc("increment_view_count", { video_id: id });
-  } catch (err) {
-    // Silencieux si la RPC n'existe pas encore
-  }
-
-  // Récupérer l'utilisateur connecté
   const { data: { user } } = await supabase.auth.getUser();
 
-  return <VideoDetail video={video} currentUser={user} />;
+  const videoWithProfile = {
+    ...video,
+    profiles: Array.isArray(video.profiles) ? video.profiles[0] : video.profiles,
+  };
+
+  return <VideoDetail video={videoWithProfile} currentUser={user} />;
 }
