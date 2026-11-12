@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import ProfileView, { type ProfileData } from "@/components/profile/ProfileView";
+import ProfileView from "@/components/profile/ProfileView";
+import type { ProfileData } from "@/components/profile/ProfileView";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,9 @@ export default async function ProfilePage({ params }: PageProps) {
   const supabase = await createClient();
 
   if (id === "me") {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) redirect("/auth/login");
     redirect(`/profile/${user.id}`);
   }
@@ -26,27 +29,37 @@ export default async function ProfilePage({ params }: PageProps) {
 
   if (error || !profile) notFound();
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const isOwnProfile = user?.id === profile.id;
 
-  // Compter les vidéos
+  // Compte exact des vidéos publiées
   const { count: videosCount } = await supabase
     .from("videos")
     .select("*", { count: "exact", head: true })
     .eq("user_id", profile.id)
     .eq("status", "published");
 
-  // Compter followers/following
   let followers_count = 0;
   let following_count = 0;
   try {
     const [{ count: followers }, { count: following }] = await Promise.all([
-      supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", profile.id),
-      supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", profile.id),
+      supabase
+        .from("follows")
+        .select("*", { count: "exact", head: true })
+        .eq("following_id", profile.id),
+      supabase
+        .from("follows")
+        .select("*", { count: "exact", head: true })
+        .eq("follower_id", profile.id),
     ]);
     followers_count = followers || 0;
     following_count = following || 0;
-  } catch {}
+  } catch {
+    /* ignore */
+  }
 
   return (
     <ProfileView
