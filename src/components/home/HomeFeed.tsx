@@ -5,8 +5,6 @@ import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { Heart, MessageCircle, Share2, Play, UserPlus } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
-import VideoPlayer from "@/components/video/VideoPlayer";
-import PullToRefresh from "@/components/feed/PullToRefresh";
 
 export type FeedItem = {
   id: string;
@@ -42,8 +40,6 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(initialItems ? false : true);
-  const [doubleTapLike, setDoubleTapLike] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [following, setFollowing] = useState<Record<string, boolean>>({});
 
   // Charger les vidéos
   const loadVideos = useCallback(async () => {
@@ -99,30 +95,6 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
     return () => obs.disconnect();
   }, [videos]);
 
-  // Like avec animation double-tap
-  const handleDoubleTap = useCallback(
-    async (videoId: string, e: React.MouseEvent | React.TouchEvent) => {
-      // Position du cœur
-      let x = 0, y = 0;
-      if ("touches" in e) {
-        x = e.touches[0].clientX;
-        y = e.touches[0].clientY;
-      } else {
-        x = e.clientX;
-        y = e.clientY;
-      }
-
-      setDoubleTapLike({ id: videoId, x, y });
-      setTimeout(() => setDoubleTapLike(null), 1000);
-
-      // Liker si pas déjà fait
-      if (!liked[videoId]) {
-        toggleLike(videoId);
-      }
-    },
-    [liked]
-  );
-
   const toggleLike = useCallback(async (videoId: string) => {
     setLiked((prev) => ({ ...prev, [videoId]: !prev[videoId] }));
     setVideos((prev) =>
@@ -132,33 +104,7 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
           : v
       )
     );
-
-    // TODO: Appeler une RPC Supabase pour persister le like
   }, [liked]);
-
-  const toggleFollow = useCallback(async (userId: string) => {
-    setFollowing((prev) => ({ ...prev, [userId]: !prev[userId] }));
-    // TODO: Appeler une RPC Supabase pour persister le follow
-  }, []);
-
-  // Précharger la vidéo suivante
-  const preloadNext = useCallback(() => {
-    if (active < videos.length - 1) {
-      const nextVideo = videos[active + 1];
-      if (nextVideo?.media_url) {
-        const link = document.createElement("link");
-        link.rel = "prefetch";
-        link.href = nextVideo.media_url;
-        document.head.appendChild(link);
-      }
-    }
-  }, [active, videos]);
-
-  // Pull to refresh
-  const handleRefresh = async () => {
-    setVideos([]);
-    await loadVideos();
-  };
 
   if (loading) {
     return (
@@ -181,135 +127,124 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
   }
 
   return (
-    <PullToRefresh onRefresh={handleRefresh}>
-      <div
-        ref={containerRef}
-        className="h-[100dvh] overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide"
-      >
-        {videos.map((video, index) => {
-          const isActive = index === active;
-          const author = video.profiles;
-          const name = author?.username || author?.full_name || "user";
-          const isFollowing = following[video.user_id];
+    <div
+      ref={containerRef}
+      className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide"
+    >
+      {videos.map((video, index) => {
+        const isActive = index === active;
+        const author = video.profiles;
+        const name = author?.username || author?.full_name || "user";
 
-          return (
-            <section
-              key={video.id}
-              data-index={index}
-              className="relative h-[100dvh] w-full snap-start snap-always"
-              onDoubleClick={(e) => handleDoubleTap(video.id, e)}
-            >
-              {/* Player vidéo */}
-              <VideoPlayer
-                src={video.media_url || ""}
-                poster={video.thumbnail_url}
-                isActive={isActive}
+        return (
+          <section
+            key={video.id}
+            data-index={index}
+            className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black"
+          >
+            {/* Vidéo plein écran */}
+            {video.media_url && (
+              <video
+                src={video.media_url}
+                className="absolute inset-0 w-full h-full object-cover"
+                playsInline
+                loop
                 muted={muted}
-                onMuteToggle={() => setMuted((m) => !m)}
-                preloadNext={preloadNext}
+                autoPlay={isActive}
+                ref={(el) => {
+                  if (!el) return;
+                  if (isActive) {
+                    el.play().catch(() => {});
+                  } else {
+                    el.pause();
+                    el.currentTime = 0;
+                  }
+                }}
               />
+            )}
 
-              {/* Dégradé inférieur pour lisibilité */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
+            {/* Dégradé pour lisibilité */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
 
-              {/* Animation cœur double-tap */}
-              {doubleTapLike?.id === video.id && (
-                <div
-                  className="absolute z-50 pointer-events-none animate-ping"
-                  style={{
-                    left: doubleTapLike.x - 40,
-                    top: doubleTapLike.y - 40,
-                  }}
-                >
-                  <Heart className="w-20 h-20 text-red-500 fill-red-500" />
-                </div>
-              )}
-
-              {/* Actions droite */}
-              <div className="absolute right-3 bottom-28 z-20 flex flex-col items-center gap-5">
-                {/* Avatar + bouton follow */}
-                <div className="relative">
-                  <Link
-                    href={`/profile/${video.user_id}`}
-                    className="relative w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800"
-                  >
-                    {author?.avatar_url ? (
-                      <img
-                        src={author.avatar_url}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-sm font-bold">
-                        {name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                  </Link>
-                  {!isFollowing && (
-                    <button
-                      onClick={() => toggleFollow(video.user_id)}
-                      className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center border-2 border-black"
-                    >
-                      <UserPlus className="w-3 h-3 text-white" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Like */}
-                <button
-                  type="button"
-                  onClick={() => toggleLike(video.id)}
-                  className="flex flex-col items-center gap-1 active:scale-90 transition"
-                >
-                  <Heart
-                    className={cn(
-                      "w-8 h-8 transition-all",
-                      liked[video.id]
-                        ? "fill-red-500 text-red-500 scale-110"
-                        : "text-white"
-                    )}
-                  />
-                  <span className="text-xs text-white font-semibold">
-                    {formatNumber(video.likes_count || 0)}
-                  </span>
-                </button>
-
-                {/* Commentaires */}
-                <Link
-                  href={`/videos/${video.id}`}
-                  className="flex flex-col items-center gap-1"
-                >
-                  <MessageCircle className="w-8 h-8 text-white" />
-                  <span className="text-xs text-white font-semibold">
-                    {formatNumber(video.comments_count || 0)}
-                  </span>
-                </Link>
-
-                {/* Partager */}
-                <button type="button" className="flex flex-col items-center gap-1">
-                  <Share2 className="w-7 h-7 text-white" />
-                  <span className="text-xs text-white font-semibold">Partager</span>
-                </button>
-              </div>
-
-              {/* Infos bas gauche */}
-              <div className="absolute left-3 right-20 bottom-24 z-20">
+            {/* Actions à DROITE (style TikTok) */}
+            <div className="absolute right-3 bottom-32 z-20 flex flex-col items-center gap-5">
+              {/* Avatar + bouton follow */}
+              <div className="relative">
                 <Link
                   href={`/profile/${video.user_id}`}
-                  className="font-semibold text-white text-[15px] hover:underline"
+                  className="relative w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800"
                 >
-                  @{name}
+                  {author?.avatar_url ? (
+                    <img
+                      src={author.avatar_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm font-bold">
+                      {name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </Link>
-                {(video.description || video.title) && (
-                  <p className="mt-1 text-sm text-white/90 line-clamp-3">
-                    {video.description || video.title}
-                  </p>
-                )}
+                <button className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center border-2 border-black">
+                  <UserPlus className="w-3 h-3 text-white" />
+                </button>
               </div>
-            </section>
-          );
-        })}
-      </div>
-    </PullToRefresh>
+
+              {/* Like */}
+              <button
+                type="button"
+                onClick={() => toggleLike(video.id)}
+                className="flex flex-col items-center gap-1 active:scale-90 transition"
+              >
+                <Heart
+                  className={cn(
+                    "w-9 h-9 transition-all",
+                    liked[video.id]
+                      ? "fill-red-500 text-red-500 scale-110"
+                      : "text-white"
+                  )}
+                />
+                <span className="text-xs text-white font-semibold">
+                  {formatNumber(video.likes_count || 0)}
+                </span>
+              </button>
+
+              {/* Commentaires */}
+              <Link
+                href={`/videos/${video.id}`}
+                className="flex flex-col items-center gap-1"
+              >
+                <MessageCircle className="w-9 h-9 text-white" />
+                <span className="text-xs text-white font-semibold">
+                  {formatNumber(video.comments_count || 0)}
+                </span>
+              </Link>
+
+              {/* Partager */}
+              <button type="button" className="flex flex-col items-center gap-1">
+                <Share2 className="w-8 h-8 text-white" />
+                <span className="text-xs text-white font-semibold">Partager</span>
+              </button>
+            </div>
+
+            {/* Infos en BAS À GAUCHE (style TikTok) */}
+            <div className="absolute left-4 right-20 bottom-20 z-20">
+              <Link
+                href={`/profile/${video.user_id}`}
+                className="font-bold text-white text-base hover:underline"
+              >
+                @{name}
+              </Link>
+              {(video.description || video.title) && (
+                <p className="mt-2 text-sm text-white/90 line-clamp-2">
+                  {video.description || video.title}
+                </p>
+              )}
+            </div>
+          </section>
+        );
+      })}
+    </div>
   );
 }
