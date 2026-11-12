@@ -160,7 +160,7 @@ export default function HomeFeed() {
   }, []);
 
   // ✅ TÉLÉCHARGEMENT
-  const handleDownload = useCallback((videoUrl: string, videoId: string) => {
+  const handleDownload = useCallback((videoUrl: string | null | undefined, videoId: string) => {
     const link = document.createElement("a");
     link.href = videoUrl;
     link.download = `moshi_${videoId}.mp4`;
