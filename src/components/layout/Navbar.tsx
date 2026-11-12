@@ -27,7 +27,7 @@ export default function Navbar({ role }: NavbarProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("camera");
   const [duration, setDuration] = useState<Duration>(15);
-  const [facingMode, setFacingMode] = useState<"user" | "environment">("front");
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const [flashOn, setFlashOn] = useState(false);
   const [timerOn, setTimerOn] = useState(false);
   const [gridOn, setGridOn] = useState(false);
