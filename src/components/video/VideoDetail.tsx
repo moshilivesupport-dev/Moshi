@@ -22,7 +22,8 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
 
   const [muted, setMuted] = useState(false);
   const [liked, setLiked] = useState(false);
-  const [likesCount, setLikesCount] = useState(video.likes_count || video.like_count || 0);
+  // ✅ CORRECTION : Typage explicite de number pour éviter l'erreur TypeScript
+  const [likesCount, setLikesCount] = useState<number>(video.likes_count || video.like_count || 0);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [following, setFollowing] = useState(false);
 
@@ -34,7 +35,8 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
 
     const newLiked = !liked;
     setLiked(newLiked);
-    setLikesCount((prev) => prev + (newLiked ? 1 : -1));
+    // ✅ CORRECTION : Typage explicite de 'prev' en number
+    setLikesCount((prev: number) => prev + (newLiked ? 1 : -1));
 
     // TODO: Persister via RPC Supabase
   };
@@ -53,10 +55,10 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
     const shareData = {
       title: `Vidéo de @${name}`,
       text: video.description || video.caption || "Regarde cette vidéo sur Moshi !",
-      url: window.location.href,
+      url: typeof window !== "undefined" ? window.location.href : "",
     };
 
-    if (navigator.share) {
+    if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share(shareData);
       } catch (err) {
@@ -64,8 +66,10 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
       }
     } else {
       // Fallback : copier le lien
-      await navigator.clipboard.writeText(window.location.href);
-      alert("Lien copié !");
+      if (typeof navigator !== "undefined") {
+        await navigator.clipboard.writeText(shareData.url);
+        alert("Lien copié !");
+      }
     }
   };
 
