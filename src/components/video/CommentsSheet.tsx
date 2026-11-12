@@ -17,15 +17,19 @@ type Comment = {
 
 interface CommentsSheetProps {
   videoId: string;
-  currentUser: { id: string } | null;
+  isOpen?: boolean;
   onClose: () => void;
+  currentUser: { id: string } | null;
+  onCommentAdded?: () => void;
   onCountChange?: (delta: number) => void;
 }
 
 export default function CommentsSheet({
   videoId,
-  currentUser,
+  isOpen = true,
   onClose,
+  currentUser,
+  onCommentAdded,
   onCountChange,
 }: CommentsSheetProps) {
   const supabase = createClient();
@@ -37,8 +41,12 @@ export default function CommentsSheet({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     (async () => {
       setLoading(true);
+      setError(null);
+
       const { data, error: err } = await supabase
         .from("video_comments")
         .select(
@@ -50,17 +58,28 @@ export default function CommentsSheet({
 
       if (err) {
         setError(err.message);
+        setComments([]);
       } else {
         setComments(
-          (data || []).map((c: any) => ({
-            ...c,
-            profiles: Array.isArray(c.profiles) ? c.profiles[0] : c.profiles,
-          }))
+          (data || []).map((c) => {
+            const row = c as Comment & {
+              profiles?: Comment["profiles"] | Comment["profiles"][];
+            };
+            return {
+              ...row,
+              profiles: Array.isArray(row.profiles)
+                ? row.profiles[0]
+                : row.profiles,
+            };
+          })
         );
       }
+
       setLoading(false);
     })();
-  }, [supabase, videoId]);
+  }, [supabase, videoId, isOpen]);
+
+  if (!isOpen) return null;
 
   const sendComment = async () => {
     if (!currentUser) return;
@@ -89,15 +108,17 @@ export default function CommentsSheet({
       return;
     }
 
-    const row = {
-      ...data,
-      profiles: Array.isArray((data as any).profiles)
-        ? (data as any).profiles[0]
-        : (data as any).profiles,
-    } as Comment;
+    const row = data as Comment & {
+      profiles?: Comment["profiles"] | Comment["profiles"][];
+    };
+    const normalized: Comment = {
+      ...row,
+      profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
+    };
 
-    setComments((prev) => [...prev, row]);
+    setComments((prev) => [...prev, normalized]);
     setNewComment("");
+    onCommentAdded?.();
     onCountChange?.(1);
     inputRef.current?.focus();
   };
@@ -122,7 +143,9 @@ export default function CommentsSheet({
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
           {loading ? (
-            <p className="text-sm text-neutral-500 text-center py-8">Chargement...</p>
+            <p className="text-sm text-neutral-500 text-center py-8">
+              Chargement...
+            </p>
           ) : comments.length === 0 ? (
             <p className="text-sm text-neutral-500 text-center py-8">
               Sois le premier a commenter
@@ -139,51 +162,4 @@ export default function CommentsSheet({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs font-bold text-white">
-                      {(comment.profiles?.username || "?").charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-neutral-400 font-semibold">
-                    {comment.profiles?.username || "user"}
-                  </p>
-                  <p className="text-sm text-white break-words">{comment.content}</p>
-                </div>
-              </div>
-            ))
-          )}
-          {error && <p className="text-xs text-red-400 text-center">{error}</p>}
-        </div>
-
-        {currentUser ? (
-          <div className="p-3 border-t border-neutral-800 flex gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void sendComment();
-              }}
-              placeholder="Ajouter un commentaire..."
-              className="flex-1 bg-neutral-800 text-white px-4 py-2.5 rounded-full text-sm outline-none focus:ring-2 focus:ring-red-500"
-            />
-            <button
-              type="button"
-              onClick={() => void sendComment()}
-              disabled={!newComment.trim() || sending}
-              className="w-10 h-10 rounded-full bg-red-500 disabled:bg-neutral-700 flex items-center justify-center"
-            >
-              <Send className="w-4 h-4 text-white" />
-            </button>
-          </div>
-        ) : (
-          <p className="text-center text-sm text-neutral-500 py-4">
-            Connecte-toi pour commenter
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
+                    <div className="
