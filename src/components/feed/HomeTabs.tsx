@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import HomeFeed from "@/components/home/HomeFeed";
-import FollowingFeed from "./FollowingFeed";
 
 export default function HomeTabs() {
   const [activeTab, setActiveTab] = useState<"foryou" | "following">("foryou");
@@ -11,7 +10,7 @@ export default function HomeTabs() {
   return (
     <div className="relative h-[100dvh] bg-black overflow-hidden">
       {/* Header avec onglets */}
-      <header className="absolute top-0 left-0 right-0 z-40 pt-4 pb-2">
+      <header className="absolute top-0 left-0 right-0 z-40 pt-12 pb-2 bg-gradient-to-b from-black/60 to-transparent">
         <div className="flex items-center justify-center gap-8">
           <button
             onClick={() => setActiveTab("following")}
@@ -46,17 +45,16 @@ export default function HomeTabs() {
         </div>
       </header>
 
-      {/* Contenu des onglets avec transition */}
+      {/* Contenu des onglets */}
       <div className="relative h-full">
         <motion.div
           key={activeTab}
-          initial={{ opacity: 0, x: activeTab === "foryou" ? 20 : -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: activeTab === "foryou" ? -20 : 20 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           transition={{ duration: 0.2 }}
           className="h-full"
         >
-          {activeTab === "foryou" ? <HomeFeed /> : <FollowingFeed />}
+          {activeTab === "foryou" ? <HomeFeed /> : <HomeFeed />}
         </motion.div>
       </div>
     </div>
