@@ -1,101 +1,75 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, X, Film, AlertCircle } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { Upload, Loader2 } from "lucide-react";
 
-interface VideoUploadFormProps {
-  userId: string;
-}
-
-export default function VideoUploadForm({ userId }: VideoUploadFormProps) {
-  const supabase = createClient();
+export default function VideoUploadForm() {
   const router = useRouter();
+  const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoPreviewRef = useRef<HTMLVideoElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [isPublic, setIsPublic] = useState(true);
-  
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
-
-    const validTypes = ["video/mp4", "video/webm", "video/quicktime"];
-    if (!validTypes.includes(selectedFile.type)) {
-      setError("Format non supporté. Utilisez MP4, WebM ou MOV.");
-      return;
-    }
-
-    if (selectedFile.size > 100 * 1024 * 1024) {
-      setError("La vidéo est trop lourde (max 100MB).");
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(selectedFile);
-    setPreviewUrl(objectUrl);
-    setFile(selectedFile);
-    setError(null);
-
-    if (videoPreviewRef.current) {
-      videoPreviewRef.current.onloadedmetadata = () => {
-        if (videoPreviewRef.current && videoPreviewRef.current.duration > 45) {
-          setError("La vidéo dépasse 45 secondes.");
-          setFile(null);
-          setPreviewUrl(null);
-        }
-      };
+    if (selectedFile) {
+      if (selectedFile.size > 100 * 1024 * 1024) {
+        setError("Le fichier est trop lourd (max 100 Mo).");
+        return;
+      }
+      setFile(selectedFile);
+      setError(null);
     }
   };
 
-  // ✅ Cette fonction est bien 'async', donc les 'await' à l'intérieur sont autorisés
   const handleUpload = async () => {
-    if (!file || !userId) return;
+    if (!file) return;
 
     setUploading(true);
     setError(null);
     setProgress(10);
 
     try {
-      // 1. Calculer la durée de la vidéo avant l'upload
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Vous devez être connecté.");
+
+      // 1. Calculer la durée
       const videoElement = document.createElement('video');
       videoElement.preload = 'metadata';
       videoElement.src = URL.createObjectURL(file);
       
       const duration = await new Promise<number>((resolve) => {
-        videoElement.onloadedmetadata = () => {
-          resolve(videoElement.duration);
-        };
+        videoElement.onloadedmetadata = () => resolve(videoElement.duration);
       });
+      URL.revokeObjectURL(videoElement.src);
 
-      // 2. Upload du fichier
+      setProgress(30);
+
+      // 2. Upload Storage
       const fileExt = file.name.split(".").pop();
-      const fileName = `${userId}/${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from("videos")
-        .upload(fileName, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
+        .upload(fileName, file, { cacheControl: "3600", upsert: false });
 
       if (uploadError) throw uploadError;
       setProgress(60);
 
-      // 3. Récupérer l'URL publique
+      // 3. URL Publique
       const { data: urlData } = supabase.storage.from("videos").getPublicUrl(fileName);
       setProgress(80);
 
-      // 4. Insertion en base AVEC duration_seconds
+      // 4. Insertion BDD ✅ VRAIES COLONNES
       const { error: dbError } = await supabase.from("videos").insert({
-        user_id: userId,
+        user_id: user.id,
         url: urlData.publicUrl,
         caption: caption.trim() || null,
         is_public: isPublic,
@@ -103,16 +77,13 @@ export default function VideoUploadForm({ userId }: VideoUploadFormProps) {
         view_count: 0,
         like_count: 0,
         comment_count: 0,
-        duration_seconds: Math.round(duration), // ✅ La durée est bien sauvegardée ici
+        duration_seconds: Math.round(duration),
       });
 
       if (dbError) throw dbError;
 
       setProgress(100);
-      
-      setTimeout(() => {
-        router.push("/");
-      }, 1000);
+      setTimeout(() => router.push("/"), 1000);
 
     } catch (err: any) {
       console.error(err);
@@ -123,112 +94,85 @@ export default function VideoUploadForm({ userId }: VideoUploadFormProps) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="relative aspect-[9/16] max-h-[500px] mx-auto rounded-2xl overflow-hidden bg-neutral-900 border-2 border-dashed border-neutral-700 flex flex-col items-center justify-center">
-        {previewUrl ? (
-          <>
-            <video
-              ref={videoPreviewRef}
-              src={previewUrl}
-              controls
-              className="w-full h-full object-contain bg-black"
-            />
-            <button
-              onClick={() => {
-                setFile(null);
-                setPreviewUrl(null);
-                setError(null);
-                if (fileInputRef.current) fileInputRef.current.value = "";
-              }}
-              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/60 backdrop-blur flex items-center justify-center hover:bg-black/80 transition"
+    <div className="max-w-md mx-auto p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
+      <h2 className="text-xl font-bold text-white mb-6">Publier une vidéo</h2>
+
+      <div 
+        onClick={() => fileInputRef.current?.click()}
+        className="border-2 border-dashed border-neutral-700 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:border-neutral-500 transition mb-6"
+      >
+        {file ? (
+          <div className="text-center">
+            <p className="text-white font-semibold">{file.name}</p>
+            <p className="text-sm text-neutral-400">{(file.size / 1024 / 1024).toFixed(2)} Mo</p>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setFile(null); }}
+              className="mt-2 text-red-500 text-sm hover:underline"
             >
-              <X className="w-4 h-4 text-white" />
+              Supprimer
             </button>
-          </>
+          </div>
         ) : (
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-3 p-6 text-center group"
-          >
-            <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
-              <Film className="w-8 h-8 text-neutral-400 group-hover:text-red-500 transition-colors" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-white mb-1">Sélectionner une vidéo</p>
-              <p className="text-xs text-neutral-500">MP4, WebM ou MOV · Max 45s · Max 100MB</p>
-            </div>
-          </button>
+          <>
+            <Upload className="w-10 h-10 text-neutral-500 mb-2" />
+            <p className="text-neutral-400 text-sm">Cliquez pour sélectionner une vidéo</p>
+            <p className="text-neutral-600 text-xs mt-1">MP4, WebM (Max 100 Mo)</p>
+          </>
         )}
-        
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="video/mp4,video/webm,video/quicktime"
-          onChange={handleFileChange}
-          className="hidden"
+        <input 
+          ref={fileInputRef} 
+          type="file" 
+          accept="video/mp4,video/webm" 
+          onChange={handleFileChange} 
+          className="hidden" 
         />
+      </div>
+
+      <div className="space-y-4 mb-6">
+        <div>
+          <label className="block text-sm font-medium text-neutral-400 mb-1">Légende</label>
+          <textarea
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            maxLength={150}
+            rows={3}
+            className="w-full bg-black border border-neutral-800 rounded-lg p-3 text-white text-sm focus:ring-2 focus:ring-red-500 outline-none resize-none"
+            placeholder="Décrivez votre vidéo..."
+          />
+          <p className="text-right text-xs text-neutral-600 mt-1">{caption.length}/150</p>
+        </div>
+
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div 
+            onClick={() => setIsPublic(!isPublic)}
+            className={`w-10 h-6 rounded-full p-1 transition-colors ${isPublic ? 'bg-red-500' : 'bg-neutral-700'}`}
+          >
+            <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isPublic ? 'translate-x-4' : 'translate-x-0'}`} />
+          </div>
+          <span className="text-sm text-white">Rendre public</span>
+        </label>
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <p>{error}</p>
+        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+          {error}
         </div>
       )}
 
-      <div>
-        <label className="block text-sm font-semibold mb-2 text-white">Légende</label>
-        <textarea
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-          placeholder="Décrivez votre vidéo... #moshi #liveshopping"
-          maxLength={300}
-          rows={3}
-          className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-red-500/50 transition resize-none"
-        />
-        <p className="text-xs text-neutral-500 mt-1 text-right">{caption.length}/300</p>
-      </div>
-
-      <div className="flex items-center justify-between bg-neutral-900 p-4 rounded-xl border border-neutral-800">
-        <div>
-          <p className="text-sm font-semibold text-white">Visibilité</p>
-          <p className="text-xs text-neutral-400">Qui peut voir cette vidéo ?</p>
-        </div>
-        <button
-          onClick={() => setIsPublic(!isPublic)}
-          className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${
-            isPublic ? "bg-red-500 text-white" : "bg-neutral-700 text-neutral-300"
-          }`}
-        >
-          {isPublic ? "Public" : "Privé"}
-        </button>
-      </div>
-
-      <div className="pt-2">
+      <button
+        onClick={handleUpload}
+        disabled={!file || uploading}
+        className="w-full bg-red-500 hover:bg-red-600 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2"
+      >
         {uploading ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-neutral-400">
-              <span>Mise en ligne...</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-red-500 to-pink-500 transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
+          <>
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Publication... {progress}%
+          </>
         ) : (
-          <button
-            onClick={handleUpload}
-            disabled={!file || !!error}
-            className="w-full bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 active:scale-98 transition shadow-lg shadow-red-500/20"
-          >
-            <Upload className="w-5 h-5" />
-            Publier la vidéo
-          </button>
+          "Publier la vidéo"
         )}
-      </div>
+      </button>
     </div>
   );
 }
