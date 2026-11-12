@@ -28,13 +28,12 @@ interface RecentVideo {
 
 function durationToSeconds(d: DurationKey): number | null {
   switch (d) {
-    case "10min": return 600;
+    case "10min": return 120; // ⏱️ Bridé à 2 min max
     case "60s": return 60;
     case "15s": return 15;
     default: return null;
   }
 }
-
 export default function Navbar({ role }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
