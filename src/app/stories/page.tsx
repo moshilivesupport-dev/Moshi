@@ -23,13 +23,17 @@ export default function StoriesPage() {
       setUser(user);
 
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("stories")
         .select("*, profiles:user_id(username, avatar_url)")
         .gte("created_at", twentyFourHoursAgo)
         .order("created_at", { ascending: false });
       
-      setStories(data || []);
+      if (error) {
+        console.error("Erreur chargement stories:", error);
+      } else {
+        setStories(data || []);
+      }
     };
     load();
   }, [supabase, router]);
@@ -37,16 +41,6 @@ export default function StoriesPage() {
   const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-
-    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
-      alert("Format non supporté. Utilisez une image ou une vidéo.");
-      return;
-    }
-
-    if (file.size > 50 * 1024 * 1024) {
-      alert("Fichier trop lourd (max 50MB).");
-      return;
-    }
 
     setUploading(true);
 
@@ -79,7 +73,7 @@ export default function StoriesPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-black text-white pb-20">
+    <div className="min-h-screen bg-black text-white pb-20">
       <header className="sticky top-0 z-30 bg-black/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 flex items-center gap-3">
         <button onClick={() => router.back()} className="p-2 hover:bg-neutral-800 rounded-full">
           <ArrowLeft className="w-5 h-5" />
@@ -124,7 +118,7 @@ export default function StoriesPage() {
         ) : (
           <div className="grid grid-cols-3 gap-2">
             {stories.map((story) => (
-              <div key={story.id} className="relative aspect-[3/4] bg-neutral-900 rounded-lg overflow-hidden group">
+              <div key={story.id} className="relative aspect-[3/4] bg-neutral-900 rounded-lg overflow-hidden">
                 {story.media_type === "video" ? (
                   <video src={story.media_url} className="w-full h-full object-cover" muted loop />
                 ) : (
