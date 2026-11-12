@@ -60,7 +60,6 @@ export default function StoriesPage() {
 
       if (error) throw error;
 
-      // ✅ CORRECTION : Renommé en urlData pour éviter le conflit avec 'data'
       const { data: urlData } = supabase.storage.from("stories").getPublicUrl(fileName);
 
       await supabase.from("stories").insert({
@@ -70,8 +69,6 @@ export default function StoriesPage() {
       });
 
       alert("Story publiée !");
-      
-      // ✅ CORRECTION : On utilise router.refresh() pour recharger les données proprement
       router.refresh();
     } catch (err: any) {
       console.error(err);
