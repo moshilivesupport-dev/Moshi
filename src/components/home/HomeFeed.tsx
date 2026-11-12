@@ -139,11 +139,17 @@ export default function HomeFeed({
       return;
     }
 
-    const rows: VideoRow[] = (data || []).map((v: any) => ({
-      ...v,
-      media_url: v.url,
-      profiles: Array.isArray(v.profiles) ? v.profiles[0] : v.profiles,
-    }));
+    const rows: VideoRow[] = (data || []).map((v: Record<string, unknown>) => {
+      const profiles = v.profiles as
+        | VideoRow["profiles"]
+        | VideoRow["profiles"][]
+        | null;
+      return {
+        ...(v as VideoRow),
+        media_url: (v.url as string) || null,
+        profiles: Array.isArray(profiles) ? profiles[0] : profiles,
+      };
+    });
 
     setVideos(rows);
 
@@ -268,7 +274,7 @@ export default function HomeFeed({
   const handleShare = useCallback(async (videoId: string, videoName: string) => {
     const shareUrl = `${window.location.origin}/videos/${videoId}`;
     const shareData = {
-      title: `Vidéo de @${videoName}`,
+      title: `Video de @${videoName}`,
       text: "Regarde sur Moshi !",
       url: shareUrl,
     };
@@ -285,12 +291,12 @@ export default function HomeFeed({
       try {
         await navigator.share(shareData);
       } catch {
-        /* annulé */
+        /* annule */
       }
     } else {
       try {
         await navigator.clipboard.writeText(shareUrl);
-        alert("Lien copié !");
+        alert("Lien copie !");
       } catch {
         /* ignore */
       }
@@ -323,12 +329,9 @@ export default function HomeFeed({
     return (
       <div className="h-[100dvh] bg-black flex flex-col items-center justify-center gap-3 px-6 text-center">
         <Play className="w-10 h-10 text-neutral-600" />
-        <p className="text-neutral-400">Aucune vidéo pour le moment</p>
-        <Link
-          href="/videos/new"
-          className="text-red-500 font-semibold text-sm"
-        >
-          Publier la première
+        <p className="text-neutral-400">Aucune video pour le moment</p>
+        <Link href="/videos/new" className="text-red-500 font-semibold text-sm">
+          Publier la premiere
         </Link>
       </div>
     );
@@ -375,21 +378,21 @@ export default function HomeFeed({
             <button
               type="button"
               onClick={() => setMuted((m) => !m)}
-              className="absolute top-16 right-4 z-30 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-90 transition"
+              className="absolute top-16 right-3 z-30 w-9 h-9 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-90 transition"
             >
               {muted ? (
-                <VolumeX className="w-5 h-5 text-white" />
+                <VolumeX className="w-4 h-4 text-white" />
               ) : (
-                <Volume2 className="w-5 h-5 text-white" />
+                <Volume2 className="w-4 h-4 text-white" />
               )}
             </button>
 
-            {/* Actions droite style TikTok */}
-            <div className="absolute right-3 bottom-28 z-20 flex flex-col items-center gap-4">
+            {/* Actions droite taille TikTok */}
+            <div className="absolute right-2 bottom-28 z-20 flex flex-col items-center gap-3.5">
               <div className="relative mb-1">
                 <Link
                   href={`/profile/${video.user_id}`}
-                  className="block w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800"
+                  className="block w-11 h-11 rounded-full border-2 border-white overflow-hidden bg-neutral-800"
                 >
                   {author?.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -399,13 +402,13 @@ export default function HomeFeed({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white">
+                    <div className="w-full h-full flex items-center justify-center text-xs font-bold text-white">
                       {name.charAt(0).toUpperCase()}
                     </div>
                   )}
                 </Link>
                 {currentUser?.id !== video.user_id && (
-                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2">
                     <FollowButton
                       targetUserId={video.user_id}
                       currentUserId={currentUser?.id}
@@ -425,13 +428,13 @@ export default function HomeFeed({
               >
                 <Heart
                   className={cn(
-                    "w-9 h-9 drop-shadow-lg transition-all",
+                    "w-7 h-7 drop-shadow-md",
                     liked[video.id]
                       ? "fill-red-500 text-red-500"
                       : "text-white"
                   )}
                 />
-                <span className="text-xs text-white font-semibold drop-shadow-md">
+                <span className="text-[11px] text-white font-semibold drop-shadow">
                   {formatNumber(video.like_count || 0)}
                 </span>
               </button>
@@ -444,8 +447,8 @@ export default function HomeFeed({
                 }}
                 className="flex flex-col items-center gap-0.5 active:scale-90 transition"
               >
-                <MessageCircle className="w-9 h-9 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">
+                <MessageCircle className="w-7 h-7 text-white drop-shadow-md" />
+                <span className="text-[11px] text-white font-semibold drop-shadow">
                   {formatNumber(video.comment_count || 0)}
                 </span>
               </button>
@@ -460,13 +463,10 @@ export default function HomeFeed({
               >
                 <Bookmark
                   className={cn(
-                    "w-9 h-9 drop-shadow-lg transition-all",
+                    "w-6 h-6 drop-shadow-md",
                     saved[video.id] ? "fill-white text-white" : "text-white"
                   )}
                 />
-                <span className="text-xs text-white font-semibold drop-shadow-md">
-                  Enregistrer
-                </span>
               </button>
 
               <button
@@ -477,10 +477,7 @@ export default function HomeFeed({
                 }}
                 className="flex flex-col items-center gap-0.5 active:scale-90 transition"
               >
-                <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">
-                  Partager
-                </span>
+                <Share2 className="w-6 h-6 text-white drop-shadow-md" />
               </button>
 
               <button
@@ -491,32 +488,29 @@ export default function HomeFeed({
                 }}
                 className="flex flex-col items-center gap-0.5 active:scale-90 transition"
               >
-                <Download className="w-7 h-7 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">
-                  Telecharger
-                </span>
+                <Download className="w-6 h-6 text-white drop-shadow-md" />
               </button>
 
-              <div className="w-11 h-11 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center animate-spin-slow mt-2 shadow-lg">
-                <Music className="w-5 h-5 text-white" />
+              <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-600 flex items-center justify-center animate-spin-slow mt-1">
+                <Music className="w-4 h-4 text-white" />
               </div>
             </div>
 
-            <div className="absolute left-4 right-24 bottom-16 z-20 space-y-2">
+            <div className="absolute left-3 right-20 bottom-24 z-20 space-y-1.5">
               <Link
                 href={`/profile/${video.user_id}`}
-                className="font-bold text-white text-base hover:underline drop-shadow-md inline-block"
+                className="font-bold text-white text-[15px] hover:underline drop-shadow-md inline-block"
               >
                 @{name}
               </Link>
               {video.caption && (
-                <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">
+                <p className="text-[13px] text-white/90 line-clamp-2 drop-shadow-md">
                   {video.caption}
                 </p>
               )}
-              <div className="flex items-center gap-2">
-                <Music className="w-3.5 h-3.5 text-white" />
-                <p className="text-xs text-white/80 truncate max-w-[200px]">
+              <div className="flex items-center gap-1.5">
+                <Music className="w-3 h-3 text-white" />
+                <p className="text-[11px] text-white/80 truncate max-w-[200px]">
                   Son original - {name}
                 </p>
               </div>
