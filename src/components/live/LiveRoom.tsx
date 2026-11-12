@@ -58,7 +58,7 @@ export default function LiveRoom({ sessionId, isHost = false, session: initialSe
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "live_sessions", filter: `id=eq.${sessionId}` },
-        (payload) => {
+        (payload: any) => { // ✅ CORRECTION ICI : ajout de ": any"
           setViewers(payload.new.viewers_count || 0);
           if (payload.new.pinned_product_id) {
             setPinnedProduct({ id: "1", name: "Produit Démo", price: 29.99, image_url: "https://picsum.photos/100", stock: 15 });
@@ -70,17 +70,15 @@ export default function LiveRoom({ sessionId, isHost = false, session: initialSe
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "live_gifts", filter: `session_id=eq.${sessionId}` },
-        async (payload) => {
+        async (payload: any) => { // ✅ CORRECTION ICI : ajout de ": any"
           const gift = payload.new;
           
-          // Récupérer le profil du sender
           const { data: profile } = await supabase
             .from("profiles")
             .select("username, avatar_url")
             .eq("id", gift.sender_id)
             .single();
 
-          // Gestion du combo (même cadeau envoyé rapidement)
           const comboKey = `${gift.sender_id}-${gift.gift_type}`;
           if (giftCombo[comboKey]) {
             clearTimeout(giftCombo[comboKey].timer);
@@ -116,7 +114,6 @@ export default function LiveRoom({ sessionId, isHost = false, session: initialSe
             setActiveGift({ ...gift, sender_name: profile?.username, sender_avatar: profile?.avatar_url, combo: 1 });
           }
 
-          // Masquer l'animation après 4s
           setTimeout(() => setActiveGift(null), 4000);
         }
       )
