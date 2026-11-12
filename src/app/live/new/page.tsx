@@ -14,29 +14,14 @@ export default async function NewLivePage() {
 
   if (!user) redirect("/auth/login?next=/live/new");
 
-  // Vérifier que l'utilisateur est vendeur
+  // ✅ MODIFICATION : On récupère le profil mais SANS bloquer les acheteurs
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .single();
 
-  if (profile?.role !== "vendeur") {
-    return (
-      <div className="min-h-[100dvh] bg-black text-white flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-neutral-900 flex items-center justify-center mb-4">
-          <span className="text-3xl">🔒</span>
-        </div>
-        <h1 className="text-xl font-bold mb-2">Accès réservé aux vendeurs</h1>
-        <p className="text-sm text-neutral-400 mb-6 max-w-xs">
-          Vous devez avoir un compte vendeur pour démarrer un live shopping.
-        </p>
-        <Link href="/boutique" className="text-red-500 font-semibold text-sm">
-          Retour à la boutique
-        </Link>
-      </div>
-    );
-  }
+  const isSeller = profile?.role === "vendeur";
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-24">
@@ -52,7 +37,18 @@ export default async function NewLivePage() {
       </header>
 
       <main className="px-4 py-6">
-        <LiveSetupForm userId={user.id} />
+        {/* Message d'info selon le rôle */}
+        {!isSeller && (
+          <div className="mb-6 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+            <p className="text-sm text-blue-400">
+              💡 <strong>Astuce :</strong> En tant qu'acheteur, vous pouvez faire des lives pour partager vos avis, unboxings, ou discuter avec la communauté. 
+              Les vendeurs ont en plus la possibilité d'épingler des produits à vendre.
+            </p>
+          </div>
+        )}
+
+        {/* ✅ MODIFICATION : On passe isSeller au formulaire au lieu de bloquer */}
+        <LiveSetupForm userId={user.id} isSeller={isSeller} />
       </main>
     </div>
   );
