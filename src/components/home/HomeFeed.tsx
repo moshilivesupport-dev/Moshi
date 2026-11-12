@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Heart, MessageCircle, Share2, Play, UserPlus, Music, Bookmark } from "lucide-react";
+import { Heart, MessageCircle, Share2, Play, UserPlus, Music } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
-import CommentsSheet from "@/components/video/CommentsSheet";
 
 export type FeedItem = {
   id: string;
@@ -29,17 +29,18 @@ interface HomeFeedProps {
 
 export default function HomeFeed({ initialItems }: HomeFeedProps) {
   const supabase = createClient();
+  const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [videos, setVideos] = useState<FeedItem[]>(initialItems || []);
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
+  const [following, setFollowing] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(initialItems ? false : true);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [commentsOpenVideoId, setCommentsOpenVideoId] = useState<string | null>(null);
 
-  // 1. Charger l'utilisateur connecté
+  // Charger l'utilisateur connecté
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -48,7 +49,7 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
     getUser();
   }, [supabase]);
 
-  // 2. Charger les vidéos
+  // Charger les vidéos
   const loadVideos = useCallback(async () => {
     if (initialItems && initialItems.length > 0) return;
     setLoading(true);
@@ -74,7 +75,7 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
 
   useEffect(() => { loadVideos(); }, [loadVideos]);
 
-  // 3. Observer la vidéo active pour l'autoplay
+  // Observer la vidéo active
   useEffect(() => {
     const root = containerRef.current;
     if (!root) return;
@@ -93,39 +94,40 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
     return () => obs.disconnect();
   }, [videos]);
 
-  // 4. Fonction S'ABONNER (Follow)
+  // Fonction S'ABONNER
   const toggleFollow = useCallback(async (targetUserId: string) => {
     if (!currentUser) {
-      alert("Connectez-vous pour suivre des utilisateurs");
+      router.push("/auth/login");
       return;
     }
-    if (currentUser.id === targetUserId) return;
+    if (currentUser.id === targetUserId) {
+      alert("Vous ne pouvez pas vous abonner à vous-même");
+      return;
+    }
 
-    // Vérifier si on suit déjà
-    const { data: existing } = await supabase
-      .from("follows")
-      .select("id")
-      .eq("follower_id", currentUser.id)
-      .eq("following_id", targetUserId)
-      .maybeSingle();
+    const isCurrentlyFollowing = following[targetUserId];
+    
+    // Mise à jour visuelle immédiate
+    setFollowing((prev) => ({ ...prev, [targetUserId]: !isCurrentlyFollowing }));
 
-    if (existing) {
+    // Sauvegarde en base
+    if (isCurrentlyFollowing) {
       await supabase.from("follows").delete().eq("follower_id", currentUser.id).eq("following_id", targetUserId);
     } else {
       await supabase.from("follows").insert({ follower_id: currentUser.id, following_id: targetUserId });
     }
-  }, [currentUser, supabase]);
+  }, [currentUser, following, supabase, router]);
 
-  // 5. Fonction LIKER
+  // Fonction LIKER
   const toggleLike = useCallback(async (videoId: string) => {
     if (!currentUser) {
-      alert("Connectez-vous pour liker une vidéo");
+      router.push("/auth/login");
       return;
     }
 
     const isCurrentlyLiked = liked[videoId];
     
-    // Mise à jour visuelle immédiate (Optimistic UI)
+    // Mise à jour visuelle immédiate
     setLiked((prev) => ({ ...prev, [videoId]: !isCurrentlyLiked }));
     setVideos((prev) =>
       prev.map((v) =>
@@ -135,13 +137,13 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
       )
     );
 
-    // Sauvegarde en base de données
+    // Sauvegarde en base
     if (isCurrentlyLiked) {
       await supabase.from("video_likes").delete().eq("video_id", videoId).eq("user_id", currentUser.id);
     } else {
       await supabase.from("video_likes").insert({ video_id: videoId, user_id: currentUser.id });
     }
-  }, [currentUser, liked, supabase]);
+  }, [currentUser, liked, supabase, router]);
 
   if (loading) {
     return (
@@ -191,10 +193,9 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
               />
             )}
 
-            {/* Dégradé pour lisibilité */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
 
-            {/* ✅ BOUTONS À DROITE */}
+            {/* BOUTONS À DROITE */}
             <div className="absolute right-2 bottom-24 z-20 flex flex-col items-center gap-4">
               {/* Avatar + Follow */}
               <div className="relative mb-2">
@@ -225,15 +226,14 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
                 <span className="text-xs text-white font-semibold drop-shadow-md">{formatNumber(video.likes_count || 0)}</span>
               </button>
 
-              {/* Commentaires (Ouvre le panneau) */}
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setCommentsOpenVideoId(video.id); }}
+              {/* Commentaires - Redirige vers la page vidéo */}
+              <Link
+                href={`/videos/${video.id}`}
                 className="flex flex-col items-center gap-0.5 active:scale-90 transition"
               >
                 <MessageCircle className="w-9 h-9 text-white drop-shadow-lg" />
                 <span className="text-xs text-white font-semibold drop-shadow-md">{formatNumber(video.comments_count || 0)}</span>
-              </button>
+              </Link>
 
               {/* Partager */}
               <button type="button" className="flex flex-col items-center gap-0.5 active:scale-90 transition">
@@ -247,7 +247,7 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
               </div>
             </div>
 
-            {/* ✅ INFOS EN BAS À GAUCHE */}
+            {/* INFOS EN BAS À GAUCHE */}
             <div className="absolute left-4 right-24 bottom-16 z-20 space-y-2">
               <Link href={`/profile/${video.user_id}`} className="font-bold text-white text-base hover:underline drop-shadow-md inline-block">
                 @{name}
@@ -263,16 +263,6 @@ export default function HomeFeed({ initialItems }: HomeFeedProps) {
           </section>
         );
       })}
-
-      {/* ✅ PANNEAU DE COMMENTAIRES (S'ouvre par-dessus le feed) */}
-      {commentsOpenVideoId && (
-        <CommentsSheet
-          videoId={commentsOpenVideoId}
-          isOpen={true}
-          onClose={() => setCommentsOpenVideoId(null)}
-          currentUser={currentUser}
-        />
-      )}
 
       <style jsx>{`
         @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
