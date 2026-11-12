@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X } from "lucide-react";
+import { ArrowLeft, Plus, X, Image as ImageIcon } from "lucide-react";
 
 export default function StoriesPage() {
   const supabase = createClient();
@@ -16,7 +16,10 @@ export default function StoriesPage() {
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/auth/login"); return; }
+      if (!user) { 
+        router.push("/auth/login"); 
+        return; 
+      }
       setUser(user);
 
       // Charger les stories des dernières 24h
@@ -35,6 +38,17 @@ export default function StoriesPage() {
   const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+
+    // Vérifications
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+      alert("Format non supporté. Utilisez une image ou une vidéo.");
+      return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      alert("Fichier trop lourd (max 50MB).");
+      return;
+    }
 
     setUploading(true);
 
@@ -57,7 +71,15 @@ export default function StoriesPage() {
       });
 
       alert("Story publiée !");
-      router.refresh();
+      
+      // Recharger la page
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data } = await supabase
+        .from("stories")
+        .select("*, profiles:user_id(username, avatar_url)")
+        .gte("created_at", twentyFourHoursAgo)
+        .order("created_at", { ascending: false });
+      setStories(data || []);
     } catch (err: any) {
       console.error(err);
       alert("Erreur: " + err.message);
@@ -107,18 +129,21 @@ export default function StoriesPage() {
         {/* Liste des stories */}
         {stories.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-neutral-500">
+            <ImageIcon className="w-16 h-16 mb-4 opacity-50" />
             <p className="text-sm">Aucune story pour le moment</p>
+            <p className="text-xs text-neutral-600 mt-2">Soyez le premier à en publier une !</p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-2">
             {stories.map((story) => (
-              <div key={story.id} className="relative aspect-[3/4] bg-neutral-900 rounded-lg overflow-hidden">
+              <div key={story.id} className="relative aspect-[3/4] bg-neutral-900 rounded-lg overflow-hidden group">
                 {story.media_type === "video" ? (
                   <video src={story.media_url} className="w-full h-full object-cover" muted loop />
                 ) : (
                   <img src={story.media_url} alt="Story" className="w-full h-full object-cover" />
                 )}
-                <div className="absolute bottom-1 left-1 flex items-center gap-1">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <div className="absolute bottom-2 left-2 flex items-center gap-1">
                   <div className="w-6 h-6 rounded-full bg-neutral-800 overflow-hidden border border-white/20">
                     {story.profiles?.avatar_url ? (
                       <img src={story.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -128,6 +153,9 @@ export default function StoriesPage() {
                       </div>
                     )}
                   </div>
+                  <span className="text-[10px] text-white font-semibold">
+                    {story.profiles?.username || "Anonyme"}
+                  </span>
                 </div>
               </div>
             ))}
