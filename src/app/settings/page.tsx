@@ -1,82 +1,49 @@
-"use client";
-
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { ArrowLeft, Lock, Bell, Shield, LogOut } from "lucide-react";
 import Link from "next/link";
-import {
-  User, Bell, Shield, FileText, HelpCircle, LogOut,
-  ChevronRight, Globe, Wallet, Volume2, KeyRound
-} from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
 
-const SECTIONS = [
-  {
-    title: "Compte",
-    items: [
-      { href: "/profile", label: "Mon profil", icon: User },
-      { href: "/wallet", label: "Portefeuille Coins", icon: Wallet },
-      { href: "/settings/password", label: "Mot de passe", icon: KeyRound },
-      { href: "/settings/notifications", label: "Notifications", icon: Bell },
-    ],
-  },
-  {
-    title: "Préférences",
-    items: [
-      { href: "/settings/language", label: "Langue", icon: Globe },
-      { href: "/settings/sound", label: "Sons & Soundboard", icon: Volume2 },
-    ],
-  },
-  {
-    title: "Support & Légal",
-    items: [
-      { href: "/support", label: "Aide & Litiges", icon: HelpCircle },
-      { href: "/legal/terms", label: "Conditions d'utilisation", icon: FileText },
-      { href: "/legal/privacy", label: "Politique de confidentialité", icon: Shield },
-    ],
-  },
-];
+export const dynamic = "force-dynamic";
 
-export default function SettingsPage() {
-  const router = useRouter();
-  const supabase = createClient();
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
-    router.refresh();
-  };
+export default async function SettingsPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-white mb-6">Paramètres</h1>
+    <div className="min-h-[100dvh] bg-black text-white pb-20">
+      <header className="sticky top-0 z-30 bg-black/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 flex items-center gap-3">
+        <Link href="/profile/me" className="p-2 hover:bg-neutral-800 rounded-full"><ArrowLeft className="w-5 h-5" /></Link>
+        <h1 className="text-lg font-bold">Paramètres</h1>
+      </header>
 
-      <div className="space-y-6">
-        {SECTIONS.map((section) => (
-          <div key={section.title}>
-            <p className="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">
-              {section.title}
-            </p>
-            <div className="card p-0 overflow-hidden divide-y divide-white/5">
-              {section.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-white/5 transition"
-                >
-                  <item.icon className="w-5 h-5 text-coral flex-shrink-0" />
-                  <span className="flex-1 text-sm text-white">{item.label}</span>
-                  <ChevronRight className="w-4 h-4 text-muted" />
-                </Link>
-              ))}
-            </div>
+      <div className="p-4 space-y-6">
+        <section>
+          <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Compte</h2>
+          <div className="bg-neutral-900 rounded-xl overflow-hidden">
+            <button className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition">
+              <div className="flex items-center gap-3"><Lock className="w-5 h-5 text-neutral-400" /><span>Compte privé</span></div>
+              <div className="w-10 h-6 bg-neutral-700 rounded-full relative"><div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full" /></div>
+            </button>
+            <div className="h-px bg-neutral-800" />
+            <button className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition">
+              <div className="flex items-center gap-3"><Shield className="w-5 h-5 text-neutral-400" /><span>Comptes bloqués</span></div>
+            </button>
           </div>
-        ))}
+        </section>
 
-        <button
-          onClick={logout}
-          className="w-full card flex items-center gap-3 px-4 py-3.5 text-red-400 hover:bg-red-500/10 transition"
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="text-sm font-medium">Se déconnecter</span>
+        <section>
+          <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Notifications</h2>
+          <div className="bg-neutral-900 rounded-xl overflow-hidden">
+            <button className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition">
+              <div className="flex items-center gap-3"><Bell className="w-5 h-5 text-neutral-400" /><span>Push notifications</span></div>
+              <div className="w-10 h-6 bg-red-500 rounded-full relative"><div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full" /></div>
+            </button>
+          </div>
+        </section>
+
+        <button className="w-full flex items-center justify-center gap-2 p-4 bg-red-500/10 text-red-500 rounded-xl font-semibold hover:bg-red-500/20 transition">
+          <LogOut className="w-5 h-5" /> Se déconnecter
         </button>
       </div>
     </div>
