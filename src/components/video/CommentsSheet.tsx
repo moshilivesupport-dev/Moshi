@@ -9,9 +9,10 @@ interface CommentsSheetProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: any;
+  onCommentAdded?: () => void;
 }
 
-export default function CommentsSheet({ videoId, isOpen, onClose, currentUser }: CommentsSheetProps) {
+export default function CommentsSheet({ videoId, isOpen, onClose, currentUser, onCommentAdded }: CommentsSheetProps) {
   const supabase = createClient();
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -21,6 +22,7 @@ export default function CommentsSheet({ videoId, isOpen, onClose, currentUser }:
   useEffect(() => {
     if (!isOpen) return;
     loadComments();
+    setTimeout(() => inputRef.current?.focus(), 300);
   }, [isOpen, videoId]);
 
   const loadComments = async () => {
@@ -44,6 +46,7 @@ export default function CommentsSheet({ videoId, isOpen, onClose, currentUser }:
       });
       setNewComment("");
       await loadComments();
+      onCommentAdded?.();
     } catch (err) {
       console.error(err);
       alert("Erreur lors de l'envoi");
@@ -55,14 +58,12 @@ export default function CommentsSheet({ videoId, isOpen, onClose, currentUser }:
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-lg bg-neutral-900 rounded-t-2xl max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+      <div className="w-full max-w-lg bg-neutral-900 rounded-t-2xl max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()} style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="flex items-center justify-between p-4 border-b border-neutral-800">
           <h3 className="font-bold text-white">{comments.length} commentaires</h3>
           <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full"><X className="w-5 h-5 text-white" /></button>
         </div>
 
-        {/* Liste des commentaires */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {comments.length === 0 ? (
             <p className="text-center text-neutral-500 text-sm py-8">Soyez le premier à commenter !</p>
@@ -81,7 +82,6 @@ export default function CommentsSheet({ videoId, isOpen, onClose, currentUser }:
           )}
         </div>
 
-        {/* Input commentaire */}
         {currentUser && (
           <div className="p-4 border-t border-neutral-800 flex gap-2">
             <input
@@ -91,7 +91,7 @@ export default function CommentsSheet({ videoId, isOpen, onClose, currentUser }:
               onChange={(e) => setNewComment(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && sendComment()}
               placeholder="Ajouter un commentaire..."
-              className="flex-1 bg-neutral-800 text-white px-4 py-2 rounded-full text-sm outline-none focus:ring-2 focus:ring-red-500"
+              className="flex-1 bg-neutral-800 text-white px-4 py-2.5 rounded-full text-sm outline-none focus:ring-2 focus:ring-red-500"
             />
             <button onClick={sendComment} disabled={!newComment.trim() || sending} className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 disabled:bg-neutral-700 flex items-center justify-center transition">
               <Send className="w-4 h-4 text-white" />
