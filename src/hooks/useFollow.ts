@@ -10,37 +10,43 @@ export function useFollow(targetUserId: string, currentUserId?: string) {
 
   useEffect(() => {
     if (!currentUserId || currentUserId === targetUserId) return;
+
     supabase
-      .from("followers")
+      .from("follows")
       .select("id")
       .eq("follower_id", currentUserId)
       .eq("following_id", targetUserId)
       .maybeSingle()
       .then(({ data }) => setIsFollowing(!!data));
-  }, [currentUserId, targetUserId]);
+  }, [currentUserId, targetUserId, supabase]);
 
   const toggle = useCallback(async () => {
-    if (!currentUserId || loading) return;
+    if (!currentUserId || loading || currentUserId === targetUserId) return;
     setLoading(true);
+
     try {
       if (isFollowing) {
-        await supabase
-          .from("followers")
+        const { error } = await supabase
+          .from("follows")
           .delete()
           .eq("follower_id", currentUserId)
           .eq("following_id", targetUserId);
+        if (error) throw error;
         setIsFollowing(false);
       } else {
-        await supabase.from("followers").insert({
+        const { error } = await supabase.from("follows").insert({
           follower_id: currentUserId,
           following_id: targetUserId,
         });
+        if (error) throw error;
         setIsFollowing(true);
       }
+    } catch (e) {
+      console.error("follow error", e);
     } finally {
       setLoading(false);
     }
-  }, [currentUserId, targetUserId, isFollowing, loading]);
+  }, [currentUserId, targetUserId, isFollowing, loading, supabase]);
 
   return { isFollowing, loading, toggle };
 }
