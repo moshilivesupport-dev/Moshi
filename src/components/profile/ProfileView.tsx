@@ -26,7 +26,7 @@ export default function ProfileView({
   stats: { videos_count: number; followers_count: number; following_count: number };
 }) {
   const [activeTab, setActiveTab] = useState<"videos" | "favorites">("videos");
-  const [videos, setVideos] = useState<{ id: string; url: string; view_count: number | null; like_count: number | null }[]>([]);
+  const [videos, setVideos] = useState<{ id: string; url: string; view_count: number | null }[]>([]);
   const supabase = createClient();
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function ProfileView({
       (async () => {
         const { data } = await supabase
           .from("videos")
-          .select("id, url, view_count, like_count")
+          .select("id, url, view_count")
           .eq("user_id", profile.id)
           .eq("status", "published")
           .order("created_at", { ascending: false })
@@ -49,7 +49,7 @@ export default function ProfileView({
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-20">
-      {/* Header avec bouton Paramètres */}
+      {/* Header */}
       <header className="sticky top-0 z-30 bg-black/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 flex items-center justify-between">
         <Link href="/" className="font-bold text-lg hover:text-neutral-300 transition">
           {handle || "Profil"}
@@ -70,7 +70,7 @@ export default function ProfileView({
         </div>
       </header>
 
-      {/* Informations du profil */}
+      {/* Profil */}
       <div className="px-4 py-6 flex flex-col items-center">
         <div className="w-24 h-24 rounded-full bg-neutral-800 overflow-hidden border-2 border-neutral-700 mb-4">
           {profile.avatar_url ? (
@@ -104,7 +104,6 @@ export default function ProfileView({
           <p className="text-sm text-center text-neutral-300 mb-6 max-w-xs whitespace-pre-wrap">{profile.bio}</p>
         )}
 
-        {/* Boutons d'action */}
         <div className="flex items-center gap-3 w-full max-w-xs">
           {isOwnProfile ? (
             <Link 
@@ -124,7 +123,7 @@ export default function ProfileView({
         </div>
       </div>
 
-      {/* Onglets de navigation */}
+      {/* Onglets */}
       <div className="sticky top-14 z-20 bg-black border-b border-neutral-800 flex">
         <button
           onClick={() => setActiveTab("videos")}
@@ -144,7 +143,7 @@ export default function ProfileView({
         </button>
       </div>
 
-      {/* Contenu des onglets */}
+      {/* Grille vidéos */}
       <div className="p-0.5">
         {activeTab === "videos" && (
           <>
