@@ -48,6 +48,7 @@ type VideoItem = {
   like_count?: number | null;
   caption?: string | null;
   user_id?: string;
+  status?: string | null;
 };
 
 export default function ProfileView({
@@ -64,37 +65,32 @@ export default function ProfileView({
   const [savedVideos, setSavedVideos] = useState<VideoItem[]>([]);
   const [stats, setStats] = useState(initialStats);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [accountDropdown, setAccountDropdown] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
 
-      // 1) Vidéos publiées du profil
-      // Pas de is_pinned (colonne pas forcément présente)
-      let videosQuery = supabase
+      // 1) Videos du profil
+      const { data: videosData, error: videosError } = await supabase
         .from("videos")
         .select("id, url, view_count, like_count, caption, user_id, status")
         .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
         .limit(60);
 
-      const { data: videosData, error: videosError } = await videosQuery;
-
       if (videosError) {
         console.error("videos error:", videosError);
         setVideos([]);
       } else {
-        // Accepte published OU status null (anciennes lignes)
         const list = (videosData || []).filter(
           (v) => !v.status || v.status === "published"
         );
         setVideos(list as VideoItem[]);
       }
 
-      // 2) Vidéos likées
-      if (activeTab === "liked" || isOwnProfile) {
+      // 2) Videos likées
+      {
         const { data: likesData, error: likesError } = await supabase
           .from("video_likes")
           .select("video_id")
@@ -104,7 +100,10 @@ export default function ProfileView({
           console.error("likes error:", likesError);
           setLikedVideos([]);
         } else {
-          const ids = (likesData || []).map((l) => l.video_id).filter(Boolean);
+          const ids = (likesData || [])
+            .map((l) => l.video_id)
+            .filter(Boolean) as string[];
+
           if (ids.length === 0) {
             setLikedVideos([]);
           } else {
@@ -117,8 +116,8 @@ export default function ProfileView({
         }
       }
 
-      // 3) Favoris / enregistrés (bookmarks)
-      if (activeTab === "favorites" || isOwnProfile) {
+      // 3) Favoris (bookmarks)
+      {
         const { data: bmData, error: bmError } = await supabase
           .from("video_bookmarks")
           .select("video_id")
@@ -128,7 +127,10 @@ export default function ProfileView({
           console.error("bookmarks error:", bmError);
           setSavedVideos([]);
         } else {
-          const ids = (bmData || []).map((b) => b.video_id).filter(Boolean);
+          const ids = (bmData || [])
+            .map((b) => b.video_id)
+            .filter(Boolean) as string[];
+
           if (ids.length === 0) {
             setSavedVideos([]);
           } else {
@@ -171,7 +173,7 @@ export default function ProfileView({
     };
 
     void loadData();
-  }, [profile.id, activeTab, isOwnProfile, supabase]);
+  }, [profile.id, supabase]);
 
   const name = profile.full_name || profile.username || "Utilisateur";
   const handle = profile.username ? `@${profile.username}` : "";
@@ -206,7 +208,6 @@ export default function ProfileView({
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-24">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 pt-4">
         <Link href="/profile/edit" className="p-2">
           <Edit3 className="w-5 h-5" />
@@ -225,19 +226,14 @@ export default function ProfileView({
       </div>
 
       <div className="px-4 mt-2">
-        <button
-          type="button"
-          onClick={() => setAccountDropdown((v) => !v)}
-          className="flex items-center gap-1"
-        >
+        <div className="flex items-center gap-1">
           <h1 className="text-xl font-bold">{profile.username || name}</h1>
           <ChevronDown className="w-4 h-4" />
           <span className="w-2 h-2 rounded-full bg-red-500 ml-1" />
-        </button>
+        </div>
         {handle && <p className="text-sm text-neutral-400">{handle}</p>}
       </div>
 
-      {/* Stats */}
       <div className="flex gap-8 px-4 mt-5">
         <div>
           <p className="text-lg font-bold">{formatNumber(stats.following_count)}</p>
@@ -248,11 +244,7 @@ export default function ProfileView({
           <p className="text-xs text-neutral-400">Followers</p>
         </div>
         <div>
-          <p className="text-lg font-bold">
-            {formatNumber(
-              likedVideos.length || 0
-            )}
-          </p>
+          <p className="text-lg font-bold">{formatNumber(likedVideos.length)}</p>
           <p className="text-xs text-neutral-400">J&apos;aime</p>
         </div>
       </div>
@@ -273,7 +265,6 @@ export default function ProfileView({
         </div>
       )}
 
-      {/* Stories / highlights */}
       <div className="flex gap-4 px-4 mt-5 overflow-x-auto">
         <div className="flex flex-col items-center gap-1 shrink-0">
           <div className="w-16 h-16 rounded-full border border-neutral-600 flex items-center justify-center">
@@ -302,7 +293,6 @@ export default function ProfileView({
         </div>
       )}
 
-      {/* Onglets */}
       <div className="border-b border-neutral-800 flex mt-4">
         {(
           [
@@ -318,7 +308,9 @@ export default function ProfileView({
             type="button"
             onClick={() => setActiveTab(key)}
             className={`flex-1 py-3 flex justify-center ${
-              activeTab === key ? "border-b-2 border-white text-white" : "text-neutral-500"
+              activeTab === key
+                ? "border-b-2 border-white text-white"
+                : "text-neutral-500"
             }`}
           >
             <Icon className="w-5 h-5" />
@@ -326,7 +318,6 @@ export default function ProfileView({
         ))}
       </div>
 
-      {/* Contenu */}
       <div className="grid grid-cols-3 gap-[1px] min-h-[200px]">
         {loading && (
           <div className="col-span-3 py-16 text-center text-neutral-500 text-sm">
