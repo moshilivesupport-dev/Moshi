@@ -1,153 +1,150 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Camera, Link as LinkIcon, Copy } from "lucide-react";
 
 export default function EditProfilePage() {
-  const router = useRouter();
   const supabase = createClient();
-
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  const [fullName, setFullName] = useState("");
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
   const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/auth/login"); return; }
+      setUser(user);
 
-      if (!user) {
-        router.replace("/auth/login?next=/profile/edit");
-        return;
+      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+      if (data) {
+        setProfile(data);
+        setUsername(data.username || "");
+        setFullName(data.full_name || "");
+        setBio(data.bio || "");
       }
+    };
+    load();
+  }, [supabase, router]);
 
-      setUserId(user.id);
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("full_name, username, bio")
-        .eq("id", user.id)
-        .single();
-
-      if (profile) {
-        setFullName(profile.full_name || "");
-        setUsername(profile.username || "");
-        setBio(profile.bio || "");
-      }
-
-      setLoading(false);
-    })();
-  }, [router, supabase]);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userId) return;
-
+  const handleSave = async () => {
     setSaving(true);
-    setError(null);
-
-    const cleanUsername = username
-      .toLowerCase()
-      .replace(/\s+/g, "")
-      .replace(/[^a-z0-9._]/g, "")
-      .slice(0, 24);
-
-    if (cleanUsername.length < 3) {
-      setError("Nom d’utilisateur : 3 caractères minimum.");
-      setSaving(false);
-      return;
-    }
-
-    const { error: updateError } = await supabase
+    const { error } = await supabase
       .from("profiles")
-      .update({
-        full_name: fullName.trim() || null,
-        username: cleanUsername,
-        bio: bio.trim() || null,
-      })
-      .eq("id", userId);
-
-    setSaving(false);
-
-    if (updateError) {
-      setError(updateError.message);
-      return;
+      .update({ username, full_name: fullName, bio })
+      .eq("id", user.id);
+    
+    if (error) {
+      alert("Erreur: " + error.message);
+    } else {
+      alert("Profil mis à jour !");
+      router.push(`/profile/${user.id}`);
     }
-
-    router.push(`/profile/${userId}`);
-    router.refresh();
+    setSaving(false);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-[100dvh] bg-black text-white flex items-center justify-center">
-        Chargement...
-      </div>
-    );
-  }
+  const copyProfileLink = () => {
+    const url = `${window.location.origin}/profile/${user?.id}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!profile) return <div className="h-[100dvh] bg-black flex items-center justify-center text-white">Chargement...</div>;
 
   return (
-    <div className="min-h-[100dvh] bg-black text-white px-4 pt-6 pb-28">
-      <div className="max-w-md mx-auto">
-        <div className="flex items-center gap-3 mb-8">
-          <Link
-            href="/profile"
-            className="p-2 rounded-full hover:bg-neutral-800"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <h1 className="text-xl font-bold">Modifier le profil</h1>
+    <div className="min-h-[100dvh] bg-black text-white pb-20">
+      <header className="sticky top-0 z-30 bg-black/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 flex items-center justify-between">
+        <button onClick={() => router.back()} className="p-2 hover:bg-neutral-800 rounded-full">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="text-lg font-bold">Modifier le profil</h1>
+        <button onClick={handleSave} disabled={saving} className="text-red-500 font-semibold text-sm disabled:opacity-50">
+          {saving ? "..." : "Enregistrer"}
+        </button>
+      </header>
+
+      <div className="p-4 space-y-6">
+        {/* Photo de profil */}
+        <div className="flex flex-col items-center">
+          <div className="relative w-24 h-24 rounded-full bg-neutral-800 overflow-hidden border-2 border-neutral-700">
+            {profile.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-3xl font-bold">
+                {username?.charAt(0).toUpperCase() || "?"}
+              </div>
+            )}
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+              <Camera className="w-6 h-6 text-white" />
+            </div>
+          </div>
+          <button className="mt-3 text-cyan-400 font-semibold text-sm">Changer de photo</button>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-4">
-          <Input
-            label="Nom affiché"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="Votre nom"
-          />
-          <Input
-            label="Nom d’utilisateur"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="ex. cosmeticslabss"
-          />
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-neutral-300">
-              Bio
-            </label>
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              rows={4}
-              maxLength={160}
-              placeholder="Parlez un peu de vous..."
-              className="w-full rounded-xl bg-neutral-900 border border-neutral-700 px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-500/50"
-            />
-            <p className="text-xs text-neutral-500 text-right">{bio.length}/160</p>
+        {/* Infos de base */}
+        <div className="bg-neutral-900 rounded-xl overflow-hidden space-y-px">
+          <div className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-sm text-neutral-400">Nom</p>
+              <input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="bg-transparent text-white font-semibold text-right outline-none w-48"
+                placeholder="Votre nom"
+              />
+            </div>
           </div>
+          <div className="h-px bg-neutral-800" />
+          <div className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-sm text-neutral-400">Nom d'utilisateur</p>
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="bg-transparent text-white font-semibold text-right outline-none w-48"
+                placeholder="@username"
+              />
+            </div>
+          </div>
+          <div className="h-px bg-neutral-800" />
+          <button onClick={copyProfileLink} className="w-full flex items-center justify-between p-4">
+            <div className="text-left">
+              <p className="text-sm text-neutral-400">Lien du profil</p>
+              <p className="text-sm text-white">moshi.app/@{username}</p>
+            </div>
+            {copied ? <span className="text-green-500 text-xs">Copié !</span> : <Copy className="w-4 h-4 text-neutral-400" />}
+          </button>
+        </div>
 
-          {error && (
-            <p className="text-sm text-red-400 bg-red-500/10 rounded-xl px-3 py-2">
-              {error}
-            </p>
-          )}
+        {/* Bio */}
+        <div className="bg-neutral-900 rounded-xl p-4">
+          <p className="text-sm text-neutral-400 mb-2">Bio</p>
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            maxLength={80}
+            rows={3}
+            className="w-full bg-transparent text-white text-sm outline-none resize-none"
+            placeholder="Parlez de vous..."
+          />
+          <p className="text-xs text-neutral-500 text-right">{bio.length}/80</p>
+        </div>
 
-          <Button type="submit" className="w-full" loading={saving}>
-            Enregistrer
-          </Button>
-        </form>
+        {/* Liens */}
+        <div className="bg-neutral-900 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-neutral-400">Liens</p>
+            <p className="text-sm text-neutral-500">Ajoutez un lien</p>
+          </div>
+          <LinkIcon className="w-5 h-5 text-neutral-400" />
+        </div>
       </div>
     </div>
   );
