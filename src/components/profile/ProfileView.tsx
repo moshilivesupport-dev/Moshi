@@ -16,8 +16,7 @@ import {
   Edit3,
   Calendar,
   UserPlus,
-  Menu,
-  Star
+  Menu
 } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
 import FollowButton from "@/components/social/FollowButton";
@@ -173,24 +172,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </button>
       </div>
 
-      {/* Playlists horizontales */}
-      <div className="flex gap-3 overflow-x-auto px-4 py-3 border-b border-neutral-800">
-        <button className="flex items-center gap-2 whitespace-nowrap">
-          <div className="w-6 h-6 rounded-full bg-neutral-800 flex items-center justify-center">
-            <Star className="w-3 h-3" />
-          </div>
-          <span className="text-sm">eva</span>
-        </button>
-        <button className="flex items-center gap-2 whitespace-nowrap">
-          <Play className="w-4 h-4" />
-          <span className="text-sm">Conte africain</span>
-        </button>
-        <button className="flex items-center gap-2 whitespace-nowrap">
-          <Play className="w-4 h-4" />
-          <span className="text-sm">K-Drama</span>
-        </button>
-      </div>
-
       {/* Grille vidéos */}
       <div className="grid grid-cols-3 gap-[1px]">
         {pinnedVideos.map((v) => (
@@ -257,7 +238,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
             <Link href="/studio" className="flex items-center justify-between py-3 border-b border-neutral-800">
               <div className="flex items-center gap-3">
                 <UserPlus className="w-5 h-5" />
-                <span>TikTok Studio</span>
+                <span>MOSHI Studio</span>
               </div>
             </Link>
             <Link href="/promote" className="flex items-center justify-between py-3 border-b border-neutral-800">
