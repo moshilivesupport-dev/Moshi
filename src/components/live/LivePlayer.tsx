@@ -62,7 +62,7 @@ export default function LivePlayer({ sessionId, hostId, viewerCount, isHost = fa
       </div>
 
       {/* Overlay de cadeau */}
-      {giftEvent && <GiftOverlay event={giftEvent} />}
+      {giftEvent && <GiftOverlay gifts={[giftEvent]} />}
 
       {/* Chat en bas à gauche */}
       <div className="absolute bottom-24 left-4 right-20 z-20">
@@ -78,7 +78,7 @@ export default function LivePlayer({ sessionId, hostId, viewerCount, isHost = fa
           <Share2 className="w-6 h-6 text-white" />
         </button>
         <button 
-          onClick={() => handleGift({ sender: "Vous", gift: "rose", count: 1 })}
+          onClick={() => handleGift({ id: "1", icon: "🌹", name: "Rose", sender: "Vous", quantity: 1 })}
           className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-90 transition"
         >
           <Coins className="w-6 h-6 text-yellow-500" />
