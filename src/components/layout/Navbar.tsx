@@ -7,9 +7,9 @@ import { createClient } from "@/lib/supabase/client";
 import {
   Home, Radio, Plus, ShoppingBag, User, Store, X, Music,
   RefreshCw, Zap, ZapOff, Clock, LayoutGrid, Sparkles,
-  ChevronDown, Upload, Video, Image as ImageIcon
+  ChevronDown, Upload,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import CreateVideoFooter, {
   type DurationKey,
@@ -41,7 +41,6 @@ export default function Navbar({ role }: NavbarProps) {
   const supabase = createClient();
 
   // ÉTATS UI
-  const [isMenuOpen, setIsMenuOpen] = useState(false); // Le Bottom Sheet
   const [isCreateOpen, setIsCreateOpen] = useState(false); // L'écran plein (caméra/upload)
   
   const [mode, setMode] = useState<TabKey>("camera");
@@ -59,14 +58,12 @@ export default function Navbar({ role }: NavbarProps) {
   const [error, setError] = useState<string | null>(null);
   
   const [userId, setUserId] = useState<string | null>(null);
-  const [recentVideos, setRecentVideos] = useState<RecentVideo[]>([]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   // CHARGEMENT USER
   useEffect(() => {
@@ -79,14 +76,6 @@ export default function Navbar({ role }: NavbarProps) {
         return;
       }
       setUserId(user.id);
-      const { data } = await supabase
-        .from("videos")
-        .select("id, url")
-        .eq("user_id", user.id)
-        .eq("status", "published")
-        .order("created_at", { ascending: false })
-        .limit(5);
-      setRecentVideos(data || []);
     };
     load();
   }, [isCreateOpen, supabase, router]);
@@ -231,21 +220,28 @@ export default function Navbar({ role }: NavbarProps) {
     }
   }, [duration, publishFile]);
 
+  // 🎯 C'EST ICI QUE TOUT SE JOUE : Le bouton central fait 3 choses différentes
   const handleRecordAction = useCallback(() => {
     if (uploading) return;
+
+    // MODE 1 : CRÉER (Upload depuis la galerie)
     if (mode === "create") {
       fileInputRef.current?.click();
       return;
     }
-    if (mode === "camera") {
-      if (recording) stopRecording();
-      else startRecording();
-      return;
-    }
+
+    // MODE 2 : LIVE (Lancement du Live Shopping)
     if (mode === "live") {
       stopCamera();
       setIsCreateOpen(false);
-      router.push("/live/start");
+      router.push("/live/start"); // Redirige vers ton interface de Live Shopping
+      return;
+    }
+
+    // MODE 3 : CAMÉRA (Enregistrement vidéo classique)
+    if (mode === "camera") {
+      if (recording) stopRecording();
+      else startRecording();
       return;
     }
   }, [uploading, mode, recording, startRecording, router]);
@@ -254,12 +250,6 @@ export default function Navbar({ role }: NavbarProps) {
     const f = e.target.files?.[0];
     if (!f) return;
     publishFile(f, f.name.split(".").pop() || "mp4", true);
-  }
-
-  function onPhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    publishFile(f, f.name.split(".").pop() || "jpg", false);
   }
 
   const links = [
@@ -272,98 +262,10 @@ export default function Navbar({ role }: NavbarProps) {
 
   return (
     <>
-      {/* ===== BOTTOM SHEET (Menu Créer) ===== */}
-      <AnimatePresence>
-        {isMenuOpen && (
-          <>
-            {/* Overlay sombre */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsMenuOpen(false)}
-              className="fixed inset-0 bg-black/60 z-[55] backdrop-blur-sm"
-            />
-
-            {/* Panneau */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-[56] bg-[#121212] rounded-t-3xl pb-8 px-4"
-            >
-              {/* Poignée */}
-              <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto mt-3 mb-6" />
-
-              {/* Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-white text-xl font-bold">Créer</h2>
-                <button onClick={() => setIsMenuOpen(false)} className="text-neutral-400 p-2">
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              {/* 3 Cartes */}
-              <div className="grid grid-cols-3 gap-3">
-                {/* Carte Vidéo */}
-                <button
-                  onClick={() => {
-                    setIsMenuOpen(false);
-                    setMode("camera");
-                    setIsCreateOpen(true);
-                  }}
-                  className="flex flex-col items-center justify-center bg-neutral-900 rounded-2xl p-4 gap-2 border border-neutral-800 active:scale-95 transition"
-                >
-                  <div className="w-12 h-12 rounded-full bg-pink-500 flex items-center justify-center mb-1">
-                    <Video className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-white font-semibold text-sm">Vidéo</span>
-                  <span className="text-neutral-500 text-[10px] text-center leading-tight">Publier une vidéo courte</span>
-                </button>
-
-                {/* Carte Live */}
-                <button
-                  onClick={() => {
-                    setIsMenuOpen(false);
-                    setMode("live");
-                    setIsCreateOpen(true);
-                  }}
-                  className="flex flex-col items-center justify-center bg-neutral-900 rounded-2xl p-4 gap-2 border border-neutral-800 active:scale-95 transition"
-                >
-                  <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center mb-1">
-                    <Radio className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-white font-semibold text-sm">Live</span>
-                  <span className="text-neutral-500 text-[10px] text-center leading-tight">Passer en direct</span>
-                </button>
-
-                {/* Carte Story */}
-                <button
-                  onClick={() => {
-                    setIsMenuOpen(false);
-                    // À remplacer par ta route ou ton composant de Story
-                    router.push("/stories/create");
-                  }}
-                  className="flex flex-col items-center justify-center bg-neutral-900 rounded-2xl p-4 gap-2 border border-neutral-800 active:scale-95 transition"
-                >
-                  <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center mb-1">
-                    <ImageIcon className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-white font-semibold text-sm">Story</span>
-                  <span className="text-neutral-500 text-[10px] text-center leading-tight">Story 24 h</span>
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* ===== ÉCRAN PLEIN (Caméra / Upload) ===== */}
+      {/* ===== ÉCRAN PLEIN (Caméra / Upload / Live) ===== */}
       {isCreateOpen && (
         <div className="fixed inset-0 z-[60] bg-black text-white flex flex-col select-none">
           <input ref={fileInputRef} type="file" accept="video/*" onChange={onVideoFile} className="hidden" />
-          <input ref={photoInputRef} type="file" accept="image/*" onChange={onPhotoFile} className="hidden" />
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 pt-4 pb-2">
@@ -431,7 +333,7 @@ export default function Navbar({ role }: NavbarProps) {
             )}
           </div>
 
-          {/* Footer Intégré */}
+          {/* Footer Intégré : Le bouton central utilise handleRecordAction */}
           <CreateVideoFooter
             role={role}
             activeTab={mode}
@@ -439,7 +341,7 @@ export default function Navbar({ role }: NavbarProps) {
             selectedDuration={duration}
             onDurationChange={setDuration}
             isRecording={recording}
-            onRecordToggle={handleRecordAction}
+            onRecordToggle={handleRecordAction} // 👈 Le bouton central est branché ici
             isUploading={uploading}
             onLiveClick={() => {
               stopCamera();
@@ -464,16 +366,16 @@ export default function Navbar({ role }: NavbarProps) {
             );
           })}
 
-          {/* BOUTON PLUS CENTRAL */}
+          {/* BOUTON PLUS CENTRAL : Ouvre directement l'écran caméra */}
           <button
-            onClick={() => setIsMenuOpen((v) => !v)}
+            onClick={() => setIsCreateOpen((v) => !v)}
             className="relative -top-4 flex flex-col items-center focus:outline-none"
           >
             <motion.div
-              animate={{ rotate: isMenuOpen ? 45 : 0 }}
+              animate={{ rotate: isCreateOpen ? 45 : 0 }}
               className={cn(
                 "w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-colors",
-                isMenuOpen ? "bg-neutral-700" : "bg-gradient-to-r from-cyan-400 via-white to-red-500 shadow-red-500/30"
+                isCreateOpen ? "bg-neutral-700" : "bg-gradient-to-r from-cyan-400 via-white to-red-500 shadow-red-500/30"
               )}
             >
               <div className="w-11 h-11 rounded-full bg-black flex items-center justify-center">
