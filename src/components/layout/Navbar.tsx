@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   Home, Radio, Plus, ShoppingBag, User, Store, X, Music,
   RefreshCw, Zap, ZapOff, Clock, LayoutGrid, Sparkles,
-  ChevronDown, Upload, Wallet,
+  ChevronDown, Upload,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -55,7 +55,6 @@ export default function Navbar({ role }: NavbarProps) {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [recentVideos, setRecentVideos] = useState<RecentVideo[]>([]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -64,7 +63,9 @@ export default function Navbar({ role }: NavbarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
-  // 🆕 Auto-open caméra si ?openCamera=true
+  const isSeller = role === "vendeur" || role === "seller" || role === "admin";
+
+  // Auto-open caméra si ?openCamera=true
   useEffect(() => {
     if (searchParams.get("openCamera") === "true") {
       setIsCreateOpen(true);
@@ -72,7 +73,6 @@ export default function Navbar({ role }: NavbarProps) {
     }
   }, [searchParams, pathname, router]);
 
-  // Charger user
   useEffect(() => {
     if (!isCreateOpen) return;
     const load = async () => {
@@ -83,19 +83,10 @@ export default function Navbar({ role }: NavbarProps) {
         return;
       }
       setUserId(user.id);
-      const { data } = await supabase
-        .from("videos")
-        .select("id, url")
-        .eq("user_id", user.id)
-        .eq("status", "published")
-        .order("created_at", { ascending: false })
-        .limit(5);
-      setRecentVideos(data || []);
     };
     load();
   }, [isCreateOpen, supabase, router]);
 
-  // Caméra
   useEffect(() => {
     if (!isCreateOpen || mode !== "camera") {
       stopCamera();
@@ -264,14 +255,6 @@ export default function Navbar({ role }: NavbarProps) {
     publishFile(f, f.name.split(".").pop() || "jpg", false);
   }
 
-  const links = [
-    { href: "/", label: "Accueil", icon: Home },
-    { href: "/live", label: "Live", icon: Radio },
-    { href: "/shop", label: "Boutique", icon: ShoppingBag },
-    ...(role === "seller" ? [{ href: "/seller/dashboard", label: "Vendeur", icon: Store }] : []),
-    { href: "/profile/me", label: "Profil", icon: User },
-  ];
-
   return (
     <>
       {isCreateOpen && (
@@ -362,47 +345,62 @@ export default function Navbar({ role }: NavbarProps) {
       )}
 
       {/* ===== BARRE DE NAVIGATION FIXE ===== */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 backdrop-blur border-t border-neutral-800 safe-area-bottom">
-        <div className="flex items-center justify-around h-16 max-w-lg mx-auto px-2">
-          {links.slice(0, 2).map((link) => {
-            const Icon = link.icon;
-            const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
-            return (
-              <Link key={link.href} href={link.href} className={cn("flex flex-col items-center justify-center gap-0.5 min-w-[60px] py-1", isActive ? "text-red-500" : "text-neutral-400")}>
-                <Icon className={cn("w-6 h-6", isActive && "stroke-[2.5]")} />
-                <span className="text-[10px] font-medium">{link.label}</span>
-              </Link>
-            );
-          })}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-neutral-800 safe-area-bottom">
+        <div className="flex items-center justify-around h-14 max-w-lg mx-auto px-2">
+          {/* Accueil */}
+          <Link href="/" className={cn("flex flex-col items-center justify-center gap-0.5 min-w-[56px] py-1", pathname === "/" ? "text-white" : "text-neutral-400")}>
+            <Home className={cn("w-6 h-6", pathname === "/" && "stroke-[2.5]")} />
+            <span className="text-[10px] font-medium">Accueil</span>
+          </Link>
 
-          {/* 🆕 BOUTON + : ouvre /create */}
+          {/* Live (Réservé vendeurs) */}
           <button
-            onClick={() => router.push("/create")}
-            className="relative -top-4 flex flex-col items-center focus:outline-none"
+            onClick={() => {
+              if (!isSeller) {
+                alert("Le Live est réservé aux vendeurs. Deviens vendeur pour lancer un Live Shopping !");
+                return;
+              }
+              router.push("/live/start");
+            }}
+            className={cn("flex flex-col items-center justify-center gap-0.5 min-w-[56px] py-1", pathname === "/live" ? "text-white" : "text-neutral-400")}
           >
-            <motion.div
-              animate={{ rotate: pathname === "/create" ? 45 : 0 }}
-              className={cn(
-                "w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-colors",
-                pathname === "/create" ? "bg-neutral-700" : "bg-gradient-to-r from-cyan-400 via-white to-red-500 shadow-red-500/30"
-              )}
-            >
-              <div className="w-11 h-11 rounded-full bg-black flex items-center justify-center">
-                <Plus className="w-7 h-7 text-white" strokeWidth={2.5} />
-              </div>
-            </motion.div>
+            <Radio className={cn("w-6 h-6", pathname === "/live" && "stroke-[2.5]")} />
+            <span className="text-[10px] font-medium">Live</span>
           </button>
 
-          {links.slice(2).map((link) => {
-            const Icon = link.icon;
-            const isActive = pathname.startsWith(link.href);
-            return (
-              <Link key={link.href} href={link.href} className={cn("flex flex-col items-center justify-center gap-0.5 min-w-[60px] py-1", isActive ? "text-red-500" : "text-neutral-400")}>
-                <Icon className={cn("w-6 h-6", isActive && "stroke-[2.5]")} />
-                <span className="text-[10px] font-medium">{link.label}</span>
-              </Link>
-            );
-          })}
+          {/* BOUTON CENTRAL TIKTOK */}
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="relative -top-3 flex flex-col items-center focus:outline-none"
+          >
+            <motion.div
+              animate={{ rotate: isCreateOpen ? 45 : 0 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-[46px] h-[30px] rounded-[10px] bg-black flex items-center justify-center"
+            >
+              {/* Bordure gauche cyan */}
+              <div className="absolute left-0 top-0 bottom-0 w-[8px] bg-[#25F4EE] rounded-l-[10px]" />
+              {/* Bordure droite rouge */}
+              <div className="absolute right-0 top-0 bottom-0 w-[8px] bg-[#FE2C55] rounded-r-[10px]" />
+              {/* Centre noir avec le + */}
+              <div className="relative z-10 w-[34px] h-[24px] bg-black rounded-[4px] flex items-center justify-center">
+                <Plus className="w-4 h-4 text-white" strokeWidth={3} />
+              </div>
+            </motion.div>
+            <span className="text-[10px] font-medium text-white mt-0.5">Créer</span>
+          </button>
+
+          {/* Boutique */}
+          <Link href="/shop" className={cn("flex flex-col items-center justify-center gap-0.5 min-w-[56px] py-1", pathname.startsWith("/shop") ? "text-white" : "text-neutral-400")}>
+            <ShoppingBag className={cn("w-6 h-6", pathname.startsWith("/shop") && "stroke-[2.5]")} />
+            <span className="text-[10px] font-medium">Boutique</span>
+          </Link>
+
+          {/* Profil */}
+          <Link href="/profile/me" className={cn("flex flex-col items-center justify-center gap-0.5 min-w-[56px] py-1", pathname.startsWith("/profile") ? "text-white" : "text-neutral-400")}>
+            <User className={cn("w-6 h-6", pathname.startsWith("/profile") && "stroke-[2.5]")} />
+            <span className="text-[10px] font-medium">Profil</span>
+          </Link>
         </div>
       </nav>
     </>
