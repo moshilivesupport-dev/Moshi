@@ -9,23 +9,17 @@ import {
   Bookmark, Maximize2
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
-import FollowButton from "@/components/social/FollowButton";
 import CommentsSheet from "@/components/video/CommentsSheet";
 
 export type FeedItem = {
   id: string;
-  title?: string | null;
   caption?: string | null;
   url?: string | null;
-  thumbnail_url?: string | null;
-  duration_seconds?: number | null;
   view_count?: number | null;
   like_count?: number | null;
   comment_count?: number | null;
-  created_at?: string;
   user_id: string;
   profiles?: {
-    id: string;
     username: string | null;
     avatar_url: string | null;
     full_name: string | null;
@@ -58,10 +52,11 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
   const loadVideos = useCallback(async () => {
     setLoading(true);
     
-    const { data, error } = await supabase
+    // ✅ Requête SANS jointure (on charge les vidéos seules)
+    const { data: videosData, error } = await supabase
       .from("videos")
-      .select(`id, url, caption, title, like_count, comment_count, view_count, user_id, profiles:user_id (username, avatar_url, full_name)`)
-      .eq("is_public", true)
+      .select("id, url, caption, like_count, comment_count, view_count, user_id")
+      .eq("status", "published")
       .order("created_at", { ascending: false })
       .limit(30);
 
@@ -71,19 +66,38 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
       return;
     }
 
-    const rows: FeedItem[] = (data || []).map((v: any) => ({
+    if (!videosData || videosData.length === 0) {
+      setVideos([]);
+      setLoading(false);
+      return;
+    }
+
+    // ✅ On charge les profils séparément
+    const userIds = [...new Set(videosData.map((v) => v.user_id))];
+    const { data: profilesData } = await supabase
+      .from("profiles")
+      .select("id, username, avatar_url, full_name")
+      .in("id", userIds);
+
+    const profilesMap: Record<string, any> = {};
+    (profilesData || []).forEach((p) => {
+      profilesMap[p.id] = p;
+    });
+
+    const rows: FeedItem[] = videosData.map((v) => ({
       id: v.id,
-      title: v.title,
       caption: v.caption,
       url: v.url,
       view_count: v.view_count || 0,
       like_count: v.like_count || 0,
       comment_count: v.comment_count || 0,
       user_id: v.user_id,
-      profiles: Array.isArray(v.profiles) ? v.profiles[0] : v.profiles,
+      profiles: profilesMap[v.user_id] || null,
     }));
+
     setVideos(rows);
 
+    // Likes
     if (currentUser) {
       const { data: likesData } = await supabase.from("video_likes").select("video_id").eq("user_id", currentUser.id);
       const likedMap: Record<string, boolean> = {};
@@ -186,7 +200,7 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
         const isActive = index === active;
         const author = video.profiles;
         const name = author?.username || author?.full_name || "user";
-        const displayText = video.caption || video.title || "";
+        const displayText = video.caption || "";
 
         return (
           <section key={video.id} data-index={index} className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black">
@@ -222,9 +236,6 @@ export default function HomeFeed({ initialItems }: { initialItems?: FeedItem[] }
                 <Link href={`/profile/${video.user_id}`} className="relative block w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
                   {author?.avatar_url ? <img src={author.avatar_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-sm font-bold">{name.charAt(0).toUpperCase()}</div>}
                 </Link>
-                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
-                  <FollowButton targetUserId={video.user_id} currentUserId={currentUser?.id} variant="small" />
-                </div>
               </div>
 
               <button type="button" onClick={(e) => { e.stopPropagation(); toggleLike(video.id); }} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
