@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ChevronLeft, Search as SearchIcon, X, User, Play, ShoppingBag, Loader2
+  ChevronLeft, Search as SearchIcon, X, User, Play, ShoppingBag, Loader2, Sparkles
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { searchAll, type SearchResults } from "@/lib/search";
@@ -30,7 +30,6 @@ export default function SearchPage() {
   const [activeTab, setActiveTab] = useState<Tab>("top");
   const [searched, setSearched] = useState(false);
 
-  // Debounce manuel : lancer la recherche 500ms après la dernière frappe
   useEffect(() => {
     if (!query.trim()) {
       setResults({ profiles: [], videos: [], products: [] });
@@ -54,7 +53,6 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-20">
-      {/* Header avec barre de recherche */}
       <header className="sticky top-0 z-30 bg-black flex items-center gap-2 px-3 py-3 border-b border-neutral-800">
         <button onClick={() => router.back()} className="p-1">
           <ChevronLeft className="w-6 h-6" />
@@ -78,7 +76,6 @@ export default function SearchPage() {
         </div>
       </header>
 
-      {/* Onglets */}
       {searched && (
         <div className="flex gap-4 px-4 py-3 border-b border-neutral-800 overflow-x-auto scrollbar-hide">
           {TABS.map((tab) => {
@@ -98,9 +95,7 @@ export default function SearchPage() {
                 )}
               >
                 {tab.label}
-                {count > 0 && (
-                  <span className="ml-1 text-xs opacity-60">({count})</span>
-                )}
+                {count > 0 && <span className="ml-1 text-xs opacity-60">({count})</span>}
                 {activeTab === tab.key && (
                   <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />
                 )}
@@ -110,7 +105,6 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* Contenu */}
       <div className="px-4 py-4">
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -125,18 +119,15 @@ export default function SearchPage() {
           </div>
         ) : totalResults === 0 ? (
           <div className="text-center py-20">
-            <p className="text-neutral-500 text-sm">
-              Aucun résultat pour "{query}"
-            </p>
+            <p className="text-neutral-500 text-sm">Aucun résultat pour "{query}"</p>
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Section Top / Profils */}
+            {/* Profils */}
             {(activeTab === "top" || activeTab === "profiles") && results.profiles.length > 0 && (
               <section>
                 <h2 className="text-sm font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <User className="w-4 h-4" />
-                  Comptes
+                  <User className="w-4 h-4" /> Comptes
                 </h2>
                 <div className="space-y-2">
                   {results.profiles.slice(0, activeTab === "top" ? 3 : 20).map((profile) => (
@@ -158,9 +149,7 @@ export default function SearchPage() {
                         <p className="text-sm font-semibold text-white truncate">
                           {profile.full_name || profile.username}
                         </p>
-                        <p className="text-xs text-neutral-400 truncate">
-                          @{profile.username}
-                        </p>
+                        <p className="text-xs text-neutral-400 truncate">@{profile.username}</p>
                       </div>
                       {profile.role === "vendeur" && (
                         <span className="text-[10px] font-bold bg-purple-600 px-2 py-0.5 rounded">
@@ -173,12 +162,11 @@ export default function SearchPage() {
               </section>
             )}
 
-            {/* Section Vidéos */}
+            {/* Vidéos */}
             {(activeTab === "top" || activeTab === "videos") && results.videos.length > 0 && (
               <section>
                 <h2 className="text-sm font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <Play className="w-4 h-4" />
-                  Vidéos
+                  <Play className="w-4 h-4" /> Vidéos
                 </h2>
                 <div className="grid grid-cols-3 gap-1">
                   {results.videos.slice(0, activeTab === "top" ? 6 : 30).map((video) => (
@@ -202,12 +190,11 @@ export default function SearchPage() {
               </section>
             )}
 
-            {/* Section Produits */}
+            {/* Produits ✅ CORRECTION : title au lieu de name, pas d'image_url */}
             {(activeTab === "top" || activeTab === "products") && results.products.length > 0 && (
               <section>
                 <h2 className="text-sm font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <ShoppingBag className="w-4 h-4" />
-                  Produits
+                  <ShoppingBag className="w-4 h-4" /> Produits
                 </h2>
                 <div className="grid grid-cols-2 gap-3">
                   {results.products.slice(0, activeTab === "top" ? 4 : 20).map((product) => (
@@ -216,19 +203,18 @@ export default function SearchPage() {
                       href={`/shop/${product.id}`}
                       className="bg-neutral-900 rounded-xl overflow-hidden border border-neutral-800"
                     >
-                      <div className="aspect-square bg-neutral-800">
-                        {product.image_url ? (
-                          <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ShoppingBag className="w-8 h-8 text-neutral-700" />
+                      <div className="aspect-square bg-neutral-800 flex items-center justify-center relative">
+                        <ShoppingBag className="w-12 h-12 text-neutral-700" />
+                        {product.is_featured && (
+                          <div className="absolute top-2 right-2 bg-yellow-500 rounded-full p-1">
+                            <Sparkles className="w-3 h-3 text-black" />
                           </div>
                         )}
                       </div>
                       <div className="p-2">
-                        <p className="text-xs font-semibold text-white truncate">{product.name}</p>
+                        <p className="text-xs font-semibold text-white truncate">{product.title}</p>
                         <p className="text-sm font-bold text-green-400 mt-1">
-                          {Number(product.price).toFixed(2)} €
+                          {Number(product.price).toFixed(2)} {product.currency || "€"}
                         </p>
                         {product.profiles && (
                           <p className="text-[10px] text-neutral-500 truncate mt-0.5">
