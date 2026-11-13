@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   Play, Grid3X3, Heart, Settings, Share2, Wallet,
-  Lock, Repeat2, Bookmark, Plus, Image as ImageIcon
+  Lock, Repeat2, Bookmark, Plus, Image as ImageIcon,
+  Menu, X,
 } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
 import FollowButton from "@/components/social/FollowButton";
@@ -27,17 +29,20 @@ interface ProfileViewProps {
 }
 
 export default function ProfileView({ profile, isOwnProfile, initialStats }: ProfileViewProps) {
+  const router = useRouter();
   const supabase = createClient();
   const [activeTab, setActiveTab] = useState<"grid" | "private" | "reposts" | "favorites" | "liked">("grid");
   const [videos, setVideos] = useState<any[]>([]);
   const [stats, setStats] = useState(initialStats);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
+      // ✅ CORRECTION : on récupère correctement url, thumbnail_url, etc.
       const { data: videosData } = await supabase
         .from("videos")
-        .select("id, url, view_count, like_count, caption, is_public, thumbnail_url")
+        .select("id, url, thumbnail_url, view_count, like_count, caption, is_public")
         .eq("user_id", profile.id)
         .eq("is_public", true)
         .order("created_at", { ascending: false })
@@ -62,6 +67,24 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
 
   const handleFollowChange = () => setRefreshKey((k) => k + 1);
 
+  // ✅ CORRECTION : fonction de partage (remplace le bouton qui faisait 404)
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}/profile/${profile.id}`;
+    const shareData = {
+      title: `Profil de @${profile.username}`,
+      text: `Découvre le profil de ${profile.full_name || profile.username} sur Moshi !`,
+      url: shareUrl,
+    };
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try { await navigator.share(shareData); } catch {}
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Lien du profil copié !");
+      } catch {}
+    }
+  };
+
   const name = profile.full_name || profile.username || "Utilisateur";
   const handle = profile.username ? `@${profile.username}` : "";
   const totalLikes = videos.reduce((sum, v) => sum + (v.like_count || 0), 0);
@@ -83,18 +106,48 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
           )}
         </div>
         <div className="flex items-center gap-3">
-          <button className="p-2">
+          {/* ✅ CORRECTION : bouton partage qui fonctionne */}
+          <button onClick={handleShare} className="p-2">
             <Share2 className="w-6 h-6 text-white" />
           </button>
-          <Link href="/settings" className="p-2">
-            <div className="flex flex-col gap-1">
-              <div className="w-5 h-0.5 bg-white rounded-full" />
-              <div className="w-5 h-0.5 bg-white rounded-full" />
-              <div className="w-5 h-0.5 bg-white rounded-full" />
-            </div>
-          </Link>
+          {/* ✅ CORRECTION : menu hamburger qui ouvre un panneau local */}
+          <button onClick={() => setMenuOpen(true)} className="p-2">
+            <Menu className="w-6 h-6 text-white" />
+          </button>
         </div>
       </header>
+
+      {/* Menu latéral (Bottom Sheet) */}
+      {menuOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/60 z-50"
+            onClick={() => setMenuOpen(false)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 z-[51] bg-neutral-900 rounded-t-3xl p-6 pb-10">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold">Menu</h2>
+              <button onClick={() => setMenuOpen(false)} className="p-1">
+                <X className="w-6 h-6 text-neutral-400" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <Link href="/settings" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>
+                Paramètres
+              </Link>
+              <Link href="/wallet" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>
+                Solde
+              </Link>
+              <Link href="/orders" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>
+                Mes commandes
+              </Link>
+              <button onClick={handleShare} className="block py-3 text-white text-base w-full text-left">
+                Partager le profil
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Avatar + Infos */}
       <div className="px-4 flex items-start justify-between mb-4">
@@ -121,7 +174,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
               )}
             </div>
           </div>
-          {/* Bouton + si c'est mon profil */}
+          {/* ✅ Bouton + qui redirige proprement */}
           {isOwnProfile && (
             <Link
               href="/profile/edit"
@@ -156,7 +209,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </p>
       )}
 
-      {/* Badge Solde (visible seulement si c'est mon profil ou si admin) */}
+      {/* Badge Solde */}
       {(isOwnProfile || profile.role === "admin") && (
         <div className="px-4 mb-4 flex items-center gap-2">
           <Link
@@ -169,7 +222,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </div>
       )}
 
-      {/* Boutons d'action (Suivre / Modifier / Message) */}
+      {/* Boutons d'action */}
       <div className="px-4 mb-6">
         {isOwnProfile ? (
           <div className="flex gap-2">
@@ -179,7 +232,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
             >
               Modifier le profil
             </Link>
-            <button className="px-4 py-2 border border-neutral-700 rounded-lg bg-neutral-900">
+            <button onClick={handleShare} className="px-4 py-2 border border-neutral-700 rounded-lg bg-neutral-900">
               <Share2 className="w-4 h-4" />
             </button>
           </div>
@@ -202,15 +255,15 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         )}
       </div>
 
-      {/* Boutons "Nouveau" et "Temps fort" (style Story) */}
+      {/* Boutons "Nouveau" et "Temps fort" */}
       {isOwnProfile && (
         <div className="px-4 mb-6 flex gap-3 overflow-x-auto scrollbar-hide">
-          <button className="flex flex-col items-center gap-1 flex-shrink-0">
+          <Link href="/create" className="flex flex-col items-center gap-1 flex-shrink-0">
             <div className="w-16 h-16 rounded-full bg-neutral-900 border-2 border-dashed border-neutral-700 flex items-center justify-center">
               <Plus className="w-6 h-6 text-white" />
             </div>
             <span className="text-xs text-white">Nouveau</span>
-          </button>
+          </Link>
           <button className="flex flex-col items-center gap-1 flex-shrink-0">
             <div className="w-16 h-16 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center overflow-hidden">
               <ImageIcon className="w-6 h-6 text-neutral-500" />
@@ -254,36 +307,57 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </button>
       </div>
 
-      {/* Grille de vidéos */}
+      {/* ✅ CORRECTION : Grille de vidéos avec fallback propre */}
       {activeTab === "grid" && (
-        <div className="grid grid-cols-3 gap-[1px]">
-          {videos.map((v) => (
-            <Link
-              key={v.id}
-              href={`/videos/${v.id}`}
-              className="relative aspect-[9/16] bg-neutral-900"
-            >
-              {v.thumbnail_url ? (
-                <img src={v.thumbnail_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <video
-                  src={v.url}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  className="w-full h-full object-cover"
-                />
+        <>
+          {videos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <Play className="w-10 h-10 text-neutral-700" />
+              <p className="text-neutral-500 text-sm">Aucune vidéo publiée</p>
+              {isOwnProfile && (
+                <Link href="/create" className="text-red-500 font-semibold text-sm">
+                  Publier ma première vidéo
+                </Link>
               )}
-              <div className="absolute bottom-1 left-1 flex items-center gap-1 text-white text-xs font-semibold drop-shadow-md">
-                <Play className="w-3 h-3 fill-white" />
-                {formatNumber(v.view_count || 0)}
-              </div>
-            </Link>
-          ))}
-        </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-[1px]">
+              {videos.map((v) => (
+                <Link
+                  key={v.id}
+                  href={`/videos/${v.id}`}
+                  className="relative aspect-[9/16] bg-neutral-900 overflow-hidden"
+                >
+                  {v.thumbnail_url ? (
+                    <img
+                      src={v.thumbnail_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <video
+                      src={v.url}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                  <div className="absolute bottom-1 left-1 flex items-center gap-1 text-white text-xs font-semibold drop-shadow-md">
+                    <Play className="w-3 h-3 fill-white" />
+                    {formatNumber(v.view_count || 0)}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Onglets vides pour l'instant */}
+      {/* Onglets vides */}
       {(activeTab === "private" || activeTab === "reposts" || activeTab === "favorites" || activeTab === "liked") && (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <Lock className="w-10 h-10 text-neutral-700" />
@@ -293,21 +367,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
             {activeTab === "favorites" && "Vidéos enregistrées"}
             {activeTab === "liked" && "Vidéos aimées"}
           </p>
-        </div>
-      )}
-
-      {videos.length === 0 && activeTab === "grid" && (
-        <div className="flex flex-col items-center justify-center py-20 gap-3">
-          <Play className="w-10 h-10 text-neutral-700" />
-          <p className="text-neutral-500 text-sm">Aucune vidéo publiée</p>
-          {isOwnProfile && (
-            <Link
-              href="/videos/new"
-              className="text-red-500 font-semibold text-sm"
-            >
-              Publier ma première vidéo
-            </Link>
-          )}
         </div>
       )}
     </div>
