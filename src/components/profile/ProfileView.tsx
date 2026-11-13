@@ -39,10 +39,10 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
 
   useEffect(() => {
     const loadData = async () => {
-      // Charger les vidéos
+      // ✅ Requête simplifiée (sans thumbnail_url pour éviter l'erreur 400)
       const { data: videosData, error } = await supabase
         .from("videos")
-        .select("id, url, thumbnail_url, view_count, like_count, caption, is_public")
+        .select("id, url, view_count, like_count, caption, is_public")
         .eq("user_id", profile.id)
         .eq("is_public", true)
         .order("created_at", { ascending: false })
@@ -88,9 +88,9 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
     }
   };
 
-  // ✅ NOUVEAU : fonction pour le bouton + sur l'avatar (poster une story)
+  // Redirection vers la page des stories
   const handleAddStory = () => {
-    router.push("/stories");
+    router.push("/stories/new");
   };
 
   const name = profile.full_name || profile.username || "Utilisateur";
@@ -99,7 +99,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-20 overflow-x-hidden">
-      {/* Header */}
       <header className="px-4 pt-3 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isOwnProfile && (
@@ -123,7 +122,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </div>
       </header>
 
-      {/* Menu latéral */}
       {menuOpen && (
         <>
           <div className="fixed inset-0 bg-black/60 z-50" onClick={() => setMenuOpen(false)} />
@@ -144,7 +142,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </>
       )}
 
-      {/* Infos Profil */}
       <div className="px-4 flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-1 mb-1">
@@ -156,7 +153,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
           <p className="text-sm text-neutral-400">{handle}</p>
         </div>
 
-        {/* Avatar avec bouton + pour Story */}
         <div className="relative flex-shrink-0">
           <div className="w-20 h-20 rounded-full p-1 border-2 border-neutral-700 relative overflow-hidden">
             <div className="w-full h-full rounded-full overflow-hidden bg-neutral-800 relative">
@@ -184,7 +180,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </div>
       </div>
 
-      {/* Stats */}
       <div className="px-4 flex items-center gap-8 mb-4">
         <div className="text-center">
           <p className="text-lg font-bold">{formatNumber(stats.following_count || 0)}</p>
@@ -200,14 +195,12 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </div>
       </div>
 
-      {/* Bio */}
       {profile.bio && (
         <p className="px-4 text-sm text-white mb-3 whitespace-pre-wrap leading-snug">
           {profile.bio}
         </p>
       )}
 
-      {/* Badge Solde */}
       {(isOwnProfile || profile.role === "admin") && (
         <div className="px-4 mb-4 flex items-center gap-2">
           <Link href="/wallet" className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-900 border border-neutral-800 rounded-full text-sm font-semibold">
@@ -216,7 +209,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </div>
       )}
 
-      {/* Boutons d'action */}
       <div className="px-4 mb-6">
         {isOwnProfile ? (
           <div className="flex gap-2">
@@ -239,7 +231,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         )}
       </div>
 
-      {/* Boutons Nouveau / Temps fort */}
       {isOwnProfile && (
         <div className="px-4 mb-6 flex gap-3 overflow-x-auto scrollbar-hide">
           <Link href="/create" className="flex flex-col items-center gap-1 flex-shrink-0">
@@ -257,7 +248,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </div>
       )}
 
-      {/* Onglets de contenu */}
       <div className="border-b border-neutral-800 flex items-center justify-around">
         <button onClick={() => setActiveTab("grid")} className={`flex-1 py-3 flex justify-center ${activeTab === "grid" ? "border-b-2 border-white" : "text-neutral-500"}`}>
           <Grid3X3 className="w-5 h-5" />
@@ -276,7 +266,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </button>
       </div>
 
-      {/* ✅ GRILLE DE VIDÉOS CORRIGÉE */}
       {activeTab === "grid" && (
         <>
           {videos.length === 0 ? (
@@ -297,21 +286,14 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
                   href={`/videos/${v.id}`}
                   className="relative aspect-[9/16] bg-neutral-900 overflow-hidden"
                 >
-                  {v.thumbnail_url ? (
-                    <img
-                      src={v.thumbnail_url}
-                      alt=""
-                      className="absolute inset-0 w-full h-full object-cover"
-                    />
-                  ) : (
-                    <video
-                      src={v.url}
-                      muted
-                      playsInline
-                      preload="metadata"
-                      className="absolute inset-0 w-full h-full object-cover"
-                    />
-                  )}
+                  {/* ✅ On utilise directement la balise video pour l'aperçu (plus fiable) */}
+                  <video
+                    src={v.url}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
                   <div className="absolute bottom-1 left-1 flex items-center gap-1 text-white text-xs font-semibold drop-shadow-md">
                     <Play className="w-3 h-3 fill-white" />
                     {formatNumber(v.view_count || 0)}
