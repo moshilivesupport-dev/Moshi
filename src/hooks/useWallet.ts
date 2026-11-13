@@ -26,14 +26,14 @@ export function useWallet() {
         return;
       }
 
+      // ✅ Utilisation de maybeSingle() pour éviter le 406 si le wallet n'existe pas
       const { data, error: fetchError } = await supabase
         .from("wallets")
         .select("*")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
-      if (fetchError && fetchError.code !== "PGRST116") {
-        // PGRST116 = pas de ligne trouvée
+      if (fetchError) {
         throw fetchError;
       }
 
@@ -43,7 +43,7 @@ export function useWallet() {
           .from("wallets")
           .insert({ user_id: user.id, coins_balance: 0, usd_balance: 0 })
           .select()
-          .single();
+          .maybeSingle();
         
         if (createError) throw createError;
         setWallet(newWallet);
