@@ -12,7 +12,6 @@ export default async function LiveStartPage() {
     redirect("/auth/login");
   }
 
-  // Récupérer le rôle depuis la table profiles
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
