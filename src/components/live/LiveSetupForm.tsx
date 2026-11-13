@@ -1,15 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Video, VideoOff, ShoppingBag, Radio } from "lucide-react";
-
-// ✅ MODIFICATION : Ajout de la prop isSeller
-interface LiveSetupFormProps {
-  userId: string;
-  isSeller?: boolean;
-}
+import { createClient } from "@/lib/supabase/client";
+import { Radio, ShoppingBag, Loader2, X, ImageIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Product {
   id: string;
@@ -18,230 +13,200 @@ interface Product {
   image_url: string | null;
 }
 
-export default function LiveSetupForm({ userId, isSeller = false }: LiveSetupFormProps) {
-  const supabase = createClient();
+interface LiveSetupFormProps {
+  isSeller: boolean;
+}
+
+export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
   const router = useRouter();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const supabase = createClient();
 
   const [title, setTitle] = useState("");
-  const [cameraOn, setCameraOn] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // ✅ MODIFICATION : Ne charger les produits que si l'utilisateur est vendeur
+  // Charger les produits si vendeur
   useEffect(() => {
     if (!isSeller) return;
-
     const loadProducts = async () => {
+      setLoadingProducts(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data } = await supabase
         .from("products")
         .select("id, name, price, image_url")
-        .eq("seller_id", userId)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
+        .eq("seller_id", user.id)
+        .eq("is_active", true)
         .limit(20);
-      if (data) setProducts(data);
+
+      setProducts(data || []);
+      setLoadingProducts(false);
     };
     loadProducts();
-  }, [userId, supabase, isSeller]);
-
-  // Activer/désactiver la caméra
-  const toggleCamera = async () => {
-    if (cameraOn) {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      if (videoRef.current) videoRef.current.srcObject = null;
-      setCameraOn(false);
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: true,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setCameraOn(true);
-      setCameraError(null);
-    } catch (err) {
-      setCameraError("Impossible d'accéder à la caméra. Vérifiez les permissions.");
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
+  }, [isSeller, supabase]);
 
   const toggleProduct = (productId: string) => {
     setSelectedProducts((prev) =>
-      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId]
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId]
     );
   };
 
-  const startLive = async () => {
+  const handleStart = async () => {
     if (!title.trim()) {
-      alert("Veuillez donner un titre à votre live");
+      setError("Ajoute un titre à ton live.");
+      return;
+    }
+    if (isSeller && selectedProducts.length === 0) {
+      setError("Sélectionne au moins un produit à vendre.");
       return;
     }
 
     setStarting(true);
+    setError(null);
+
     try {
-      const { data: session, error } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Non connecté");
+
+      // Créer une session de live
+      const { data: liveData, error: liveError } = await supabase
         .from("live_sessions")
         .insert({
-          host_id: userId,
+          host_id: user.id,
           title: title.trim(),
+          is_seller_live: isSeller,
           status: "live",
-          started_at: new Date().toISOString(),
-          // ✅ MODIFICATION : product_ids seulement si vendeur
-          product_ids: isSeller ? selectedProducts : [],
-          room_name: `live-${Date.now()}`,
-          // ✅ MODIFICATION : Ajout d'un champ pour distinguer le type de live
-          host_role: isSeller ? "vendeur" : "acheteur",
+          viewer_count: 0,
         })
-        .select("id")
+        .select()
         .single();
 
-      if (error) throw error;
+      if (liveError) throw liveError;
 
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      // Si vendeur, lier les produits au live
+      if (isSeller && selectedProducts.length > 0) {
+        const productLinks = selectedProducts.map((productId) => ({
+          live_id: liveData.id,
+          product_id: productId,
+          is_pinned: true,
+        }));
 
-      router.push(`/live/${session.id}`);
+        const { error: productsError } = await supabase
+          .from("live_products")
+          .insert(productLinks);
+
+        if (productsError) throw productsError;
+      }
+
+      // Rediriger vers la salle de live
+      router.push(`/live/${liveData.id}`);
     } catch (err) {
-      console.error(err);
-      alert("Erreur lors du démarrage du live");
+      const message = err instanceof Error ? err.message : "Erreur lors du lancement";
+      setError(message);
       setStarting(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Prévisualisation caméra */}
-      <div className="relative aspect-[9/16] max-h-[400px] mx-auto rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800">
-        {cameraOn ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-center p-6">
-            <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center mb-4">
-              <Video className="w-8 h-8 text-neutral-500" />
-            </div>
-            <p className="text-sm text-neutral-400 mb-4">
-              Activez votre caméra pour prévisualiser
-            </p>
-            <button
-              onClick={toggleCamera}
-              className="px-4 py-2 bg-white text-black rounded-full text-sm font-semibold hover:bg-neutral-200 transition"
-            >
-              Activer la caméra
-            </button>
-          </div>
-        )}
-
-        {cameraOn && (
-          <button
-            onClick={toggleCamera}
-            className="absolute top-3 right-3 w-10 h-10 rounded-full bg-black/60 backdrop-blur flex items-center justify-center hover:bg-black/80 transition"
-          >
-            <VideoOff className="w-5 h-5 text-white" />
-          </button>
-        )}
-
-        {cameraError && (
-          <div className="absolute bottom-3 left-3 right-3 bg-red-500/90 px-3 py-2 rounded-lg text-xs text-white">
-            {cameraError}
-          </div>
-        )}
+    <div className="max-w-md mx-auto p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
+      {/* Header adaptatif */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className={cn(
+          "w-10 h-10 rounded-full flex items-center justify-center",
+          isSeller ? "bg-purple-600" : "bg-red-500"
+        )}>
+          {isSeller ? <ShoppingBag className="w-5 h-5 text-white" /> : <Radio className="w-5 h-5 text-white" />}
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-white">
+            {isSeller ? "Lancer un Live Shopping" : "Lancer un Live"}
+          </h2>
+          <p className="text-xs text-neutral-400">
+            {isSeller 
+              ? "Vends tes produits en direct" 
+              : "Partage un moment avec ta communauté"}
+          </p>
+        </div>
       </div>
 
-      {/* Titre du live */}
-      <div>
-        <label className="block text-sm font-semibold mb-2">
-          Titre du live <span className="text-red-500">*</span>
+      {/* Titre */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-neutral-400 mb-2">
+          Titre du live
         </label>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder={
-            isSeller 
-              ? "Ex: Vente flash sneakers limited edition 🔥" 
-              : "Ex: Mon avis sur le nouveau produit XYZ 💬"
-          }
           maxLength={80}
-          className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-red-500/50 transition"
+          placeholder={isSeller ? "Ex: Nouvelle collection printemps" : "Ex: Je réponds à vos questions"}
+          className="w-full bg-black border border-neutral-800 rounded-lg p-3 text-white text-sm focus:ring-2 focus:ring-red-500 outline-none"
         />
-        <p className="text-xs text-neutral-500 mt-1">{title.length}/80 caractères</p>
       </div>
 
-      {/* ✅ MODIFICATION : Section produits seulement pour les vendeurs */}
+      {/* Produits (vendeur uniquement) */}
       {isSeller && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <ShoppingBag className="w-4 h-4 text-neutral-400" />
-            <label className="text-sm font-semibold">Produits à vendre</label>
-            <span className="text-xs text-neutral-500">({selectedProducts.length} sélectionnés)</span>
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-neutral-400">
+              Produits à épingler ({selectedProducts.length})
+            </label>
           </div>
 
-          {products.length === 0 ? (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 text-center">
-              <p className="text-sm text-neutral-400 mb-3">
-                Vous n'avez pas encore de produits
-              </p>
-              <a
-                href="/boutique/new"
-                className="text-red-500 text-sm font-semibold hover:underline"
+          {loadingProducts ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 text-neutral-500 animate-spin" />
+            </div>
+          ) : products.length === 0 ? (
+            <div className="bg-black border border-neutral-800 rounded-lg p-4 text-center">
+              <ShoppingBag className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
+              <p className="text-sm text-neutral-400 mb-2">Aucun produit en vente</p>
+              <button
+                onClick={() => router.push("/seller/products/new")}
+                className="text-red-500 text-sm font-semibold"
               >
-                Ajouter un produit
-              </a>
+                + Ajouter un produit
+              </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2 max-h-64 overflow-y-auto">
               {products.map((product) => {
                 const isSelected = selectedProducts.includes(product.id);
                 return (
                   <button
                     key={product.id}
                     onClick={() => toggleProduct(product.id)}
-                    className={`relative aspect-square rounded-xl overflow-hidden border-2 transition ${
-                      isSelected ? "border-red-500" : "border-neutral-800"
-                    }`}
-                  >
-                    {product.image_url ? (
-                      <img
-                        src={product.image_url}
-                        alt={product.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-neutral-800 flex items-center justify-center">
-                        <ShoppingBag className="w-8 h-8 text-neutral-600" />
-                      </div>
+                    className={cn(
+                      "w-full flex items-center gap-3 p-2 rounded-lg border text-left transition",
+                      isSelected
+                        ? "bg-purple-600/20 border-purple-500"
+                        : "bg-black border-neutral-800"
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                    <div className="absolute bottom-2 left-2 right-2">
-                      <p className="text-xs font-semibold text-white truncate">{product.name}</p>
-                      <p className="text-xs text-red-400 font-bold">
-                        {product.price.toLocaleString("fr-FR")} €
-                      </p>
+                  >
+                    <div className="w-12 h-12 rounded-lg bg-neutral-800 overflow-hidden flex-shrink-0">
+                      {product.image_url ? (
+                        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <ImageIcon className="w-5 h-5 text-neutral-600" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{product.name}</p>
+                      <p className="text-xs text-neutral-400">{product.price.toFixed(2)} €</p>
                     </div>
                     {isSelected && (
-                      <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center">
-                        <span className="text-xs font-bold text-white">✓</span>
+                      <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
                       </div>
                     )}
                   </button>
@@ -252,21 +217,33 @@ export default function LiveSetupForm({ userId, isSeller = false }: LiveSetupFor
         </div>
       )}
 
-      {/* Bouton démarrer */}
+      {/* Erreur */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Bouton Lancer */}
       <button
-        onClick={startLive}
+        onClick={handleStart}
         disabled={starting || !title.trim()}
-        className="w-full bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 active:scale-98 transition shadow-lg shadow-red-500/20"
+        className={cn(
+          "w-full py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 disabled:opacity-50",
+          isSeller
+            ? "bg-purple-600 hover:bg-purple-700"
+            : "bg-red-500 hover:bg-red-600"
+        )}
       >
         {starting ? (
           <>
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            Démarrage...
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Lancement...
           </>
         ) : (
           <>
-            <Radio className="w-5 h-5" />
-            Démarrer le live
+            {isSeller ? <ShoppingBag className="w-5 h-5" /> : <Radio className="w-5 h-5" />}
+            {isSeller ? "Lancer le Live Shopping" : "Lancer le Live"}
           </>
         )}
       </button>
