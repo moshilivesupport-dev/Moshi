@@ -8,9 +8,9 @@ import { cn } from "@/lib/utils";
 
 interface Product {
   id: string;
-  name: string;
+  title: string;
   price: number;
-  image_url: string | null;
+  currency: string | null;
 }
 
 interface LiveSetupFormProps {
@@ -28,7 +28,6 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Charger les produits si vendeur
   useEffect(() => {
     if (!isSeller) return;
     const loadProducts = async () => {
@@ -36,9 +35,10 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // ✅ CORRECTION : title, currency (pas de name ni image_url)
       const { data } = await supabase
         .from("products")
-        .select("id, name, price, image_url")
+        .select("id, title, price, currency")
         .eq("seller_id", user.id)
         .eq("is_active", true)
         .limit(20);
@@ -74,23 +74,21 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Non connecté");
 
-      // ✅ CORRECTION : Utilisation des vraies colonnes de ta table
       const { data: liveData, error: liveError } = await supabase
         .from("live_sessions")
         .insert({
           host_id: user.id,
           title: title.trim(),
-          host_role: isSeller ? "vendeur" : "acheteur", // ✅ Nouvelle colonne
+          host_role: isSeller ? "vendeur" : "acheteur",
           status: "live",
-          viewers_count: 0, // ✅ Nouvelle colonne
-          product_ids: isSeller ? selectedProducts : [], // ✅ On stocke les IDs ici
+          viewers_count: 0,
+          product_ids: isSeller ? selectedProducts : [],
         })
         .select()
         .single();
 
       if (liveError) throw liveError;
 
-      // Si vendeur, lier les produits au live dans la table de liaison
       if (isSeller && selectedProducts.length > 0) {
         const productLinks = selectedProducts.map((productId) => ({
           live_id: liveData.id,
@@ -104,11 +102,9 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
 
         if (productsError) {
           console.warn("Erreur liaison produits:", productsError);
-          // On ne bloque pas le live si la liaison échoue
         }
       }
 
-      // Rediriger vers la salle de live
       router.push(`/live/${liveData.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur lors du lancement";
@@ -119,7 +115,6 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
 
   return (
     <div className="max-w-md mx-auto p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
-      {/* Header adaptatif */}
       <div className="flex items-center gap-3 mb-6">
         <div className={cn(
           "w-10 h-10 rounded-full flex items-center justify-center",
@@ -132,18 +127,13 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
             {isSeller ? "Lancer un Live Shopping" : "Lancer un Live"}
           </h2>
           <p className="text-xs text-neutral-400">
-            {isSeller 
-              ? "Vends tes produits en direct" 
-              : "Partage un moment avec ta communauté"}
+            {isSeller ? "Vends tes produits en direct" : "Partage un moment avec ta communauté"}
           </p>
         </div>
       </div>
 
-      {/* Titre */}
       <div className="mb-6">
-        <label className="block text-sm font-medium text-neutral-400 mb-2">
-          Titre du live
-        </label>
+        <label className="block text-sm font-medium text-neutral-400 mb-2">Titre du live</label>
         <input
           type="text"
           value={title}
@@ -154,14 +144,11 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
         />
       </div>
 
-      {/* Produits (vendeur uniquement) */}
       {isSeller && (
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium text-neutral-400">
-              Produits à épingler ({selectedProducts.length})
-            </label>
-          </div>
+          <label className="block text-sm font-medium text-neutral-400 mb-2">
+            Produits à épingler ({selectedProducts.length})
+          </label>
 
           {loadingProducts ? (
             <div className="flex items-center justify-center py-8">
@@ -188,23 +175,18 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
                     onClick={() => toggleProduct(product.id)}
                     className={cn(
                       "w-full flex items-center gap-3 p-2 rounded-lg border text-left transition",
-                      isSelected
-                        ? "bg-purple-600/20 border-purple-500"
-                        : "bg-black border-neutral-800"
+                      isSelected ? "bg-purple-600/20 border-purple-500" : "bg-black border-neutral-800"
                     )}
                   >
-                    <div className="w-12 h-12 rounded-lg bg-neutral-800 overflow-hidden flex-shrink-0">
-                      {product.image_url ? (
-                        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <ImageIcon className="w-5 h-5 text-neutral-600" />
-                        </div>
-                      )}
+                    {/* ✅ Placeholder à la place de l'image */}
+                    <div className="w-12 h-12 rounded-lg bg-neutral-800 flex items-center justify-center flex-shrink-0">
+                      <ImageIcon className="w-5 h-5 text-neutral-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{product.name}</p>
-                      <p className="text-xs text-neutral-400">{product.price.toFixed(2)} €</p>
+                      <p className="text-sm font-medium text-white truncate">{product.title}</p>
+                      <p className="text-xs text-neutral-400">
+                        {product.price.toFixed(2)} {product.currency || "€"}
+                      </p>
                     </div>
                     {isSelected && (
                       <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center">
@@ -221,22 +203,18 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
         </div>
       )}
 
-      {/* Erreur */}
       {error && (
         <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
           {error}
         </div>
       )}
 
-      {/* Bouton Lancer */}
       <button
         onClick={handleStart}
         disabled={starting || !title.trim()}
         className={cn(
           "w-full py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 disabled:opacity-50",
-          isSeller
-            ? "bg-purple-600 hover:bg-purple-700"
-            : "bg-red-500 hover:bg-red-600"
+          isSeller ? "bg-purple-600 hover:bg-purple-700" : "bg-red-500 hover:bg-red-600"
         )}
       >
         {starting ? (
