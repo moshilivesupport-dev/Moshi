@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { ChevronLeft, ShoppingBag, Package, Loader2, ArrowRight } from "lucide-react";
+import { ChevronLeft, ShoppingBag, Package, Loader2, ArrowRight, Truck, CheckCircle, Clock } from "lucide-react";
 
 export default function OrdersPage() {
   const router = useRouter();
@@ -12,13 +12,13 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<"buyer" | "seller">("buyer");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth/login"); return; }
 
-      // Récupérer le rôle
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
@@ -28,7 +28,6 @@ export default function OrdersPage() {
       const isSeller = profile?.role === "vendeur" || profile?.role === "seller" || profile?.role === "admin";
       setRole(isSeller ? "seller" : "buyer");
 
-      // Charger les commandes (achetées ou reçues)
       const query = supabase
         .from("orders")
         .select(`
@@ -51,6 +50,18 @@ export default function OrdersPage() {
     };
     load();
   }, [supabase, router]);
+
+  const updateStatus = async (orderId: string, newStatus: string) => {
+    setUpdatingId(orderId);
+    try {
+      await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
+      setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    } catch (err) {
+      alert("Erreur lors de la mise à jour");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   if (loading) {
     return <div className="min-h-[100dvh] bg-black flex items-center justify-center"><Loader2 className="w-8 h-8 text-neutral-500 animate-spin" /></div>;
@@ -115,7 +126,7 @@ export default function OrdersPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 text-[10px] text-neutral-500 pt-2 border-t border-neutral-800">
+                  <div className="flex items-center gap-1 text-[10px] text-neutral-500 pt-2 border-t border-neutral-800 mb-3">
                     <span>{new Date(order.created_at).toLocaleDateString("fr-FR")}</span>
                     <ArrowRight className="w-3 h-3 mx-1" />
                     <span>
@@ -124,6 +135,54 @@ export default function OrdersPage() {
                         : `Vendeur: @${seller?.username || "user"}`}
                     </span>
                   </div>
+
+                  {/* ✅ BOUTONS D'ACTION POUR LE VENDEUR */}
+                  {role === "seller" && (
+                    <div className="flex gap-2">
+                      {order.status === "pending" && (
+                        <button
+                          onClick={() => updateStatus(order.id, "paid")}
+                          disabled={updatingId === order.id}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-2 rounded-lg flex items-center justify-center gap-1"
+                        >
+                          {updatingId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                          Marquer comme payé
+                        </button>
+                      )}
+                      {order.status === "paid" && (
+                        <button
+                          onClick={() => updateStatus(order.id, "shipped")}
+                          disabled={updatingId === order.id}
+                          className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold py-2 rounded-lg flex items-center justify-center gap-1"
+                        >
+                          {updatingId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Truck className="w-3 h-3" />}
+                          Marquer comme expédié
+                        </button>
+                      )}
+                      {order.status === "shipped" && (
+                        <button
+                          onClick={() => updateStatus(order.id, "delivered")}
+                          disabled={updatingId === order.id}
+                          className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold py-2 rounded-lg flex items-center justify-center gap-1"
+                        >
+                          {updatingId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                          Marquer comme livré
+                        </button>
+                      )}
+                      {order.status === "delivered" && (
+                        <div className="flex-1 bg-green-500/10 text-green-500 text-xs font-semibold py-2 rounded-lg flex items-center justify-center gap-1">
+                          <CheckCircle className="w-3 h-3" /> Commande livrée
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Message pour l'acheteur */}
+                  {role === "buyer" && order.status === "pending" && (
+                    <div className="flex items-center gap-2 text-[10px] text-yellow-500 bg-yellow-500/10 p-2 rounded-lg">
+                      <Clock className="w-3 h-3" /> En attente de confirmation du vendeur
+                    </div>
+                  )}
                 </div>
               );
             })}
