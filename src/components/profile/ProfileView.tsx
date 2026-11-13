@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Video } from '@/types/video';
 import { VideoCard } from '@/components/video/VideoCard';
-import { List, Heart, Bookmark, User } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import type { PostgrestError } from '@supabase/supabase-js';
 
