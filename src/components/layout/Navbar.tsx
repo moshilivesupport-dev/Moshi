@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
   Home, Radio, Plus, ShoppingBag, User, Store, X, Music,
   RefreshCw, Zap, ZapOff, Clock, LayoutGrid, Sparkles,
-  ChevronDown, Upload,
+  ChevronDown, Upload, Wallet,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -28,26 +28,25 @@ interface RecentVideo {
 
 function durationToSeconds(d: DurationKey): number | null {
   switch (d) {
-    case "10min": return 120; // ⏱️ Bridé à 2 min max
+    case "10min": return 120;
     case "60s": return 60;
     case "15s": return 15;
     default: return null;
   }
 }
+
 export default function Navbar({ role }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
-  // ÉTATS UI
-  const [isCreateOpen, setIsCreateOpen] = useState(false); // L'écran plein (caméra/upload)
-  
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [mode, setMode] = useState<TabKey>("camera");
   const [duration, setDuration] = useState<DurationKey>("15s");
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // ÉTATS CAMÉRA
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const [flashOn, setFlashOn] = useState(false);
   const [timerOn, setTimerOn] = useState(false);
@@ -55,16 +54,25 @@ export default function Navbar({ role }: NavbarProps) {
   const [effectsOn, setEffectsOn] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
   const [userId, setUserId] = useState<string | null>(null);
+  const [recentVideos, setRecentVideos] = useState<RecentVideo[]>([]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
-  // CHARGEMENT USER
+  // 🆕 Auto-open caméra si ?openCamera=true
+  useEffect(() => {
+    if (searchParams.get("openCamera") === "true") {
+      setIsCreateOpen(true);
+      router.replace(pathname);
+    }
+  }, [searchParams, pathname, router]);
+
+  // Charger user
   useEffect(() => {
     if (!isCreateOpen) return;
     const load = async () => {
@@ -75,11 +83,19 @@ export default function Navbar({ role }: NavbarProps) {
         return;
       }
       setUserId(user.id);
+      const { data } = await supabase
+        .from("videos")
+        .select("id, url")
+        .eq("user_id", user.id)
+        .eq("status", "published")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      setRecentVideos(data || []);
     };
     load();
   }, [isCreateOpen, supabase, router]);
 
-  // CAMERA HOOKS
+  // Caméra
   useEffect(() => {
     if (!isCreateOpen || mode !== "camera") {
       stopCamera();
@@ -129,7 +145,6 @@ export default function Navbar({ role }: NavbarProps) {
     setCountdown(null);
   }
 
-  // UPLOAD LOGIC
   const publishFile = useCallback(
     async (file: Blob, ext: string, isVideo: boolean, captionText?: string) => {
       if (!userId) return;
@@ -181,7 +196,6 @@ export default function Navbar({ role }: NavbarProps) {
     [userId, router, supabase]
   );
 
-  // RECORDING LOGIC
   const startRecording = useCallback(() => {
     if (!streamRef.current) {
       setError("Active la caméra d'abord.");
@@ -219,28 +233,21 @@ export default function Navbar({ role }: NavbarProps) {
     }
   }, [duration, publishFile]);
 
-  // 🎯 C'EST ICI QUE TOUT SE JOUE : Le bouton central fait 3 choses différentes
   const handleRecordAction = useCallback(() => {
     if (uploading) return;
-
-    // MODE 1 : CRÉER (Upload depuis la galerie)
     if (mode === "create") {
       fileInputRef.current?.click();
       return;
     }
-
-    // MODE 2 : LIVE (Lancement du Live Shopping)
-    if (mode === "live") {
-      stopCamera();
-      setIsCreateOpen(false);
-      router.push("/live/start"); // Redirige vers ton interface de Live Shopping
-      return;
-    }
-
-    // MODE 3 : CAMÉRA (Enregistrement vidéo classique)
     if (mode === "camera") {
       if (recording) stopRecording();
       else startRecording();
+      return;
+    }
+    if (mode === "live") {
+      stopCamera();
+      setIsCreateOpen(false);
+      router.push("/live/start");
       return;
     }
   }, [uploading, mode, recording, startRecording, router]);
@@ -249,6 +256,12 @@ export default function Navbar({ role }: NavbarProps) {
     const f = e.target.files?.[0];
     if (!f) return;
     publishFile(f, f.name.split(".").pop() || "mp4", true);
+  }
+
+  function onPhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    publishFile(f, f.name.split(".").pop() || "jpg", false);
   }
 
   const links = [
@@ -261,12 +274,11 @@ export default function Navbar({ role }: NavbarProps) {
 
   return (
     <>
-      {/* ===== ÉCRAN PLEIN (Caméra / Upload / Live) ===== */}
       {isCreateOpen && (
         <div className="fixed inset-0 z-[60] bg-black text-white flex flex-col select-none">
           <input ref={fileInputRef} type="file" accept="video/*" onChange={onVideoFile} className="hidden" />
+          <input ref={photoInputRef} type="file" accept="image/*" onChange={onPhotoFile} className="hidden" />
 
-          {/* Header */}
           <div className="flex items-center justify-between px-4 pt-4 pb-2">
             <button onClick={() => setIsCreateOpen(false)} className="p-2">
               <X className="w-7 h-7" />
@@ -300,7 +312,6 @@ export default function Navbar({ role }: NavbarProps) {
             </div>
           </div>
 
-          {/* Zone Vidéo */}
           <div className="relative flex-1 mx-auto w-full max-w-md overflow-hidden">
             {mode === "camera" ? (
               <video
@@ -332,7 +343,6 @@ export default function Navbar({ role }: NavbarProps) {
             )}
           </div>
 
-          {/* Footer Intégré : Le bouton central utilise handleRecordAction */}
           <CreateVideoFooter
             role={role}
             activeTab={mode}
@@ -340,7 +350,7 @@ export default function Navbar({ role }: NavbarProps) {
             selectedDuration={duration}
             onDurationChange={setDuration}
             isRecording={recording}
-            onRecordToggle={handleRecordAction} // 👈 Le bouton central est branché ici
+            onRecordToggle={handleRecordAction}
             isUploading={uploading}
             onLiveClick={() => {
               stopCamera();
@@ -365,16 +375,16 @@ export default function Navbar({ role }: NavbarProps) {
             );
           })}
 
-          {/* BOUTON PLUS CENTRAL : Ouvre directement l'écran caméra */}
+          {/* 🆕 BOUTON + : ouvre /create */}
           <button
-            onClick={() => setIsCreateOpen((v) => !v)}
+            onClick={() => router.push("/create")}
             className="relative -top-4 flex flex-col items-center focus:outline-none"
           >
             <motion.div
-              animate={{ rotate: isCreateOpen ? 45 : 0 }}
+              animate={{ rotate: pathname === "/create" ? 45 : 0 }}
               className={cn(
                 "w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-colors",
-                isCreateOpen ? "bg-neutral-700" : "bg-gradient-to-r from-cyan-400 via-white to-red-500 shadow-red-500/30"
+                pathname === "/create" ? "bg-neutral-700" : "bg-gradient-to-r from-cyan-400 via-white to-red-500 shadow-red-500/30"
               )}
             >
               <div className="w-11 h-11 rounded-full bg-black flex items-center justify-center">
