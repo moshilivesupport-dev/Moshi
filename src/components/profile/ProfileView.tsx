@@ -39,7 +39,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
 
   useEffect(() => {
     const loadData = async () => {
-      // ✅ Requête simplifiée (sans thumbnail_url pour éviter l'erreur 400)
+      // ✅ Requête simplifiée : on charge juste ce qu'il faut
       const { data: videosData, error } = await supabase
         .from("videos")
         .select("id, url, view_count, like_count, caption, is_public")
@@ -49,7 +49,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         .limit(60);
       
       if (error) {
-        console.error("Erreur chargement vidéos:", error);
+        console.error("Erreur chargement vidéos profil:", error);
       }
       
       setVideos(videosData || []);
@@ -73,22 +73,14 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
 
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/profile/${profile.id}`;
-    const shareData = {
-      title: `Profil de @${profile.username}`,
-      text: `Découvre le profil de ${profile.full_name || profile.username} sur Moshi !`,
-      url: shareUrl,
-    };
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try { await navigator.share(shareData); } catch {}
+    if (navigator.share) {
+      try { await navigator.share({ title: `Profil de @${profile.username}`, url: shareUrl }); } catch {}
     } else {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        alert("Lien du profil copié !");
-      } catch {}
+      await navigator.clipboard.writeText(shareUrl);
+      alert("Lien copié !");
     }
   };
 
-  // Redirection vers la page des stories
   const handleAddStory = () => {
     router.push("/stories/new");
   };
@@ -286,7 +278,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
                   href={`/videos/${v.id}`}
                   className="relative aspect-[9/16] bg-neutral-900 overflow-hidden"
                 >
-                  {/* ✅ On utilise directement la balise video pour l'aperçu (plus fiable) */}
+                  {/* ✅ On utilise directement la balise video avec src */}
                   <video
                     src={v.url}
                     muted
