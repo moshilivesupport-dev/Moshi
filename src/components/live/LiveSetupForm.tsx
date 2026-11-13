@@ -73,7 +73,6 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Non connecté");
 
-      // 🆕 C'EST ICI QUE TOUT SE JOUE
       const { data: liveData, error: liveError } = await supabase
         .from("live_sessions")
         .insert({
@@ -83,17 +82,14 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
           status: "live",
           viewers_count: 0,
           product_ids: isSeller ? selectedProducts : [],
-          // 👇 CES 2 LIGNES SONT NOUVELLES 👇
-          room_name: `moshi-live-${crypto.randomUUID()}`, // Génère un nom unique (ex: moshi-live-a1b2-c3d4)
-          provider: "livekit", // Dit à l'app d'utiliser LiveKit
-          // 👆 FIN DES NOUVELLES LIGNES 👆
+          room_name: `moshi-live-${crypto.randomUUID()}`,
+          provider: "livekit",
         })
         .select()
         .single();
 
       if (liveError) throw liveError;
 
-      // Si vendeur, lier les produits au live
       if (isSeller && selectedProducts.length > 0) {
         const productLinks = selectedProducts.map((productId) => ({
           live_id: liveData.id,
@@ -110,7 +106,6 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
         }
       }
 
-      // Rediriger vers la salle de live (LiveKit s'occupera du reste)
       router.push(`/live/${liveData.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur lors du lancement";
