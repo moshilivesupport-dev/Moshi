@@ -53,7 +53,7 @@ export default function GiftMenu({ liveId, receiverId, onClose, onGiftSent }: Gi
         .update({ coins_balance: wallet.coins_balance - gift.price_coins })
         .eq("user_id", user.id);
 
-      // 2. Ajouter les pièces au vendeur (90% pour le vendeur, 10% commission Moshi)
+      // 2. Ajouter les pièces au vendeur (90% pour le vendeur)
       const { data: sellerWallet } = await supabase
         .from("wallets")
         .select("coins_balance")
@@ -95,21 +95,18 @@ export default function GiftMenu({ liveId, receiverId, onClose, onGiftSent }: Gi
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-[#121212] rounded-t-3xl p-4 pb-8 animate-slide-up">
-        {/* Header */}
+      <div className="relative w-full max-w-lg bg-[#121212] rounded-t-3xl p-4 pb-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-white">Envoyer un cadeau</h2>
           <button onClick={onClose} className="p-1"><X className="w-6 h-6 text-neutral-400" /></button>
         </div>
 
-        {/* Solde */}
         <div className="bg-neutral-900 rounded-xl p-3 flex items-center gap-2 mb-4">
           <Coins className="w-5 h-5 text-yellow-500" />
           <span className="text-white text-sm">Ton solde :</span>
           <span className="text-yellow-500 font-bold ml-auto">{wallet?.coins_balance || 0} pièces</span>
         </div>
 
-        {/* Grille de cadeaux */}
         {loading ? (
           <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-neutral-500 animate-spin" /></div>
         ) : (
