@@ -1,59 +1,27 @@
-import { redirect, notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import LiveRoom from "@/components/live/LiveRoom";
+
+export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export const dynamic = "force-dynamic";
-
 export default async function LivePage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // Récupérer la session de live
-  const { data: session } = await supabase
+  const { data: live, error } = await supabase
     .from("live_sessions")
-    .select(`
-      *,
-      profiles:host_id (
-        id,
-        username,
-        full_name,
-        avatar_url,
-        role
-      )
-    `)
+    .select("id, title, host_id, host_role, status, room_name, playback_url")
     .eq("id", id)
     .single();
 
-  if (!session) {
-    notFound();
-  }
+  if (error || !live) notFound();
 
-  // Si le live est terminé, rediriger vers la page de replay (à créer plus tard)
-  if (session.status === "ended") {
-    redirect(`/live/${id}/replay`);
-  }
+  // Si le live n'a pas de room_name, on en génère un (basé sur l'id du live)
+  const roomName = live.room_name || `moshi-live-${live.id}`;
 
-  // Vérifier si l'utilisateur actuel est le host
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const isHost = user?.id === session.host_id;
-
-  // TODO: Générer le token LiveKit ici si configuré
-  // const token = await generateLiveKitToken(session.room_name, user?.id, isHost);
-
-  return (
-    <LiveRoom
-      sessionId={session.id}
-      isHost={isHost}
-      session={session}
-      // token={token}
-      // serverUrl={process.env.LIVEKIT_URL}
-    />
-  );
+  return <LiveRoom liveId={live.id} roomName={roomName} />;
 }
