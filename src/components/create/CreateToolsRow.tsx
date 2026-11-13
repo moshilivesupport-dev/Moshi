@@ -2,11 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import {
-  ImageEdit, Wand2, Type, Sparkles, Scissors
+  PenTool, Wand2, Type, Sparkles, Scissors
 } from "lucide-react";
 
 const tools = [
-  { id: "photo-editor", icon: ImageEdit, label: "Éditeur de photos", href: "/create/photo-editor" },
+  { id: "photo-editor", icon: PenTool, label: "Éditeur de photos", href: "/create/photo-editor" },
   { id: "autocut", icon: Wand2, label: "AutoCut", href: "/create/autocut" },
   { id: "captions", icon: Type, label: "Légendes", href: "/create/captions" },
   { id: "ai-self", icon: Sparkles, label: "AI Self", href: "/create/ai-self" },
