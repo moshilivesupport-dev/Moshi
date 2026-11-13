@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { ChevronLeft, Bell, ShoppingBag, Gift, Heart, UserPlus, Loader2, Check } from "lucide-react";
 
@@ -17,13 +16,14 @@ export default function NotificationsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth/login"); return; }
 
+      // ✅ On cherche les notifs pour "to_user_id" (le destinataire)
       const { data } = await supabase
         .from("notifications")
         .select(`
           id, type, message, read, created_at,
           actor:actor_id (username, avatar_url)
         `)
-        .eq("user_id", user.id)
+        .eq("to_user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -36,7 +36,7 @@ export default function NotificationsPage() {
   const markAllAsRead = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    await supabase.from("notifications").update({ read: true }).eq("user_id", user.id);
+    await supabase.from("notifications").update({ read: true }).eq("to_user_id", user.id);
     setNotifications(notifications.map(n => ({ ...n, read: true })));
   };
 
