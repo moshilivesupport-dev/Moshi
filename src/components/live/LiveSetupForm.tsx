@@ -3,231 +3,99 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Radio, ShoppingBag, Loader2, ImageIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ShoppingBag, Loader2, Radio } from "lucide-react";
 
-interface Product {
-  id: string;
-  title: string;
-  price: number;
-  currency: string | null;
-}
-
-interface LiveSetupFormProps {
-  isSeller: boolean;
-}
-
-export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
+export default function LiveSetupForm({ isSeller }: { isSeller: boolean }) {
   const router = useRouter();
   const supabase = createClient();
 
   const [title, setTitle] = useState("");
+  const [products, setProducts] = useState<any[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isSeller) return;
-    const loadProducts = async () => {
-      setLoadingProducts(true);
+    const fetchProducts = async () => {
+      setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from("products")
-        .select("id, title, price, currency")
-        .eq("seller_id", user.id)
-        .eq("is_active", true)
-        .limit(20);
-
-      setProducts(data || []);
-      setLoadingProducts(false);
+      if (user) {
+        const { data } = await supabase.from("products").select("*").eq("seller_id", user.id).eq("is_active", true);
+        setProducts(data || []);
+      }
+      setLoading(false);
     };
-    loadProducts();
+    fetchProducts();
   }, [isSeller, supabase]);
 
-  const toggleProduct = (productId: string) => {
-    setSelectedProducts((prev) =>
-      prev.includes(productId)
-        ? prev.filter((id) => id !== productId)
-        : [...prev, productId]
-    );
-  };
-
   const handleStart = async () => {
-    if (!title.trim()) {
-      setError("Ajoute un titre à ton live.");
-      return;
-    }
-    if (isSeller && selectedProducts.length === 0) {
-      setError("Sélectionne au moins un produit à vendre.");
-      return;
-    }
-
+    if (!title) return alert("Ajoute un titre");
+    if (isSeller && selectedProducts.length === 0) return alert("Sélectionne au moins un produit");
+    
     setStarting(true);
-    setError(null);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Non connecté");
+    // Créer la session live
+    const { data: live, error } = await supabase.from("live_sessions").insert({
+      host_id: user.id,
+      title,
+      host_role: isSeller ? "vendeur" : "acheteur",
+      status: "live",
+      room_name: `moshi-${Date.now()}`,
+      product_ids: selectedProducts // On stocke les IDs des produits
+    }).select().single();
 
-      const { data: liveData, error: liveError } = await supabase
-        .from("live_sessions")
-        .insert({
-          host_id: user.id,
-          title: title.trim(),
-          host_role: isSeller ? "vendeur" : "acheteur",
-          status: "live",
-          viewers_count: 0,
-          product_ids: isSeller ? selectedProducts : [],
-          room_name: `moshi-live-${crypto.randomUUID()}`,
-          provider: "livekit",
-        })
-        .select()
-        .single();
-
-      if (liveError) throw liveError;
-
-      if (isSeller && selectedProducts.length > 0) {
-        const productLinks = selectedProducts.map((productId) => ({
-          live_id: liveData.id,
-          product_id: productId,
-          is_pinned: true,
-        }));
-
-        const { error: productsError } = await supabase
-          .from("live_products")
-          .insert(productLinks);
-
-        if (productsError) {
-          console.warn("Erreur liaison produits:", productsError);
-        }
-      }
-
-      router.push(`/live/${liveData.id}`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Erreur lors du lancement";
-      setError(message);
+    if (!error && live) {
+      router.push(`/live/${live.id}`);
+    } else {
+      alert("Erreur lors du lancement");
       setStarting(false);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
-      <div className="flex items-center gap-3 mb-6">
-        <div className={cn(
-          "w-10 h-10 rounded-full flex items-center justify-center",
-          isSeller ? "bg-purple-600" : "bg-red-500"
-        )}>
-          {isSeller ? <ShoppingBag className="w-5 h-5 text-white" /> : <Radio className="w-5 h-5 text-white" />}
-        </div>
-        <div>
-          <h2 className="text-lg font-bold text-white">
-            {isSeller ? "Lancer un Live Shopping" : "Lancer un Live"}
-          </h2>
-          <p className="text-xs text-neutral-400">
-            {isSeller ? "Vends tes produits en direct" : "Partage un moment avec ta communauté"}
-          </p>
-        </div>
-      </div>
+    <div className="p-6 max-w-md mx-auto bg-neutral-900 rounded-2xl border border-neutral-800">
+      <h2 className="text-2xl font-bold text-white mb-6">
+        {isSeller ? "Live Shopping" : "Lancer un Live"}
+      </h2>
 
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-neutral-400 mb-2">Titre du live</label>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          maxLength={80}
-          placeholder={isSeller ? "Ex: Nouvelle collection printemps" : "Ex: Je réponds à vos questions"}
-          className="w-full bg-black border border-neutral-800 rounded-lg p-3 text-white text-sm focus:ring-2 focus:ring-red-500 outline-none"
-        />
-      </div>
+      <input
+        type="text"
+        placeholder="Titre du live"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        className="w-full bg-black border border-neutral-700 text-white p-3 rounded-lg mb-4"
+      />
 
       {isSeller && (
         <div className="mb-6">
-          <label className="block text-sm font-medium text-neutral-400 mb-2">
-            Produits à épingler ({selectedProducts.length})
-          </label>
-
-          {loadingProducts ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 text-neutral-500 animate-spin" />
-            </div>
-          ) : products.length === 0 ? (
-            <div className="bg-black border border-neutral-800 rounded-lg p-4 text-center">
-              <ShoppingBag className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
-              <p className="text-sm text-neutral-400 mb-2">Aucun produit en vente</p>
-              <button
-                onClick={() => router.push("/seller/products/new")}
-                className="text-red-500 text-sm font-semibold"
-              >
-                + Ajouter un produit
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {products.map((product) => {
-                const isSelected = selectedProducts.includes(product.id);
-                return (
-                  <button
-                    key={product.id}
-                    onClick={() => toggleProduct(product.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 p-2 rounded-lg border text-left transition",
-                      isSelected ? "bg-purple-600/20 border-purple-500" : "bg-black border-neutral-800"
-                    )}
-                  >
-                    <div className="w-12 h-12 rounded-lg bg-neutral-800 flex items-center justify-center flex-shrink-0">
-                      <ImageIcon className="w-5 h-5 text-neutral-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{product.title}</p>
-                      <p className="text-xs text-neutral-400">
-                        {product.price.toFixed(2)} {product.currency || "€"}
-                      </p>
-                    </div>
-                    {isSelected && (
-                      <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+          <p className="text-neutral-400 text-sm mb-2">Sélectionne tes produits :</p>
+          {loading ? <p className="text-white">Chargement...</p> : (
+            <div className="max-h-40 overflow-y-auto space-y-2">
+              {products.map(p => (
+                <div 
+                  key={p.id} 
+                  onClick={() => setSelectedProducts(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id])}
+                  className={`p-2 rounded cursor-pointer border ${selectedProducts.includes(p.id) ? 'bg-purple-900/50 border-purple-500' : 'bg-black border-neutral-800'}`}
+                >
+                  <p className="text-white text-sm">{p.title}</p>
+                  <p className="text-green-400 text-xs">{p.price} €</p>
+                </div>
+              ))}
             </div>
           )}
         </div>
       )}
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
-          {error}
-        </div>
-      )}
-
       <button
         onClick={handleStart}
-        disabled={starting || !title.trim()}
-        className={cn(
-          "w-full py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 disabled:opacity-50",
-          isSeller ? "bg-purple-600 hover:bg-purple-700" : "bg-red-500 hover:bg-red-600"
-        )}
+        disabled={starting}
+        className="w-full bg-purple-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2"
       >
-        {starting ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Lancement...
-          </>
-        ) : (
-          <>
-            {isSeller ? <ShoppingBag className="w-5 h-5" /> : <Radio className="w-5 h-5" />}
-            {isSeller ? "Lancer le Live Shopping" : "Lancer le Live"}
-          </>
-        )}
+        {starting ? <Loader2 className="w-5 h-5 animate-spin" /> : (isSeller ? <ShoppingBag className="w-5 h-5" /> : <Radio className="w-5 h-5" />)}
+        Lancer
       </button>
     </div>
   );
