@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Radio, ShoppingBag, Loader2, X, ImageIcon } from "lucide-react";
+import { Radio, ShoppingBag, Loader2, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Product {
@@ -74,22 +74,23 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Non connecté");
 
-      // Créer une session de live
+      // ✅ CORRECTION : Utilisation des vraies colonnes de ta table
       const { data: liveData, error: liveError } = await supabase
         .from("live_sessions")
         .insert({
           host_id: user.id,
           title: title.trim(),
-          is_seller_live: isSeller,
+          host_role: isSeller ? "vendeur" : "acheteur", // ✅ Nouvelle colonne
           status: "live",
-          viewer_count: 0,
+          viewers_count: 0, // ✅ Nouvelle colonne
+          product_ids: isSeller ? selectedProducts : [], // ✅ On stocke les IDs ici
         })
         .select()
         .single();
 
       if (liveError) throw liveError;
 
-      // Si vendeur, lier les produits au live
+      // Si vendeur, lier les produits au live dans la table de liaison
       if (isSeller && selectedProducts.length > 0) {
         const productLinks = selectedProducts.map((productId) => ({
           live_id: liveData.id,
@@ -101,7 +102,10 @@ export default function LiveSetupForm({ isSeller }: LiveSetupFormProps) {
           .from("live_products")
           .insert(productLinks);
 
-        if (productsError) throw productsError;
+        if (productsError) {
+          console.warn("Erreur liaison produits:", productsError);
+          // On ne bloque pas le live si la liaison échoue
+        }
       }
 
       // Rediriger vers la salle de live
