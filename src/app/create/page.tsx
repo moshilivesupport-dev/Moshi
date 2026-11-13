@@ -1,140 +1,161 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { X, Plus, FolderOpen, Search } from "lucide-react";
+import { X, Camera, RefreshCw, Zap, ZapOff, Circle, Square } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import CreateToolsRow from "@/components/create/CreateToolsRow";
-import TemplateCard from "@/components/create/TemplateCard";
-import { cn } from "@/lib/utils";
-
-type TabKey = "foryou" | "viral" | "trending" | "ai";
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "foryou", label: "Pour toi" },
-  { key: "viral", label: "Chanson virale" },
-  { key: "trending", label: "Tendance" },
-  { key: "ai", label: "IA" },
-];
-
-interface Template {
-  id: string;
-  thumbnail_url: string;
-  title: string;
-  usage_count: number;
-  clip_count: number | null;
-  category: string;
-}
 
 export default function CreatePage() {
   const router = useRouter();
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<TabKey>("foryou");
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [loading, setLoading] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  const [flashOn, setFlashOn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Démarrer la caméra
   useEffect(() => {
-    const loadTemplates = async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("video_templates")
-        .select("id, thumbnail_url, title, usage_count, clip_count, category")
-        .eq("category", activeTab === "foryou" ? "viral" : activeTab)
-        .order("usage_count", { ascending: false })
-        .limit(20);
+    startCamera();
+    return () => stopCamera();
+  }, [facingMode]);
+
+  const startCamera = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode },
+        audio: true,
+      });
+      setStream(mediaStream);
+      streamRef.current = mediaStream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err) {
+      setError("Impossible d'accéder à la caméra");
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+    }
+    if (videoRef.current) videoRef.current.srcObject = null;
+  };
+
+  const toggleRecording = () => {
+    if (recording) {
+      // Arrêter l'enregistrement
+      if (recorderRef.current && recorderRef.current.state !== "inactive") {
+        recorderRef.current.stop();
+      }
+      setRecording(false);
+    } else {
+      // Démarrer l'enregistrement
+      if (!streamRef.current) return;
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(streamRef.current, { mimeType: "video/webm" });
+      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "video/webm" });
+        uploadVideo(blob);
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setRecording(true);
+    }
+  };
+
+  const uploadVideo = async (blob: Blob) => {
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/auth/login"); return; }
+
+      const fileName = `${user.id}/${Date.now()}.webm`;
+      const { error: upError } = await supabase.storage.from("videos").upload(fileName, blob);
+      if (upError) throw upError;
+
+      const { data: urlData } = supabase.storage.from("videos").getPublicUrl(fileName);
       
-      setTemplates(data || []);
-      setLoading(false);
-    };
-    loadTemplates();
-  }, [activeTab, supabase]);
+      const { error: dbError } = await supabase.from("videos").insert({
+        user_id: user.id,
+        url: urlData.publicUrl,
+        caption: "",
+        is_public: true,
+        status: "published",
+        view_count: 0, like_count: 0, comment_count: 0,
+      });
+      if (dbError) throw dbError;
+
+      router.push("/");
+    } catch (err) {
+      setError("Erreur lors de la publication");
+      setUploading(false);
+    }
+  };
 
   return (
-    <div className="min-h-[100dvh] bg-black text-white pb-20">
+    <div className="fixed inset-0 z-[60] bg-black">
+      {/* Caméra */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className={`absolute inset-0 w-full h-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
+      />
+
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-black flex items-center justify-between px-4 py-3">
-        <button onClick={() => router.back()} className="p-2">
-          <X className="w-6 h-6" />
+      <div className="absolute top-0 left-0 right-0 z-30 p-4 flex items-center justify-between">
+        <button onClick={() => { stopCamera(); router.back(); }} className="p-2">
+          <X className="w-7 h-7 text-white" />
         </button>
-        <h1 className="text-base font-semibold tracking-wide">CRÉER</h1>
-        <div className="w-10" />
-      </header>
-
-      {/* Rangée d'outils */}
-      <CreateToolsRow />
-
-      {/* Deux grosses cartes */}
-      <div className="px-4 grid grid-cols-[2fr_1fr] gap-3 mt-4 mb-6">
-        {/* Nouvelle vidéo → Ouvre l'écran caméra */}
-        <button
-          onClick={() => router.push("/create/camera")}
-          className="relative bg-gradient-to-br from-pink-100 to-cyan-100 rounded-2xl aspect-[2/1] flex flex-col items-center justify-center active:scale-95 transition-transform"
-        >
-          <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center mb-2">
-            <Plus className="w-6 h-6 text-white" strokeWidth={3} />
-          </div>
-          <p className="text-black font-bold text-base">Nouvelle vidéo</p>
-        </button>
-
-        {/* Brouillons */}
-        <button className="bg-neutral-900 rounded-2xl aspect-[2/1] flex flex-col items-center justify-center border border-neutral-800 active:scale-95 transition-transform">
-          <FolderOpen className="w-8 h-8 text-white mb-2" />
-          <p className="text-white font-semibold text-sm">Brouillons</p>
-        </button>
-      </div>
-
-      {/* Section Modèles */}
-      <div className="px-4 mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Modèles</h2>
-        <button className="w-9 h-9 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center">
-          <Search className="w-4 h-4 text-white" />
-        </button>
-      </div>
-
-      {/* Onglets des modèles */}
-      <div className="flex gap-4 px-4 overflow-x-auto scrollbar-hide pb-3">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={cn(
-              "text-sm font-semibold whitespace-nowrap transition-colors relative pb-2",
-              activeTab === tab.key ? "text-white" : "text-neutral-500"
-            )}
-          >
-            {tab.label}
-            {activeTab === tab.key && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />
-            )}
+        <div className="flex gap-4">
+          <button onClick={() => setFlashOn(!flashOn)} className="p-2">
+            {flashOn ? <Zap className="w-6 h-6 text-yellow-400" /> : <ZapOff className="w-6 h-6 text-white" />}
           </button>
-        ))}
+          <button onClick={() => setFacingMode(facingMode === "user" ? "environment" : "user")} className="p-2">
+            <RefreshCw className="w-6 h-6 text-white" />
+          </button>
+        </div>
       </div>
 
-      {/* Grille de modèles */}
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-        </div>
-      ) : templates.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-          <p className="text-neutral-500 text-sm">
-            Aucun modèle disponible dans cette catégorie.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 px-4">
-          {templates.map((template) => (
-            <TemplateCard
-              key={template.id}
-              id={template.id}
-              thumbnailUrl={template.thumbnail_url}
-              title={template.title}
-              usageCount={template.usage_count}
-              clipCount={template.clip_count || undefined}
-            />
-          ))}
+      {/* Erreur */}
+      {error && (
+        <div className="absolute top-20 left-4 right-4 z-30 bg-red-600 text-white p-3 rounded-lg text-sm text-center">
+          {error}
         </div>
       )}
+
+      {/* Bouton d'enregistrement */}
+      <div className="absolute bottom-10 left-0 right-0 z-30 flex flex-col items-center">
+        {uploading ? (
+          <div className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <button
+            onClick={toggleRecording}
+            className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center bg-black/30"
+          >
+            {recording ? (
+              <Square className="w-8 h-8 text-red-500 fill-red-500" />
+            ) : (
+              <Circle className="w-8 h-8 text-white fill-white" />
+            )}
+          </button>
+        )}
+        <p className="text-white text-xs mt-3">
+          {recording ? "Appuyez pour arrêter" : "Appuyez pour enregistrer"}
+        </p>
+      </div>
     </div>
   );
 }
