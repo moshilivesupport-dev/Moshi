@@ -39,14 +39,18 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
 
   useEffect(() => {
     const loadData = async () => {
-      // ✅ CORRECTION : on récupère correctement url, thumbnail_url, etc.
-      const { data: videosData } = await supabase
+      // Charger les vidéos
+      const { data: videosData, error } = await supabase
         .from("videos")
         .select("id, url, thumbnail_url, view_count, like_count, caption, is_public")
         .eq("user_id", profile.id)
         .eq("is_public", true)
         .order("created_at", { ascending: false })
         .limit(60);
+      
+      if (error) {
+        console.error("Erreur chargement vidéos:", error);
+      }
       
       setVideos(videosData || []);
 
@@ -67,7 +71,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
 
   const handleFollowChange = () => setRefreshKey((k) => k + 1);
 
-  // ✅ CORRECTION : fonction de partage (remplace le bouton qui faisait 404)
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/profile/${profile.id}`;
     const shareData = {
@@ -85,13 +88,18 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
     }
   };
 
+  // ✅ NOUVEAU : fonction pour le bouton + sur l'avatar (poster une story)
+  const handleAddStory = () => {
+    router.push("/stories");
+  };
+
   const name = profile.full_name || profile.username || "Utilisateur";
   const handle = profile.username ? `@${profile.username}` : "";
   const totalLikes = videos.reduce((sum, v) => sum + (v.like_count || 0), 0);
 
   return (
-    <div className="min-h-[100dvh] bg-black text-white pb-20">
-      {/* Header : boutons en haut */}
+    <div className="min-h-[100dvh] bg-black text-white pb-20 overflow-x-hidden">
+      {/* Header */}
       <header className="px-4 pt-3 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isOwnProfile && (
@@ -106,24 +114,19 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
           )}
         </div>
         <div className="flex items-center gap-3">
-          {/* ✅ CORRECTION : bouton partage qui fonctionne */}
           <button onClick={handleShare} className="p-2">
             <Share2 className="w-6 h-6 text-white" />
           </button>
-          {/* ✅ CORRECTION : menu hamburger qui ouvre un panneau local */}
           <button onClick={() => setMenuOpen(true)} className="p-2">
             <Menu className="w-6 h-6 text-white" />
           </button>
         </div>
       </header>
 
-      {/* Menu latéral (Bottom Sheet) */}
+      {/* Menu latéral */}
       {menuOpen && (
         <>
-          <div
-            className="fixed inset-0 bg-black/60 z-50"
-            onClick={() => setMenuOpen(false)}
-          />
+          <div className="fixed inset-0 bg-black/60 z-50" onClick={() => setMenuOpen(false)} />
           <div className="fixed bottom-0 left-0 right-0 z-[51] bg-neutral-900 rounded-t-3xl p-6 pb-10">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-bold">Menu</h2>
@@ -132,24 +135,16 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
               </button>
             </div>
             <div className="space-y-4">
-              <Link href="/settings" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>
-                Paramètres
-              </Link>
-              <Link href="/wallet" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>
-                Solde
-              </Link>
-              <Link href="/orders" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>
-                Mes commandes
-              </Link>
-              <button onClick={handleShare} className="block py-3 text-white text-base w-full text-left">
-                Partager le profil
-              </button>
+              <Link href="/settings" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>Paramètres</Link>
+              <Link href="/wallet" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>Solde</Link>
+              <Link href="/orders" className="block py-3 text-white text-base" onClick={() => setMenuOpen(false)}>Mes commandes</Link>
+              <button onClick={handleShare} className="block py-3 text-white text-base w-full text-left">Partager le profil</button>
             </div>
           </div>
         </>
       )}
 
-      {/* Avatar + Infos */}
+      {/* Infos Profil */}
       <div className="px-4 flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-1 mb-1">
@@ -161,12 +156,16 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
           <p className="text-sm text-neutral-400">{handle}</p>
         </div>
 
-        {/* Avatar avec bordure style "Story non vue" */}
-        <div className="relative">
-          <div className="w-20 h-20 rounded-full p-1 border-2 border-neutral-700">
-            <div className="w-full h-full rounded-full overflow-hidden bg-neutral-800">
+        {/* Avatar avec bouton + pour Story */}
+        <div className="relative flex-shrink-0">
+          <div className="w-20 h-20 rounded-full p-1 border-2 border-neutral-700 relative overflow-hidden">
+            <div className="w-full h-full rounded-full overflow-hidden bg-neutral-800 relative">
               {profile.avatar_url ? (
-                <img src={profile.avatar_url} alt={name} className="w-full h-full object-cover" />
+                <img 
+                  src={profile.avatar_url} 
+                  alt={name} 
+                  className="absolute inset-0 w-full h-full object-cover rounded-full" 
+                />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-2xl font-bold">
                   {name.charAt(0).toUpperCase()}
@@ -174,14 +173,13 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
               )}
             </div>
           </div>
-          {/* ✅ Bouton + qui redirige proprement */}
           {isOwnProfile && (
-            <Link
-              href="/profile/edit"
-              className="absolute -bottom-1 -right-1 w-7 h-7 bg-cyan-500 rounded-full flex items-center justify-center border-2 border-black"
+            <button 
+              onClick={handleAddStory}
+              className="absolute -bottom-1 -right-1 w-7 h-7 bg-cyan-500 rounded-full flex items-center justify-center border-2 border-black z-10"
             >
               <Plus className="w-4 h-4 text-white" strokeWidth={3} />
-            </Link>
+            </button>
           )}
         </div>
       </div>
@@ -212,12 +210,8 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
       {/* Badge Solde */}
       {(isOwnProfile || profile.role === "admin") && (
         <div className="px-4 mb-4 flex items-center gap-2">
-          <Link
-            href="/wallet"
-            className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-900 border border-neutral-800 rounded-full text-sm font-semibold"
-          >
-            <Wallet className="w-4 h-4 text-pink-400" />
-            Solde
+          <Link href="/wallet" className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-900 border border-neutral-800 rounded-full text-sm font-semibold">
+            <Wallet className="w-4 h-4 text-pink-400" /> Solde
           </Link>
         </div>
       )}
@@ -226,10 +220,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
       <div className="px-4 mb-6">
         {isOwnProfile ? (
           <div className="flex gap-2">
-            <Link
-              href="/profile/edit"
-              className="flex-1 flex items-center justify-center border border-neutral-700 rounded-lg px-4 py-2 text-sm font-semibold bg-neutral-900"
-            >
+            <Link href="/profile/edit" className="flex-1 flex items-center justify-center border border-neutral-700 rounded-lg px-4 py-2 text-sm font-semibold bg-neutral-900">
               Modifier le profil
             </Link>
             <button onClick={handleShare} className="px-4 py-2 border border-neutral-700 rounded-lg bg-neutral-900">
@@ -239,23 +230,16 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         ) : (
           <div className="flex gap-2">
             <div className="flex-1">
-              <FollowButton
-                targetUserId={profile.id}
-                variant="profile"
-                onFollowChange={handleFollowChange}
-              />
+              <FollowButton targetUserId={profile.id} variant="profile" onFollowChange={handleFollowChange} />
             </div>
-            <Link
-              href={`/messages?user=${profile.id}`}
-              className="px-4 py-2 border border-neutral-700 rounded-lg bg-neutral-900 text-sm font-semibold"
-            >
+            <Link href={`/messages?user=${profile.id}`} className="px-4 py-2 border border-neutral-700 rounded-lg bg-neutral-900 text-sm font-semibold">
               Message
             </Link>
           </div>
         )}
       </div>
 
-      {/* Boutons "Nouveau" et "Temps fort" */}
+      {/* Boutons Nouveau / Temps fort */}
       {isOwnProfile && (
         <div className="px-4 mb-6 flex gap-3 overflow-x-auto scrollbar-hide">
           <Link href="/create" className="flex flex-col items-center gap-1 flex-shrink-0">
@@ -273,41 +257,26 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </div>
       )}
 
-      {/* Tabs de contenu */}
+      {/* Onglets de contenu */}
       <div className="border-b border-neutral-800 flex items-center justify-around">
-        <button
-          onClick={() => setActiveTab("grid")}
-          className={`flex-1 py-3 flex justify-center ${activeTab === "grid" ? "border-b-2 border-white" : "text-neutral-500"}`}
-        >
+        <button onClick={() => setActiveTab("grid")} className={`flex-1 py-3 flex justify-center ${activeTab === "grid" ? "border-b-2 border-white" : "text-neutral-500"}`}>
           <Grid3X3 className="w-5 h-5" />
         </button>
-        <button
-          onClick={() => setActiveTab("private")}
-          className={`flex-1 py-3 flex justify-center ${activeTab === "private" ? "border-b-2 border-white" : "text-neutral-500"}`}
-        >
+        <button onClick={() => setActiveTab("private")} className={`flex-1 py-3 flex justify-center ${activeTab === "private" ? "border-b-2 border-white" : "text-neutral-500"}`}>
           <Lock className="w-5 h-5" />
         </button>
-        <button
-          onClick={() => setActiveTab("reposts")}
-          className={`flex-1 py-3 flex justify-center ${activeTab === "reposts" ? "border-b-2 border-white" : "text-neutral-500"}`}
-        >
+        <button onClick={() => setActiveTab("reposts")} className={`flex-1 py-3 flex justify-center ${activeTab === "reposts" ? "border-b-2 border-white" : "text-neutral-500"}`}>
           <Repeat2 className="w-5 h-5" />
         </button>
-        <button
-          onClick={() => setActiveTab("favorites")}
-          className={`flex-1 py-3 flex justify-center ${activeTab === "favorites" ? "border-b-2 border-white" : "text-neutral-500"}`}
-        >
+        <button onClick={() => setActiveTab("favorites")} className={`flex-1 py-3 flex justify-center ${activeTab === "favorites" ? "border-b-2 border-white" : "text-neutral-500"}`}>
           <Bookmark className="w-5 h-5" />
         </button>
-        <button
-          onClick={() => setActiveTab("liked")}
-          className={`flex-1 py-3 flex justify-center ${activeTab === "liked" ? "border-b-2 border-white" : "text-neutral-500"}`}
-        >
+        <button onClick={() => setActiveTab("liked")} className={`flex-1 py-3 flex justify-center ${activeTab === "liked" ? "border-b-2 border-white" : "text-neutral-500"}`}>
           <Heart className="w-5 h-5" />
         </button>
       </div>
 
-      {/* ✅ CORRECTION : Grille de vidéos avec fallback propre */}
+      {/* ✅ GRILLE DE VIDÉOS CORRIGÉE */}
       {activeTab === "grid" && (
         <>
           {videos.length === 0 ? (
@@ -321,7 +290,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-[1px]">
+            <div className="grid grid-cols-3 gap-[1px] pb-20">
               {videos.map((v) => (
                 <Link
                   key={v.id}
@@ -332,10 +301,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
                     <img
                       src={v.thumbnail_url}
                       alt=""
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : (
                     <video
@@ -343,7 +309,7 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
                       muted
                       playsInline
                       preload="metadata"
-                      className="w-full h-full object-cover"
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
                   )}
                   <div className="absolute bottom-1 left-1 flex items-center gap-1 text-white text-xs font-semibold drop-shadow-md">
@@ -357,7 +323,6 @@ export default function ProfileView({ profile, isOwnProfile, initialStats }: Pro
         </>
       )}
 
-      {/* Onglets vides */}
       {(activeTab === "private" || activeTab === "reposts" || activeTab === "favorites" || activeTab === "liked") && (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <Lock className="w-10 h-10 text-neutral-700" />
