@@ -18,14 +18,14 @@ export async function searchAll(
 
   const pattern = `%${q}%`;
 
-  // 1. Recherche de profils (username, full_name)
+  // 1. Profils
   const { data: profiles } = await supabase
     .from("profiles")
     .select("id, username, full_name, avatar_url, bio, role")
     .or(`username.ilike.${pattern},full_name.ilike.${pattern}`)
     .limit(limit);
 
-  // 2. Recherche de vidéos (caption)
+  // 2. Vidéos
   const { data: videos } = await supabase
     .from("videos")
     .select(`
@@ -37,14 +37,14 @@ export async function searchAll(
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  // 3. Recherche de produits (name, description)
+  // 3. Produits ✅ CORRECTION : title au lieu de name, pas d'image_url
   const { data: products } = await supabase
     .from("products")
     .select(`
-      id, name, description, price, image_url, seller_id,
+      id, title, description, price, currency, seller_id, is_featured,
       profiles:seller_id (username, full_name)
     `)
-    .or(`name.ilike.${pattern},description.ilike.${pattern}`)
+    .or(`title.ilike.${pattern},description.ilike.${pattern}`)
     .eq("is_active", true)
     .limit(limit);
 
