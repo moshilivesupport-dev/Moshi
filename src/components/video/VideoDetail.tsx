@@ -1,201 +1,225 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
-import { ArrowLeft, Heart, MessageCircle, Share2, Music, UserPlus } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  ArrowLeft, Heart, MessageCircle, Share2, Music, Volume2, VolumeX, Play
+} from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
-import VideoPlayer from "./VideoPlayer";
 import CommentsSheet from "./CommentsSheet";
 
 interface VideoDetailProps {
-  video: any;
-  currentUser: any;
+  videoId: string;
 }
 
-export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
-  const supabase = createClient();
+export default function VideoDetail({ videoId }: VideoDetailProps) {
   const router = useRouter();
-  const author = video.profiles;
-  const name = author?.username || author?.full_name || "user";
+  const supabase = createClient();
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const [muted, setMuted] = useState(false);
+  const [video, setVideo] = useState<any>(null);
+  const [author, setAuthor] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState(false);
-  // ✅ CORRECTION : Typage explicite de number pour éviter l'erreur TypeScript
-  const [likesCount, setLikesCount] = useState<number>(video.likes_count || video.like_count || 0);
-  const [commentsOpen, setCommentsOpen] = useState(false);
-  const [following, setFollowing] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [showComments, setShowComments] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
-  const toggleLike = async () => {
-    if (!currentUser) {
-      router.push("/auth/login");
-      return;
-    }
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
 
-    const newLiked = !liked;
-    setLiked(newLiked);
-    // ✅ CORRECTION : Typage explicite de 'prev' en number
-    setLikesCount((prev: number) => prev + (newLiked ? 1 : -1));
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
 
-    // TODO: Persister via RPC Supabase
-  };
+      // Charger la vidéo
+      const { data: videoData, error } = await supabase
+        .from("videos")
+        .select(`
+          id, url, caption, title, like_count, comment_count, view_count, user_id,
+          profiles:user_id (username, full_name, avatar_url)
+        `)
+        .eq("id", videoId)
+        .single();
 
-  const toggleFollow = async () => {
-    if (!currentUser) {
-      router.push("/auth/login");
-      return;
-    }
+      if (error || !videoData) {
+        setLoading(false);
+        return;
+      }
 
-    setFollowing(!following);
-    // TODO: Persister via RPC Supabase
-  };
+      const authorData = Array.isArray(videoData.profiles) ? videoData.profiles[0] : videoData.profiles;
+      setVideo(videoData);
+      setAuthor(authorData);
+      setLikeCount(videoData.like_count || 0);
 
-  const share = async () => {
-    const shareData = {
-      title: `Vidéo de @${name}`,
-      text: video.description || video.caption || "Regarde cette vidéo sur Moshi !",
-      url: typeof window !== "undefined" ? window.location.href : "",
+      // Vérifier si déjà liké
+      if (user) {
+        const { data: likeData } = await supabase
+          .from("video_likes")
+          .select("id")
+          .eq("video_id", videoId)
+          .eq("user_id", user.id)
+          .single();
+        setLiked(!!likeData);
+      }
+
+      setLoading(false);
     };
 
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share(shareData);
-      } catch (err) {
-        // L'utilisateur a annulé
+    load();
+  }, [videoId, supabase]);
+
+  const toggleLike = async () => {
+    if (!currentUser) { router.push("/auth/login"); return; }
+    const isLiked = liked;
+    setLiked(!isLiked);
+    setLikeCount((c) => c + (isLiked ? -1 : 1));
+
+    try {
+      if (isLiked) {
+        await supabase.from("video_likes").delete().eq("video_id", videoId).eq("user_id", currentUser.id);
+      } else {
+        await supabase.from("video_likes").insert({ video_id: videoId, user_id: currentUser.id });
       }
+    } catch {}
+  };
+
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}/videos/${videoId}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: "Regarde sur Moshi", url: shareUrl }); } catch {}
     } else {
-      // Fallback : copier le lien
-      if (typeof navigator !== "undefined") {
-        await navigator.clipboard.writeText(shareData.url);
-        alert("Lien copié !");
-      }
+      await navigator.clipboard.writeText(shareUrl);
+      alert("Lien copié !");
     }
   };
 
-  return (
-    <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
-      {/* Header */}
-      <header className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pt-4 pb-2">
-        <button
-          onClick={() => router.back()}
-          className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-90 transition"
-        >
-          <ArrowLeft className="w-5 h-5 text-white" />
+  if (loading) {
+    return (
+      <div className="h-[100dvh] bg-black flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!video) {
+    return (
+      <div className="h-[100dvh] bg-black flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <Play className="w-12 h-12 text-neutral-700" />
+        <p className="text-white font-semibold">Vidéo introuvable</p>
+        <button onClick={() => router.back()} className="mt-4 px-6 py-2 bg-white text-black rounded-full font-semibold text-sm">
+          Retour
         </button>
-      </header>
+      </div>
+    );
+  }
 
-      {/* Player vidéo */}
-      <VideoPlayer
-        src={video.url || video.media_url}
-        poster={video.thumbnail_url}
-        isActive={true}
-        muted={muted}
-        onMuteToggle={() => setMuted((m) => !m)}
-      />
+  const name = author?.username || author?.full_name || "user";
 
-      {/* Dégradé */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
+  return (
+    <div className="h-[100dvh] w-full bg-black relative overflow-hidden">
+      {/* Bouton retour */}
+      <button
+        onClick={() => router.back()}
+        className="absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center"
+      >
+        <ArrowLeft className="w-6 h-6 text-white" />
+      </button>
 
-      {/* Actions droite */}
-      <div className="absolute right-3 bottom-28 z-20 flex flex-col items-center gap-5">
-        {/* Avatar + follow */}
-        <div className="relative">
-          <Link
-            href={`/profile/${video.user_id}`}
-            className="relative w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800"
-          >
-            {author?.avatar_url ? (
-              <img src={author.avatar_url} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-sm font-bold">
-                {name.charAt(0).toUpperCase()}
-              </div>
-            )}
-          </Link>
-          {!following && video.user_id !== currentUser?.id && (
-            <button
-              onClick={toggleFollow}
-              className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center border-2 border-black active:scale-90 transition"
-            >
-              <UserPlus className="w-3 h-3 text-white" />
-            </button>
+      {/* Bouton mute */}
+      <button
+        onClick={() => setMuted(!muted)}
+        className="absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center"
+      >
+        {muted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
+      </button>
+
+      {/* ✅ LA VIDÉO PLEIN ÉCRAN */}
+      {video.url && (
+        <video
+          ref={videoRef}
+          src={video.url}
+          className="absolute inset-0 w-full h-full object-cover"
+          autoPlay
+          loop
+          playsInline
+          muted={muted}
+          onClick={() => {
+            const v = videoRef.current;
+            if (!v) return;
+            if (v.paused) v.play();
+            else v.pause();
+          }}
+        />
+      )}
+
+      {/* Dégradé pour lisibilité */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+
+      {/* Actions à droite */}
+      <div className="absolute right-3 bottom-24 z-20 flex flex-col items-center gap-5">
+        {/* Avatar */}
+        <Link href={`/profile/${video.user_id}`} className="w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
+          {author?.avatar_url ? (
+            <img src={author.avatar_url} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white">
+              {name.charAt(0).toUpperCase()}
+            </div>
           )}
-        </div>
+        </Link>
 
         {/* Like */}
-        <button
-          onClick={toggleLike}
-          className="flex flex-col items-center gap-1 active:scale-90 transition"
-        >
-          <Heart
-            className={cn(
-              "w-8 h-8 transition-all",
-              liked ? "fill-red-500 text-red-500 scale-110" : "text-white"
-            )}
-          />
-          <span className="text-xs text-white font-semibold">{formatNumber(likesCount)}</span>
+        <button onClick={toggleLike} className="flex flex-col items-center gap-1">
+          <Heart className={cn("w-9 h-9 drop-shadow-lg transition", liked ? "fill-red-500 text-red-500" : "text-white")} />
+          <span className="text-xs text-white font-semibold">{formatNumber(likeCount)}</span>
         </button>
 
         {/* Commentaires */}
-        <button
-          onClick={() => setCommentsOpen(true)}
-          className="flex flex-col items-center gap-1 active:scale-90 transition"
-        >
-          <MessageCircle className="w-8 h-8 text-white" />
-          <span className="text-xs text-white font-semibold">
-            {formatNumber(video.comments_count || 0)}
-          </span>
+        <button onClick={() => setShowComments(true)} className="flex flex-col items-center gap-1">
+          <MessageCircle className="w-9 h-9 text-white drop-shadow-lg" />
+          <span className="text-xs text-white font-semibold">{formatNumber(video.comment_count || 0)}</span>
         </button>
 
-        {/* Partager */}
-        <button
-          onClick={share}
-          className="flex flex-col items-center gap-1 active:scale-90 transition"
-        >
-          <Share2 className="w-7 h-7 text-white" />
+        {/* Partage */}
+        <button onClick={handleShare} className="flex flex-col items-center gap-1">
+          <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
           <span className="text-xs text-white font-semibold">Partager</span>
         </button>
 
-        {/* Son (disque qui tourne) */}
-        <div className="w-10 h-10 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center animate-spin-slow">
-          <Music className="w-4 h-4 text-white" />
+        {/* Disque de musique (animation) */}
+        <div className="w-11 h-11 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center mt-2">
+          <Music className="w-5 h-5 text-white" />
         </div>
       </div>
 
-      {/* Infos bas gauche */}
-      <div className="absolute left-3 right-20 bottom-24 z-20">
-        <Link
-          href={`/profile/${video.user_id}`}
-          className="font-semibold text-white text-[15px] hover:underline"
-        >
+      {/* Infos en bas */}
+      <div className="absolute left-4 right-20 bottom-8 z-20 space-y-2">
+        <Link href={`/profile/${video.user_id}`} className="font-bold text-white text-base hover:underline">
           @{name}
         </Link>
-        {(video.description || video.caption || video.title) && (
-          <p className="mt-1 text-sm text-white/90 line-clamp-3">
-            {video.description || video.caption || video.title}
-          </p>
+        {(video.caption || video.title) && (
+          <p className="text-sm text-white/90 line-clamp-3">{video.caption || video.title}</p>
         )}
+        <div className="flex items-center gap-2">
+          <Music className="w-3.5 h-3.5 text-white" />
+          <p className="text-xs text-white/80 truncate">Son original - {name}</p>
+        </div>
       </div>
 
-      {/* Panneau de commentaires */}
-      <CommentsSheet
-        videoId={video.id}
-        isOpen={commentsOpen}
-        onClose={() => setCommentsOpen(false)}
-        currentUser={currentUser}
-      />
-
-      {/* Style pour l'animation du disque */}
-      <style jsx>{`
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin-slow {
-          animation: spin-slow 5s linear infinite;
-        }
-      `}</style>
+      {/* Modal de commentaires */}
+      {showComments && (
+        <CommentsSheet
+          videoId={videoId}
+          isOpen={true}
+          onClose={() => setShowComments(false)}
+          currentUser={currentUser}
+          onCommentAdded={() => {}}
+        />
+      )}
     </div>
   );
 }
