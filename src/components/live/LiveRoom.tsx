@@ -11,7 +11,6 @@ import {
 import "@livekit/components-styles";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2, Radio, X, ShoppingBag, Send } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface Product {
   id: string;
@@ -21,15 +20,17 @@ interface Product {
   image_url: string | null;
 }
 
+interface MessageProfile {
+  username: string;
+  avatar_url: string | null;
+}
+
 interface Message {
   id: string;
   user_id: string;
   content: string;
   created_at: string;
-  profiles?: {
-    username: string;
-    avatar_url: string | null;
-  };
+  profiles?: MessageProfile | MessageProfile[] | null;
 }
 
 interface LiveRoomProps {
@@ -56,10 +57,7 @@ export default function LiveRoom({
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(
-    products[0] || null
-  );
-  const [chatOpen, setChatOpen] = useState(true);
+  const [selectedProduct] = useState<Product | null>(products[0] || null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 1. Charger le token LiveKit
@@ -112,7 +110,17 @@ export default function LiveRoom({
         .eq("live_id", liveId)
         .order("created_at", { ascending: true })
         .limit(50);
-      setMessages(data || []);
+
+      // ✅ Normalisation : on force "profiles" à être un objet (pas un tableau)
+      const normalized: Message[] = (data || []).map((m: any) => ({
+        id: m.id,
+        user_id: m.user_id,
+        content: m.content,
+        created_at: m.created_at,
+        profiles: Array.isArray(m.profiles) ? m.profiles[0] : m.profiles,
+      }));
+
+      setMessages(normalized);
     };
 
     loadMessages();
@@ -129,7 +137,6 @@ export default function LiveRoom({
           filter: `live_id=eq.${liveId}`,
         },
         async (payload: any) => {
-          // Récupérer le profil du sender
           const { data: profile } = await supabase
             .from("profiles")
             .select("username, avatar_url")
@@ -138,7 +145,10 @@ export default function LiveRoom({
 
           setMessages((prev) => [
             ...prev,
-            { ...payload.new, profiles: profile },
+            {
+              ...payload.new,
+              profiles: profile,
+            },
           ]);
         }
       )
@@ -168,7 +178,6 @@ export default function LiveRoom({
   };
 
   const handleLeave = async () => {
-    // Si host, mettre fin au live
     if (isHost) {
       await supabase
         .from("live_sessions")
@@ -252,35 +261,36 @@ export default function LiveRoom({
       </LiveKitRoom>
 
       {/* Chat overlay */}
-      {chatOpen && (
-        <div className="absolute bottom-20 left-4 right-4 z-20 max-h-[40vh] flex flex-col">
-          <div className="flex-1 overflow-y-auto space-y-1 mb-2 scrollbar-hide">
-            {messages.map((msg) => (
+      <div className="absolute bottom-20 left-4 right-4 z-20 max-h-[40vh] flex flex-col">
+        <div className="flex-1 overflow-y-auto space-y-1 mb-2 scrollbar-hide">
+          {messages.map((msg) => {
+            const profile = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
+            return (
               <div key={msg.id} className="flex items-start gap-2">
                 <span className="text-xs font-bold text-pink-400 flex-shrink-0">
-                  @{msg.profiles?.username || "user"}:
+                  @{profile?.username || "user"}:
                 </span>
                 <span className="text-xs text-white">{msg.content}</span>
               </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div className="flex items-center gap-2 bg-black/60 backdrop-blur rounded-full px-3 py-2">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder="Ajouter un commentaire..."
-              className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-neutral-400"
-            />
-            <button onClick={sendMessage} className="p-1">
-              <Send className="w-4 h-4 text-white" />
-            </button>
-          </div>
+            );
+          })}
+          <div ref={messagesEndRef} />
         </div>
-      )}
+
+        <div className="flex items-center gap-2 bg-black/60 backdrop-blur rounded-full px-3 py-2">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            placeholder="Ajouter un commentaire..."
+            className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-neutral-400"
+          />
+          <button onClick={sendMessage} className="p-1">
+            <Send className="w-4 h-4 text-white" />
+          </button>
+        </div>
+      </div>
 
       {/* Produit épinglé (si vendeur) */}
       {isSellerLive && selectedProduct && (
