@@ -1,17 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
-  ArrowLeft, Heart, MessageCircle, Share2, Music, Volume2, VolumeX
+  ArrowLeft, Heart, MessageCircle, Share2, Music, Volume2, VolumeX,
+  MoreVertical, Trash2
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 import CommentsSheet from "@/components/video/CommentsSheet";
 
 interface VideoDetailClientProps {
-  video: any;
+  video: any; // On accepte n'importe quel objet
   currentUser: any;
 }
 
@@ -24,8 +25,24 @@ export default function VideoDetailClient({ video, currentUser }: VideoDetailCli
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(video.like_count || 0);
   const [showComments, setShowComments] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
 
   const author = Array.isArray(video.profiles) ? video.profiles[0] : video.profiles;
+  const isOwner = currentUser?.id === video.user_id;
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const checkLike = async () => {
+      const { data } = await supabase
+        .from("video_likes")
+        .select("id")
+        .eq("video_id", video.id)
+        .eq("user_id", currentUser.id)
+        .single();
+      setLiked(!!data);
+    };
+    checkLike();
+  }, [currentUser, video.id, supabase]);
 
   const toggleLike = async () => {
     if (!currentUser) { router.push("/auth/login"); return; }
@@ -52,17 +69,71 @@ export default function VideoDetailClient({ video, currentUser }: VideoDetailCli
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm("Supprimer cette vidéo définitivement ?")) return;
+
+    try {
+      const { error: dbError } = await supabase
+        .from("videos")
+        .delete()
+        .eq("id", video.id);
+      if (dbError) throw dbError;
+
+      const urlParts = video.url.split("/");
+      const fileName = urlParts[urlParts.length - 1];
+      const filePath = `${video.user_id}/${fileName}`;
+      
+      await supabase.storage.from("videos").remove([filePath]);
+      router.push("/profile/me");
+    } catch (err) {
+      alert("Erreur lors de la suppression");
+      console.error(err);
+    }
+  };
+
   const name = author?.username || author?.full_name || "user";
 
   return (
     <div className="h-[100dvh] w-full bg-black relative overflow-hidden">
-      <button onClick={() => router.back()} className="absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center">
+      <button
+        onClick={() => router.back()}
+        className="absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center"
+      >
         <ArrowLeft className="w-6 h-6 text-white" />
       </button>
 
-      <button onClick={() => setMuted(!muted)} className="absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center">
+      <button
+        onClick={() => setMuted(!muted)}
+        className="absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center"
+      >
         {muted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
       </button>
+
+      {isOwner && (
+        <>
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="absolute top-4 right-16 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center"
+          >
+            <MoreVertical className="w-5 h-5 text-white" />
+          </button>
+          
+          {showMenu && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowMenu(false)} />
+              <div className="absolute top-16 right-4 z-40 bg-neutral-800 rounded-xl shadow-lg overflow-hidden">
+                <button
+                  onClick={handleDelete}
+                  className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-neutral-700 w-full text-left text-sm font-semibold"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Supprimer la vidéo
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       {video.url && (
         <video
@@ -73,6 +144,12 @@ export default function VideoDetailClient({ video, currentUser }: VideoDetailCli
           loop
           playsInline
           muted={muted}
+          onClick={() => {
+            const v = videoRef.current;
+            if (!v) return;
+            if (v.paused) v.play();
+            else v.pause();
+          }}
         />
       )}
 
@@ -103,6 +180,10 @@ export default function VideoDetailClient({ video, currentUser }: VideoDetailCli
           <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
           <span className="text-xs text-white font-semibold">Partager</span>
         </button>
+
+        <div className="w-11 h-11 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center mt-2">
+          <Music className="w-5 h-5 text-white" />
+        </div>
       </div>
 
       <div className="absolute left-4 right-20 bottom-8 z-20 space-y-2">
