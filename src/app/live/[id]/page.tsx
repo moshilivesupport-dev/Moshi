@@ -4,7 +4,11 @@ import LiveRoomClient from "./LiveRoomClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function LivePage({ params }: { params: Promise<{ id: string }> }) {
+interface PageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function LivePage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
@@ -15,9 +19,11 @@ export default async function LivePage({ params }: { params: Promise<{ id: strin
     .eq("id", id)
     .single();
 
-  if (error || !live) notFound();
+  if (error || !live) {
+    notFound();
+  }
 
-  // 2. Charger les produits associés (si vendeur)
+  // 2. Charger les produits (si vendeur)
   let products: any[] = [];
   if (live.product_ids && live.product_ids.length > 0) {
     const { data: productData } = await supabase
@@ -31,11 +37,13 @@ export default async function LivePage({ params }: { params: Promise<{ id: strin
   const { data: { user } } = await supabase.auth.getUser();
   const isHost = user?.id === live.host_id;
 
+  // 4. Passer TOUTES les props (dont hostId)
   return (
     <LiveRoomClient
       liveId={live.id}
       roomName={live.room_name || `moshi-live-${live.id}`}
       isHost={isHost}
+      hostId={live.host_id} // 👈 C'est cette ligne qui manquait !
       products={products}
       isSellerLive={live.host_role === "vendeur"}
     />
