@@ -69,7 +69,6 @@ export default function ProfileView({
     const loadData = async () => {
       setLoading(true);
 
-      // Vidéos publiées du profil
       const { data: videosData, error: videosError } = await supabase
         .from("videos")
         .select("id, url, view_count, like_count, caption, user_id, status")
@@ -85,13 +84,12 @@ export default function ProfileView({
         setVideos(list as VideoItem[]);
       }
 
-      // Vidéos likées
+      // Liked
       {
         const { data: likesData, error: likesError } = await supabase
           .from("video_likes")
           .select("video_id")
           .eq("user_id", profile.id);
-
         if (!likesError) {
           const ids = (likesData || []).map((l: any) => l.video_id).filter(Boolean);
           if (ids.length) {
@@ -104,13 +102,12 @@ export default function ProfileView({
         }
       }
 
-      // Vidéos enregistrées
+      // Saved
       {
         const { data: bmData, error: bmError } = await supabase
           .from("video_bookmarks")
           .select("video_id")
           .eq("user_id", profile.id);
-
         if (!bmError) {
           const ids = (bmData || []).map((b: any) => b.video_id).filter(Boolean);
           if (ids.length) {
@@ -126,26 +123,15 @@ export default function ProfileView({
       // Stats
       try {
         const [{ count: followers }, { count: following }] = await Promise.all([
-          supabase
-            .from("follows")
-            .select("*", { count: "exact", head: true })
-            .eq("following_id", profile.id),
-          supabase
-            .from("follows")
-            .select("*", { count: "exact", head: true })
-            .eq("follower_id", profile.id),
+          supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", profile.id),
+          supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", profile.id),
         ]);
         const published = (videosData || []).filter((v) => !v.status || v.status === "published").length;
-        setStats({
-          videos_count: published,
-          followers_count: followers || 0,
-          following_count: following || 0,
-        });
+        setStats({ videos_count: published, followers_count: followers || 0, following_count: following || 0 });
       } catch {}
 
       setLoading(false);
     };
-
     void loadData();
   }, [profile.id, supabase]);
 
@@ -172,7 +158,6 @@ export default function ProfileView({
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-24">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 pt-4">
         <Link href="/profile/edit" className="p-2"><Edit3 className="w-5 h-5" /></Link>
         <div className="flex items-center gap-3">
@@ -187,7 +172,6 @@ export default function ProfileView({
         {handle && <p className="text-sm text-neutral-400">{handle}</p>}
       </div>
 
-      {/* Stats */}
       <div className="flex gap-8 px-4 mt-5">
         <div><p className="text-lg font-bold">{formatNumber(stats.following_count)}</p><p className="text-xs text-neutral-400">Suivis</p></div>
         <div><p className="text-lg font-bold">{formatNumber(stats.followers_count)}</p><p className="text-xs text-neutral-400">Followers</p></div>
@@ -204,7 +188,6 @@ export default function ProfileView({
         </div>
       )}
 
-      {/* Stories */}
       <div className="flex gap-4 px-4 mt-5 overflow-x-auto">
         <div className="flex flex-col items-center gap-1 shrink-0">
           <div className="w-16 h-16 rounded-full border border-neutral-600 flex items-center justify-center"><Plus className="w-6 h-6" /></div>
@@ -220,7 +203,6 @@ export default function ProfileView({
 
       {!isOwnProfile && <div className="px-4 mt-4"><FollowButton targetUserId={profile.id} variant="profile" /></div>}
 
-      {/* Onglets */}
       <div className="border-b border-neutral-800 flex mt-4">
         {(
           [
@@ -244,11 +226,8 @@ export default function ProfileView({
         ))}
       </div>
 
-      {/* Contenu */}
       <div className="grid grid-cols-3 gap-[1px] min-h-[200px]">
-        {loading && (
-          <div className="col-span-3 py-16 text-center text-neutral-500 text-sm">Chargement...</div>
-        )}
+        {loading && <div className="col-span-3 py-16 text-center text-neutral-500">Chargement...</div>}
 
         {!loading && activeTab === "grid" && (
           <>
@@ -257,9 +236,7 @@ export default function ProfileView({
               <div className="col-span-3 flex flex-col items-center justify-center py-16 text-neutral-500">
                 <List className="w-12 h-12 mb-3 opacity-50" />
                 <p className="text-sm">Aucune vidéo</p>
-                {isOwnProfile && (
-                  <Link href="/videos/new" className="text-red-500 text-sm mt-2">Publier une vidéo</Link>
-                )}
+                {isOwnProfile && <Link href="/videos/new" className="text-red-500 text-sm mt-2">Publier</Link>}
               </div>
             )}
           </>
@@ -297,7 +274,6 @@ export default function ProfileView({
         )}
       </div>
 
-      {/* Menu */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setMenuOpen(false)}>
           <div className="absolute right-0 top-0 bottom-0 w-80 bg-neutral-900 p-6" onClick={e => e.stopPropagation()}>
