@@ -1,5 +1,5 @@
-import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { notFound } from "next/navigation";
 import VideoDetail from "@/components/video/VideoDetail";
 
 export const dynamic = "force-dynamic";
@@ -12,20 +12,17 @@ export default async function VideoPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
+  // On vérifie juste que la vidéo existe
   const { data: video, error } = await supabase
     .from("videos")
-    .select(`*, profiles:user_id (id, username, avatar_url, full_name)`)
+    .select("id")
     .eq("id", id)
     .single();
 
-  if (error || !video) notFound();
+  if (error || !video) {
+    notFound();
+  }
 
-  const { data: { user } } = await supabase.auth.getUser();
-
-  const videoWithProfile = {
-    ...video,
-    profiles: Array.isArray(video.profiles) ? video.profiles[0] : video.profiles,
-  };
-
-  return <VideoDetail video={videoWithProfile} currentUser={user} />;
+  // On passe juste l'ID au composant, qui gérera le chargement complet
+  return <VideoDetail videoId={id} />;
 }
