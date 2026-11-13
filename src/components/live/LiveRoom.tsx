@@ -57,7 +57,6 @@ export default function LiveRoom({
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [selectedProduct] = useState<Product | null>(products[0] || null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 1. Charger le token LiveKit
@@ -98,7 +97,7 @@ export default function LiveRoom({
     fetchToken();
   }, [roomName, supabase, router]);
 
-  // 2. Charger les messages existants + écouter les nouveaux
+  // 2. Charger messages + realtime
   useEffect(() => {
     const loadMessages = async () => {
       const { data } = await supabase
@@ -111,7 +110,6 @@ export default function LiveRoom({
         .order("created_at", { ascending: true })
         .limit(50);
 
-      // ✅ Normalisation : on force "profiles" à être un objet (pas un tableau)
       const normalized: Message[] = (data || []).map((m: any) => ({
         id: m.id,
         user_id: m.user_id,
@@ -125,7 +123,6 @@ export default function LiveRoom({
 
     loadMessages();
 
-    // Realtime pour nouveaux messages
     const channel = supabase
       .channel(`live_messages:${liveId}`)
       .on(
@@ -145,10 +142,7 @@ export default function LiveRoom({
 
           setMessages((prev) => [
             ...prev,
-            {
-              ...payload.new,
-              profiles: profile,
-            },
+            { ...payload.new, profiles: profile },
           ]);
         }
       )
@@ -159,17 +153,14 @@ export default function LiveRoom({
     };
   }, [liveId, supabase]);
 
-  // 3. Scroll auto des messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !currentUser) return;
-
     const content = newMessage.trim();
     setNewMessage("");
-
     await supabase.from("live_messages").insert({
       live_id: liveId,
       user_id: currentUser.id,
@@ -204,10 +195,7 @@ export default function LiveRoom({
         <Radio className="w-12 h-12 text-neutral-700" />
         <p className="text-white font-semibold">Live inaccessible</p>
         <p className="text-neutral-400 text-sm">{error}</p>
-        <button
-          onClick={() => router.back()}
-          className="mt-4 px-6 py-2 bg-white text-black rounded-full font-semibold text-sm"
-        >
+        <button onClick={() => router.back()} className="mt-4 px-6 py-2 bg-white text-black rounded-full font-semibold text-sm">
           Retour
         </button>
       </div>
@@ -218,16 +206,12 @@ export default function LiveRoom({
 
   return (
     <div className="h-[100dvh] bg-black relative overflow-hidden" data-lk-theme="default">
-      {/* Header live */}
       <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 pt-4 pb-2 bg-gradient-to-b from-black/80 to-transparent">
         <div className="flex items-center gap-2">
-          <div className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-            LIVE
-          </div>
+          <div className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded">LIVE</div>
           {isSellerLive && (
             <div className="bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
-              <ShoppingBag className="w-2.5 h-2.5" />
-              SHOPPING
+              <ShoppingBag className="w-2.5 h-2.5" /> SHOPPING
             </div>
           )}
         </div>
@@ -236,7 +220,7 @@ export default function LiveRoom({
         </button>
       </div>
 
-      {/* Zone vidéo LiveKit */}
+      {/* ✅ CORRECTION : Spectateur ne publie pas sa caméra */}
       <LiveKitRoom
         video={isHost}
         audio={isHost}
@@ -260,16 +244,13 @@ export default function LiveRoom({
         />
       </LiveKitRoom>
 
-      {/* Chat overlay */}
       <div className="absolute bottom-20 left-4 right-4 z-20 max-h-[40vh] flex flex-col">
         <div className="flex-1 overflow-y-auto space-y-1 mb-2 scrollbar-hide">
           {messages.map((msg) => {
             const profile = Array.isArray(msg.profiles) ? msg.profiles[0] : msg.profiles;
             return (
               <div key={msg.id} className="flex items-start gap-2">
-                <span className="text-xs font-bold text-pink-400 flex-shrink-0">
-                  @{profile?.username || "user"}:
-                </span>
+                <span className="text-xs font-bold text-pink-400 flex-shrink-0">@{profile?.username || "user"}:</span>
                 <span className="text-xs text-white">{msg.content}</span>
               </div>
             );
@@ -286,35 +267,25 @@ export default function LiveRoom({
             placeholder="Ajouter un commentaire..."
             className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-neutral-400"
           />
-          <button onClick={sendMessage} className="p-1">
-            <Send className="w-4 h-4 text-white" />
-          </button>
+          <button onClick={sendMessage} className="p-1"><Send className="w-4 h-4 text-white" /></button>
         </div>
       </div>
 
-      {/* Produit épinglé (si vendeur) */}
-      {isSellerLive && selectedProduct && (
+      {isSellerLive && products.length > 0 && (
         <div className="absolute bottom-32 left-4 right-4 z-20">
           <div className="bg-black/70 backdrop-blur rounded-xl p-3 flex items-center gap-3 border border-purple-500/30">
             <div className="w-12 h-12 rounded-lg bg-neutral-800 flex items-center justify-center flex-shrink-0">
-              {selectedProduct.image_url ? (
-                <img src={selectedProduct.image_url} alt="" className="w-full h-full object-cover rounded-lg" />
+              {products[0].image_url ? (
+                <img src={products[0].image_url} alt="" className="w-full h-full object-cover rounded-lg" />
               ) : (
                 <ShoppingBag className="w-5 h-5 text-neutral-600" />
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white truncate">
-                {selectedProduct.title}
-              </p>
-              <p className="text-xs text-green-400 font-semibold">
-                {selectedProduct.price.toFixed(2)} {selectedProduct.currency || "€"}
-              </p>
+              <p className="text-sm font-bold text-white truncate">{products[0].title}</p>
+              <p className="text-xs text-green-400 font-semibold">{products[0].price.toFixed(2)} {products[0].currency || "€"}</p>
             </div>
-            <button
-              onClick={() => router.push(`/shop/${selectedProduct.id}`)}
-              className="bg-purple-600 text-white text-xs font-bold px-3 py-2 rounded-full"
-            >
+            <button onClick={() => router.push(`/shop/${products[0].id}`)} className="bg-purple-600 text-white text-xs font-bold px-3 py-2 rounded-full">
               Acheter
             </button>
           </div>
