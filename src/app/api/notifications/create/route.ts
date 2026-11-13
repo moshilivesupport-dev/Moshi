@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient();
 
     const { error } = await supabase.from("notifications").insert({
-      user_id: userId,
+      to_user_id: userId, // ✅ On utilise la bonne colonne
       actor_id: actorId || null,
       type,
       message,
