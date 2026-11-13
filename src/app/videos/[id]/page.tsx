@@ -12,7 +12,7 @@ export default async function VideoPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // 1. Charger la vidéo côté serveur
+  // On récupère la vidéo dans la base
   const { data: video, error } = await supabase
     .from("videos")
     .select(`
@@ -23,13 +23,11 @@ export default async function VideoPage({ params }: PageProps) {
     .single();
 
   if (error || !video) {
-    console.error("Erreur chargement vidéo:", error);
-    notFound();
+    notFound(); // Affiche la page 404 si la vidéo n'existe pas
   }
 
-  // 2. Récupérer l'utilisateur connecté (pour le bouton Like)
   const { data: { user } } = await supabase.auth.getUser();
 
-  // 3. Passer la vidéo et l'user au composant
+  // On passe la vidéo au composant d'affichage
   return <VideoDetail video={video} currentUser={user} />;
 }
