@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
-  Home, Radio, Plus, ShoppingBag, User, Store, X, Music,
+  Home, Radio, Plus, ShoppingBag, User, X, Music,
   RefreshCw, Zap, ZapOff, Clock, LayoutGrid, Sparkles,
   ChevronDown, Upload,
 } from "lucide-react";
@@ -19,11 +19,6 @@ import CreateVideoFooter, {
 interface NavbarProps {
   role?: string;
   sellerStatus?: string;
-}
-
-interface RecentVideo {
-  id: string;
-  url: string;
 }
 
 function durationToSeconds(d: DurationKey): number | null {
@@ -347,6 +342,7 @@ export default function Navbar({ role }: NavbarProps) {
       {/* ===== BARRE DE NAVIGATION FIXE ===== */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-neutral-800 safe-area-bottom">
         <div className="flex items-center justify-around h-14 max-w-lg mx-auto px-2">
+          
           {/* Accueil */}
           <Link href="/" className={cn("flex flex-col items-center justify-center gap-0.5 min-w-[56px] py-1", pathname === "/" ? "text-white" : "text-neutral-400")}>
             <Home className={cn("w-6 h-6", pathname === "/" && "stroke-[2.5]")} />
@@ -368,26 +364,21 @@ export default function Navbar({ role }: NavbarProps) {
             <span className="text-[10px] font-medium">Live</span>
           </button>
 
-          {/* BOUTON CENTRAL TIKTOK */}
+          {/* 🎯 BOUTON CENTRAL TIKTOK EXACT */}
           <button
             onClick={() => setIsCreateOpen(true)}
             className="relative -top-3 flex flex-col items-center focus:outline-none"
           >
-            <motion.div
-              animate={{ rotate: isCreateOpen ? 45 : 0 }}
-              transition={{ duration: 0.2 }}
-              className="relative w-[46px] h-[30px] rounded-[10px] bg-black flex items-center justify-center"
-            >
-              {/* Bordure gauche cyan */}
-              <div className="absolute left-0 top-0 bottom-0 w-[8px] bg-[#25F4EE] rounded-l-[10px]" />
-              {/* Bordure droite rouge */}
-              <div className="absolute right-0 top-0 bottom-0 w-[8px] bg-[#FE2C55] rounded-r-[10px]" />
-              {/* Centre noir avec le + */}
+            <div className="relative w-[46px] h-[30px] flex items-center justify-center">
+              {/* Fond gauche Cyan */}
+              <div className="absolute left-0 w-[24px] h-full bg-[#25F4EE] rounded-l-[8px]" />
+              {/* Fond droit Rouge */}
+              <div className="absolute right-0 w-[24px] h-full bg-[#FE2C55] rounded-r-[8px]" />
+              {/* Carré central noir avec le + */}
               <div className="relative z-10 w-[34px] h-[24px] bg-black rounded-[4px] flex items-center justify-center">
                 <Plus className="w-4 h-4 text-white" strokeWidth={3} />
               </div>
-            </motion.div>
-            <span className="text-[10px] font-medium text-white mt-0.5">Créer</span>
+            </div>
           </button>
 
           {/* Boutique */}
