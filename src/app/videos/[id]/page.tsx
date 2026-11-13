@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
-import VideoDetail from "@/components/video/VideoDetail";
+import VideoDetailClient from "./VideoDetailClient";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export default async function VideoPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // On récupère la vidéo ET son propriétaire
+  // On récupère la vidéo
   const { data: video, error } = await supabase
     .from("videos")
     .select(`
@@ -26,7 +26,9 @@ export default async function VideoPage({ params }: PageProps) {
     notFound();
   }
 
+  // On récupère l'utilisateur connecté
   const { data: { user } } = await supabase.auth.getUser();
 
-  return <VideoDetail video={video} currentUser={user} />;
+  // On affiche le composant client
+  return <VideoDetailClient video={video} currentUser={user} />;
 }
