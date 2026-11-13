@@ -4,8 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
-  Play, Lock, RotateCcw, Bookmark, Heart,
-  Wallet, Plus, Menu, X, Edit3, Calendar, UserPlus
+  Play,
+  Lock,
+  RotateCcw,
+  Bookmark,
+  Heart,
+  Wallet,
+  Plus,
+  Menu,
+  X,
+  Edit3,
+  Calendar,
+  UserPlus,
 } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
 import FollowButton from "@/components/social/FollowButton";
@@ -23,7 +33,11 @@ export type ProfileData = {
 interface ProfileViewProps {
   profile: ProfileData;
   isOwnProfile: boolean;
-  initialStats: { videos_count: number; followers_count: number; following_count: number };
+  initialStats: {
+    videos_count: number;
+    followers_count: number;
+    following_count: number;
+  };
 }
 
 type VideoItem = {
@@ -41,7 +55,9 @@ export default function ProfileView({
   initialStats,
 }: ProfileViewProps) {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState<"grid" | "private" | "reposts" | "favorites" | "liked">("grid");
+  const [activeTab, setActiveTab] = useState<
+    "grid" | "private" | "reposts" | "favorites" | "liked"
+  >("grid");
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [likedVideos, setLikedVideos] = useState<VideoItem[]>([]);
   const [savedVideos, setSavedVideos] = useState<VideoItem[]>([]);
@@ -53,10 +69,10 @@ export default function ProfileView({
     const loadData = async () => {
       setLoading(true);
 
-      // Vidéos publiées du profil (ajout is_public pour compatibilité)
+      // Vidéos publiées du profil
       const { data: videosData, error: videosError } = await supabase
         .from("videos")
-        .select("id, url, view_count, like_count, caption, user_id, status, is_public")
+        .select("id, url, view_count, like_count, caption, user_id, status")
         .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
         .limit(60);
@@ -65,7 +81,7 @@ export default function ProfileView({
         console.error("videos error:", videosError);
         setVideos([]);
       } else {
-        const list = (videosData || []).filter(v => !v.status || v.status === "published");
+        const list = (videosData || []).filter((v) => !v.status || v.status === "published");
         setVideos(list as VideoItem[]);
       }
 
@@ -88,7 +104,7 @@ export default function ProfileView({
         }
       }
 
-      // Vidéos enregistrées (favoris)
+      // Vidéos enregistrées
       {
         const { data: bmData, error: bmError } = await supabase
           .from("video_bookmarks")
@@ -110,10 +126,16 @@ export default function ProfileView({
       // Stats
       try {
         const [{ count: followers }, { count: following }] = await Promise.all([
-          supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", profile.id),
-          supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", profile.id),
+          supabase
+            .from("follows")
+            .select("*", { count: "exact", head: true })
+            .eq("following_id", profile.id),
+          supabase
+            .from("follows")
+            .select("*", { count: "exact", head: true })
+            .eq("follower_id", profile.id),
         ]);
-        const published = (videosData || []).filter(v => !v.status || v.status === "published").length;
+        const published = (videosData || []).filter((v) => !v.status || v.status === "published").length;
         setStats({
           videos_count: published,
           followers_count: followers || 0,
@@ -136,7 +158,9 @@ export default function ProfileView({
         <Link key={v.id} href={`/videos/${v.id}`} className="relative aspect-[3/4] bg-neutral-900">
           {v.url ? (
             <video src={v.url} muted playsInline preload="metadata" className="w-full h-full object-cover" />
-          ) : <div className="w-full h-full bg-neutral-800" />}
+          ) : (
+            <div className="w-full h-full bg-neutral-800" />
+          )}
           <div className="absolute bottom-1 left-1 flex items-center gap-1 text-white text-xs font-semibold drop-shadow">
             <Play className="w-3 h-3 fill-white" />
             {formatNumber(v.view_count || 0)}
@@ -198,8 +222,23 @@ export default function ProfileView({
 
       {/* Onglets */}
       <div className="border-b border-neutral-800 flex mt-4">
-        {([["grid", List], ["private", Lock], ["reposts", RotateCcw], ["favorites", Bookmark], ["liked", Heart]] as const).map(([key, Icon]) => (
-          <button key={key} type="button" onClick={() => setActiveTab(key)} className={`flex-1 py-3 flex justify-center ${activeTab === key ? "border-b-2 border-white text-white" : "text-neutral-500"}`}>
+        {(
+          [
+            ["grid", List],
+            ["private", Lock],
+            ["reposts", RotateCcw],
+            ["favorites", Bookmark],
+            ["liked", Heart],
+          ] as const
+        ).map(([key, Icon]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveTab(key)}
+            className={`flex-1 py-3 flex justify-center ${
+              activeTab === key ? "border-b-2 border-white text-white" : "text-neutral-500"
+            }`}
+          >
             <Icon className="w-5 h-5" />
           </button>
         ))}
@@ -207,12 +246,22 @@ export default function ProfileView({
 
       {/* Contenu */}
       <div className="grid grid-cols-3 gap-[1px] min-h-[200px]">
-        {loading && <div className="col-span-3 py-16 text-center text-neutral-500">Chargement...</div>}
+        {loading && (
+          <div className="col-span-3 py-16 text-center text-neutral-500 text-sm">Chargement...</div>
+        )}
 
         {!loading && activeTab === "grid" && (
           <>
             <VideoGrid items={videos} />
-            {videos.length === 0 && <div className="col-span-3 flex flex-col items-center justify-center py-16 text-neutral-500"><List className="w-12 h-12 mb-3 opacity-50" /><p>Aucune vidéo</p></div>}
+            {videos.length === 0 && (
+              <div className="col-span-3 flex flex-col items-center justify-center py-16 text-neutral-500">
+                <List className="w-12 h-12 mb-3 opacity-50" />
+                <p className="text-sm">Aucune vidéo</p>
+                {isOwnProfile && (
+                  <Link href="/videos/new" className="text-red-500 text-sm mt-2">Publier une vidéo</Link>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -226,14 +275,24 @@ export default function ProfileView({
         {!loading && activeTab === "favorites" && (
           <>
             <VideoGrid items={savedVideos} />
-            {savedVideos.length === 0 && <div className="col-span-3 flex flex-col items-center justify-center py-16 text-neutral-500"><Bookmark className="w-12 h-12 mb-3 opacity-50" /><p>Aucun favori</p></div>}
+            {savedVideos.length === 0 && (
+              <div className="col-span-3 flex flex-col items-center justify-center py-16 text-neutral-500">
+                <Bookmark className="w-12 h-12 mb-3 opacity-50" />
+                <p className="text-sm">Aucun favori</p>
+              </div>
+            )}
           </>
         )}
 
         {!loading && activeTab === "liked" && (
           <>
             <VideoGrid items={likedVideos} />
-            {likedVideos.length === 0 && <div className="col-span-3 flex flex-col items-center justify-center py-16 text-neutral-500"><Heart className="w-12 h-12 mb-3 opacity-50" /><p>Aucune vidéo aimée</p></div>}
+            {likedVideos.length === 0 && (
+              <div className="col-span-3 flex flex-col items-center justify-center py-16 text-neutral-500">
+                <Heart className="w-12 h-12 mb-3 opacity-50" />
+                <p className="text-sm">Aucune vidéo aimée</p>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -243,7 +302,7 @@ export default function ProfileView({
         <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setMenuOpen(false)}>
           <div className="absolute right-0 top-0 bottom-0 w-80 bg-neutral-900 p-6" onClick={e => e.stopPropagation()}>
             <button onClick={() => setMenuOpen(false)}><X className="w-6 h-6" /></button>
-            <div className="mt-8 space-y-4">
+            <div className="mt-8 space-y-4 text-sm">
               <Link href="/settings" className="block">Paramètres</Link>
               <Link href="/wallet" className="block">Portefeuille</Link>
               <Link href="/profile/edit" className="block">Modifier le profil</Link>
