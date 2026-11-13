@@ -12,7 +12,7 @@ export default async function VideoPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // On récupère la vidéo dans la base
+  // On récupère la vidéo ET son propriétaire
   const { data: video, error } = await supabase
     .from("videos")
     .select(`
@@ -23,11 +23,10 @@ export default async function VideoPage({ params }: PageProps) {
     .single();
 
   if (error || !video) {
-    notFound(); // Affiche la page 404 si la vidéo n'existe pas
+    notFound();
   }
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // On passe la vidéo au composant d'affichage
   return <VideoDetail video={video} currentUser={user} />;
 }
