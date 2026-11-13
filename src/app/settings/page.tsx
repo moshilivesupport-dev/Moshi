@@ -1,270 +1,147 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { 
-  ArrowLeft, 
-  Lock, 
-  Bell, 
-  Shield, 
-  LogOut, 
-  Moon, 
-  Globe, 
-  UserX,
-  ChevronRight,
-  Crown,
-  Eye,
-  Download,
-  QrCode,
-  HelpCircle,
-  Info
+import { createClient } from "@/lib/supabase/client";
+import {
+  ChevronLeft, PlaySquare, Sparkles, Radio, Bell, Hourglass,
+  Home, User, Shield, Share2, Lock, Ban, MessageCircle, AtSign,
+  Send, Copy, Link2, Download, Users, Heart, Music, Inbox, Clock, Globe,
+  Megaphone, Languages, Moon, Accessibility, MapPin, CloudOff, Trash2,
+  Gauge, Headphones, ShieldCheck, Info, ArrowLeftRight, LogOut,
 } from "lucide-react";
+import SettingsRow from "./_components/SettingsRow";
+import { useState, useEffect } from "react";
 
 export default function SettingsPage() {
-  const supabase = createClient();
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [privateAccount, setPrivateAccount] = useState(false);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [darkMode, setDarkMode] = useState(true);
+  const supabase = createClient();
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/auth/login"); return; }
-      setUser(user);
-
-      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-      if (data) {
-        setProfile(data);
-        setPrivateAccount(data.is_private || false);
-      }
+      setCurrentUser(user);
     };
     load();
-  }, [supabase, router]);
-
-  const togglePrivateAccount = async () => {
-    const newValue = !privateAccount;
-    setPrivateAccount(newValue);
-    await supabase.from("profiles").update({ is_private: newValue }).eq("id", user?.id);
-  };
-
-  const togglePushNotifications = () => {
-    setPushNotifications(!pushNotifications);
-  };
-
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-  };
+  }, [supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push("/");
+    router.push("/auth/login");
   };
-
-  if (!user) return <div className="h-[100dvh] bg-black flex items-center justify-center text-white">Chargement...</div>;
-
-  const isAdmin = profile?.role === "admin";
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-20">
-      <header className="sticky top-0 z-30 bg-black/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => router.back()} className="p-2 hover:bg-neutral-800 rounded-full">
-          <ArrowLeft className="w-5 h-5" />
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-black flex items-center gap-2 px-2 py-3">
+        <button onClick={() => router.back()} className="p-2">
+          <ChevronLeft className="w-6 h-6" />
         </button>
-        <h1 className="text-lg font-bold">Paramètres</h1>
+        <h1 className="text-base font-semibold">Paramètres et confidentialité</h1>
       </header>
 
-      <div className="p-4 space-y-6">
-        {/* ✅ Section Admin (visible uniquement pour les admins) */}
-        {isAdmin && (
-          <section>
-            <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Administrateur</h2>
-            <button
-              onClick={() => router.push("/admin")}
-              className="w-full bg-gradient-to-r from-red-600 to-pink-600 rounded-xl p-4 flex items-center justify-between hover:from-red-700 hover:to-pink-700 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Crown className="w-5 h-5 text-white" />
-                <span className="font-semibold">Tableau de bord Admin</span>
-              </div>
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </section>
-        )}
+      {/* ACTIVITÉ */}
+      <SectionTitle>Activité</SectionTitle>
+      <Group>
+        <SettingsRow icon={PlaySquare} label="Gérer les publications" href="/settings/manage-posts" />
+        <SettingsRow icon={Sparkles} label="Préférences de contenu" href="/settings/content-preferences" />
+        <SettingsRow icon={Radio} label="LIVE" href="/settings/live" />
+        <SettingsRow icon={Bell} label="Notifications" href="/settings/notifications" />
+        <SettingsRow icon={Hourglass} label="Temps d'écran et bien-être" href="/settings/screen-time" />
+        <SettingsRow icon={Home} label="Connexion Famille" href="/settings/family" />
+      </Group>
 
-        {/* Confidentialité */}
-        <section>
-          <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Confidentialité</h2>
-          <div className="bg-neutral-900 rounded-xl overflow-hidden">
-            <button 
-              onClick={togglePrivateAccount}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Lock className="w-5 h-5 text-neutral-400" />
-                <span>Compte privé</span>
-              </div>
-              <div className={`w-12 h-6 rounded-full relative transition ${privateAccount ? "bg-red-500" : "bg-neutral-600"}`}>
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition ${privateAccount ? "right-1" : "left-1"}`} />
-              </div>
-            </button>
-            <div className="h-px bg-neutral-800" />
-            <button 
-              onClick={() => router.push("/blocked-accounts")}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <UserX className="w-5 h-5 text-neutral-400" />
-                <span>Comptes bloqués</span>
-              </div>
-              <ChevronRight className="w-5 h-5 text-neutral-400" />
-            </button>
-          </div>
-        </section>
+      {/* COMPTE */}
+      <SectionTitle>Compte</SectionTitle>
+      <Group>
+        <SettingsRow icon={User} label="Compte" href="/settings/account" />
+        <SettingsRow icon={Shield} label="Sécurité et autorisations" href="/settings/security" />
+        <SettingsRow icon={Share2} label="Partager le profil" href="/profile/me" />
+      </Group>
 
-        {/* Notifications */}
-        <section>
-          <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Notifications</h2>
-          <div className="bg-neutral-900 rounded-xl overflow-hidden">
-            <button 
-              onClick={togglePushNotifications}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Bell className="w-5 h-5 text-neutral-400" />
-                <span>Notifications push</span>
-              </div>
-              <div className={`w-12 h-6 rounded-full relative transition ${pushNotifications ? "bg-red-500" : "bg-neutral-600"}`}>
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition ${pushNotifications ? "right-1" : "left-1"}`} />
-              </div>
-            </button>
-          </div>
-        </section>
+      {/* VISIBILITÉ */}
+      <SectionTitle>Visibilité</SectionTitle>
+      <Group>
+        <SettingsRow icon={Lock} label="Compte privé" href="/settings/private" />
+        <SettingsRow icon={Ban} label="Comptes bloqués" href="/settings/blocked" />
+      </Group>
 
-        {/* Apparence */}
-        <section>
-          <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Apparence</h2>
-          <div className="bg-neutral-900 rounded-xl overflow-hidden">
-            <button 
-              onClick={toggleDarkMode}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Moon className="w-5 h-5 text-neutral-400" />
-                <span>Mode sombre</span>
-              </div>
-              <div className={`w-12 h-6 rounded-full relative transition ${darkMode ? "bg-red-500" : "bg-neutral-600"}`}>
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition ${darkMode ? "right-1" : "left-1"}`} />
-              </div>
-            </button>
-            <div className="h-px bg-neutral-800" />
-            <button 
-              onClick={() => router.push("/language")}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Globe className="w-5 h-5 text-neutral-400" />
-                <span>Langue</span>
-              </div>
-              <span className="text-neutral-400 flex items-center gap-2">
-                Français
-                <ChevronRight className="w-5 h-5" />
-              </span>
-            </button>
-          </div>
-        </section>
+      {/* INTERACTIONS */}
+      <SectionTitle>Interactions</SectionTitle>
+      <Group>
+        <SettingsRow icon={MessageCircle} label="Commentaires" href="/settings/comments" />
+        <SettingsRow icon={AtSign} label="Mentions" href="/settings/mentions" />
+        <SettingsRow icon={Send} label="Messages directs" href="/settings/messages" />
+        <SettingsRow icon={Copy} label="Réutilisation du contenu" href="/settings/reuse" />
+        <SettingsRow icon={Link2} label="Afficher le profil lors..." rightText="Activé" href="/settings/profile-visibility" />
+        <SettingsRow icon={Download} label="Téléchargements" rightText="Activé" href="/settings/downloads" />
+        <SettingsRow icon={Users} label="Liste de suivis" rightText="Toi uniquement" href="/settings/followers" />
+        <SettingsRow icon={Heart} label="Vidéos aimées" rightText="Toi uniquement" href="/settings/liked" />
+      </Group>
 
-        {/* Outils */}
-        <section>
-          <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Outils</h2>
-          <div className="bg-neutral-900 rounded-xl overflow-hidden">
-            <button 
-              onClick={() => router.push("/favorites")}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Eye className="w-5 h-5 text-neutral-400" />
-                <span>Mes favoris</span>
-              </div>
-              <ChevronRight className="w-5 h-5 text-neutral-400" />
-            </button>
-            <div className="h-px bg-neutral-800" />
-            <button 
-              onClick={() => router.push("/history")}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Download className="w-5 h-5 text-neutral-400" />
-                <span>Historique</span>
-              </div>
-              <ChevronRight className="w-5 h-5 text-neutral-400" />
-            </button>
-            <div className="h-px bg-neutral-800" />
-            <button 
-              onClick={() => router.push("/stories")}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <QrCode className="w-5 h-5 text-neutral-400" />
-                <span>Mes stories</span>
-              </div>
-              <ChevronRight className="w-5 h-5 text-neutral-400" />
-            </button>
-          </div>
-        </section>
+      {/* PRÉFÉRENCES (Capture #3) */}
+      <SectionTitle>Préférences</SectionTitle>
+      <Group>
+        <SettingsRow icon={Music} label="Musique" href="/settings/music" />
+        <SettingsRow icon={Inbox} label="Boîte de réception et messagerie" href="/settings/inbox" />
+        <SettingsRow icon={Clock} label="Centre des activités" href="/settings/activity" />
+        <SettingsRow icon={Users} label="Contrôle du public" href="/settings/audience" />
+        <SettingsRow icon={Megaphone} label="Publicités" href="/settings/ads" />
+        <SettingsRow icon={PlaySquare} label="Lecture" href="/settings/playback" />
+        <SettingsRow icon={Languages} label="Langues" href="/settings/languages" />
+        <SettingsRow icon={Moon} label="Affichage" href="/settings/display" />
+        <SettingsRow icon={Accessibility} label="Accessibilité" href="/settings/accessibility" />
+        <SettingsRow icon={MapPin} label="Contacts et localisation" href="/settings/contacts" />
+      </Group>
 
-        {/* Sécurité */}
-        <section>
-          <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Sécurité</h2>
-          <div className="bg-neutral-900 rounded-xl overflow-hidden">
-            <button 
-              onClick={() => router.push("/change-password")}
-              className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Shield className="w-5 h-5 text-neutral-400" />
-                <span>Changer le mot de passe</span>
-              </div>
-              <ChevronRight className="w-5 h-5 text-neutral-400" />
-            </button>
-          </div>
-        </section>
+      {/* CACHE ET DONNÉES MOBILES (Capture #4) */}
+      <SectionTitle>Cache et données mobiles</SectionTitle>
+      <Group>
+        <SettingsRow icon={CloudOff} label="Vidéos hors ligne" href="/settings/offline" />
+        <SettingsRow icon={Trash2} label="Libérer de l'espace" href="/settings/storage" />
+        <SettingsRow icon={Gauge} label="Économiseur de données" href="/settings/data-saver" />
+      </Group>
 
-        {/* Support */}
-        <section>
-          <h2 className="text-sm font-semibold text-neutral-400 mb-3 uppercase">Support</h2>
-          <div className="bg-neutral-900 rounded-xl overflow-hidden">
-            <button className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition">
-              <div className="flex items-center gap-3">
-                <HelpCircle className="w-5 h-5 text-neutral-400" />
-                <span>Centre d'aide</span>
-              </div>
-              <ChevronRight className="w-5 h-5 text-neutral-400" />
-            </button>
-            <div className="h-px bg-neutral-800" />
-            <button className="w-full flex items-center justify-between p-4 hover:bg-neutral-800 transition">
-              <div className="flex items-center gap-3">
-                <Info className="w-5 h-5 text-neutral-400" />
-                <span>À propos</span>
-              </div>
-              <ChevronRight className="w-5 h-5 text-neutral-400" />
-            </button>
-          </div>
-        </section>
+      {/* ASSISTANCE ET INFORMATIONS (Capture #4) */}
+      <SectionTitle>Assistance et informations</SectionTitle>
+      <Group>
+        <SettingsRow icon={Headphones} label="Centre d'aide" href="/settings/help" />
+        <SettingsRow icon={ShieldCheck} label="Centre de confidentialité" href="/settings/privacy-center" />
+        <SettingsRow icon={Info} label="Conditions et politiques" href="/settings/terms" />
+      </Group>
 
-        {/* Déconnexion */}
-        <button 
+      {/* CONNEXION (Capture #4) */}
+      <SectionTitle>Connexion</SectionTitle>
+      <Group>
+        <SettingsRow icon={ArrowLeftRight} label="Changer de compte" href="/auth/login" />
+        <SettingsRow
+          icon={LogOut}
+          label="Se déconnecter"
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 p-4 bg-red-500/10 text-red-500 rounded-xl font-semibold hover:bg-red-500/20 transition"
-        >
-          <LogOut className="w-5 h-5" /> Se déconnecter
-        </button>
+          isDanger
+        />
+      </Group>
 
-        <p className="text-center text-xs text-neutral-600">Moshi v1.3.0</p>
-      </div>
+      {/* Footer */}
+      <p className="text-center text-[10px] text-neutral-600 py-8">
+        Version 1.3.0 (Final Release) · Moshi
+      </p>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-xs font-bold text-neutral-400 uppercase tracking-wider px-4 pt-6 pb-2">
+      {children}
+    </h2>
+  );
+}
+
+function Group({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="bg-neutral-950 border-y border-neutral-800/50">
+      {children}
     </div>
   );
 }
