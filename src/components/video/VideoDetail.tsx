@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
-  ArrowLeft, Heart, MessageCircle, Share2, Music, Volume2, VolumeX, Play
+  ArrowLeft, Heart, MessageCircle, Share2, Music, Volume2, VolumeX,
+  MoreVertical, Trash2
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 import CommentsSheet from "./CommentsSheet";
 
 interface VideoDetailProps {
-  video: any; // La vidéo passée depuis le serveur
+  video: any;
   currentUser: any;
 }
 
@@ -24,10 +25,11 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(video.like_count || 0);
   const [showComments, setShowComments] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
 
   const author = Array.isArray(video.profiles) ? video.profiles[0] : video.profiles;
+  const isOwner = currentUser?.id === video.user_id;
 
-  // Vérifier si l'utilisateur a déjà liké
   useEffect(() => {
     if (!currentUser) return;
     const checkLike = async () => {
@@ -67,11 +69,37 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
     }
   };
 
+  // ✅ Fonction pour supprimer la vidéo
+  const handleDelete = async () => {
+    if (!confirm("Supprimer cette vidéo définitivement ?")) return;
+
+    try {
+      // 1. Supprimer de la base de données
+      const { error: dbError } = await supabase
+        .from("videos")
+        .delete()
+        .eq("id", video.id);
+      if (dbError) throw dbError;
+
+      // 2. Supprimer du storage Supabase
+      const urlParts = video.url.split("/");
+      const fileName = urlParts[urlParts.length - 1];
+      const filePath = `${video.user_id}/${fileName}`;
+      
+      await supabase.storage.from("videos").remove([filePath]);
+
+      // 3. Rediriger vers le profil
+      router.push("/profile/me");
+    } catch (err) {
+      alert("Erreur lors de la suppression");
+      console.error(err);
+    }
+  };
+
   const name = author?.username || author?.full_name || "user";
 
   return (
     <div className="h-[100dvh] w-full bg-black relative overflow-hidden">
-      {/* Bouton retour */}
       <button
         onClick={() => router.back()}
         className="absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center"
@@ -79,7 +107,6 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
         <ArrowLeft className="w-6 h-6 text-white" />
       </button>
 
-      {/* Bouton mute */}
       <button
         onClick={() => setMuted(!muted)}
         className="absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center"
@@ -87,7 +114,33 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
         {muted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
       </button>
 
-      {/* LA VIDÉO */}
+      {/* Menu "..." avec option supprimer (si c'est ma vidéo) */}
+      {isOwner && (
+        <>
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="absolute top-4 right-16 z-30 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center"
+          >
+            <MoreVertical className="w-5 h-5 text-white" />
+          </button>
+          
+          {showMenu && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowMenu(false)} />
+              <div className="absolute top-16 right-4 z-40 bg-neutral-800 rounded-xl shadow-lg overflow-hidden">
+                <button
+                  onClick={handleDelete}
+                  className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-neutral-700 w-full text-left text-sm font-semibold"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Supprimer la vidéo
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
       {video.url && (
         <video
           ref={videoRef}
@@ -108,7 +161,6 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
 
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
-      {/* Actions à droite */}
       <div className="absolute right-3 bottom-24 z-20 flex flex-col items-center gap-5">
         <Link href={`/profile/${video.user_id}`} className="w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
           {author?.avatar_url ? (
@@ -134,13 +186,8 @@ export default function VideoDetail({ video, currentUser }: VideoDetailProps) {
           <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
           <span className="text-xs text-white font-semibold">Partager</span>
         </button>
-
-        <div className="w-11 h-11 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center mt-2">
-          <Music className="w-5 h-5 text-white" />
-        </div>
       </div>
 
-      {/* Infos en bas */}
       <div className="absolute left-4 right-20 bottom-8 z-20 space-y-2">
         <Link href={`/profile/${video.user_id}`} className="font-bold text-white text-base hover:underline">
           @{name}
