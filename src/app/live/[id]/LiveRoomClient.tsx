@@ -9,8 +9,10 @@ import {
   RoomAudioRenderer,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { Loader2, Radio, X, ShoppingBag } from "lucide-react";
+import { Loader2, Radio, X, ShoppingBag, Gift } from "lucide-react";
 import Link from "next/link";
+import GiftMenu from "@/components/live/GiftMenu";
+import GiftAnimation from "@/components/live/GiftAnimation";
 
 interface Product {
   id: string;
@@ -24,6 +26,7 @@ interface LiveRoomClientProps {
   liveId: string;
   roomName: string;
   isHost: boolean;
+  hostId: string;
   products: Product[];
   isSellerLive: boolean;
 }
@@ -32,6 +35,7 @@ export default function LiveRoomClient({
   liveId,
   roomName,
   isHost,
+  hostId,
   products,
   isSellerLive,
 }: LiveRoomClientProps) {
@@ -42,6 +46,8 @@ export default function LiveRoomClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(products[0] || null);
+  const [showGifts, setShowGifts] = useState(false);
+  const [activeGift, setActiveGift] = useState<any>(null);
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -134,9 +140,19 @@ export default function LiveRoomClient({
         <RoomAudioRenderer />
       </LiveKitRoom>
 
+      {/* ✅ BOUTON CADEAU (uniquement pour les spectateurs) */}
+      {!isHost && (
+        <button
+          onClick={() => setShowGifts(true)}
+          className="absolute bottom-40 right-4 z-40 w-14 h-14 rounded-full bg-gradient-to-br from-yellow-500 to-pink-500 flex items-center justify-center shadow-lg shadow-pink-500/30 active:scale-90 transition"
+        >
+          <Gift className="w-7 h-7 text-white" />
+        </button>
+      )}
+
       {/* ✅ CARTE PRODUIT ÉPINGLÉ */}
       {isSellerLive && selectedProduct && (
-        <div className="absolute bottom-20 left-4 right-4 z-40">
+        <div className="absolute bottom-20 left-4 right-20 z-40">
           <div className="bg-black/90 backdrop-blur-md rounded-2xl p-3 flex items-center gap-3 border border-purple-500/50 shadow-lg shadow-purple-500/20">
             <div className="w-14 h-14 rounded-lg bg-neutral-800 flex-shrink-0 overflow-hidden">
               {selectedProduct.image_url ? (
@@ -161,7 +177,7 @@ export default function LiveRoomClient({
         </div>
       )}
 
-      {/* Miniatures des autres produits (si plusieurs) */}
+      {/* Miniatures des autres produits */}
       {isSellerLive && products.length > 1 && (
         <div className="absolute top-20 right-4 z-40 flex flex-col gap-2">
           {products.map((p) => (
@@ -183,6 +199,19 @@ export default function LiveRoomClient({
           ))}
         </div>
       )}
+
+      {/* ✅ MENU DES CADEAUX */}
+      {showGifts && (
+        <GiftMenu
+          liveId={liveId}
+          receiverId={hostId}
+          onClose={() => setShowGifts(false)}
+          onGiftSent={(gift) => setActiveGift(gift)}
+        />
+      )}
+
+      {/* ✅ ANIMATION DU CADEAU */}
+      <GiftAnimation gift={activeGift} onComplete={() => setActiveGift(null)} />
     </div>
   );
 }
