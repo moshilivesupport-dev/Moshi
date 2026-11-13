@@ -9,6 +9,7 @@ import { VideoCard } from '@/components/video/VideoCard';
 import { List, Heart, Bookmark, User } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import type { PostgrestError } from '@supabase/supabase-js';
+import { List } from 'lucide-react';
 
 interface ProfileViewProps {
   initialProfileId: string;
