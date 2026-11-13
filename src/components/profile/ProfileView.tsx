@@ -3,13 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 import { Video } from '@/types/video';
 import { VideoCard } from '@/components/video/VideoCard';
 import { List, Heart, Bookmark, User } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import type { PostgrestError } from '@supabase/supabase-js';
-import { List } from 'lucide-react';
 
 interface ProfileViewProps {
   initialProfileId: string;
@@ -38,7 +36,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [activeTab, setActiveTab] = useState<'grid' | 'favorites' | 'liked'>('grid');
   const [stats, setStats] = useState(initialStats);
   const [loading, setLoading] = useState(false);
-  const [isOwnProfile, setIsOwnProfile] = useState(false);
 
   const router = useRouter();
   const supabase = createClient();
@@ -49,7 +46,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     setLikes(initialLikes);
     setSaves(initialSaves);
     setStats(initialStats);
-    setIsOwnProfile(initialProfileId === 'current-user-id-here'); // Remplace par ton user_id actuel si besoin
   }, [initialProfileId, initialVideos, initialLikes, initialSaves, initialStats]);
 
   const loadVideos = async (type: 'grid' | 'favorites' | 'liked') => {
@@ -78,7 +74,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         if (bookmarks && bookmarks.length > 0) {
           query = query.in('id', bookmarks.map(b => b.video_id));
         } else {
-          query = query.is('id', null); // aucun résultat
+          query = query.is('id', null);
         }
       } else if (type === 'liked') {
         const { data: likesData } = await supabase
@@ -123,7 +119,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
-  // Chargement initial sur mount (pour le tab actif par défaut)
+  // Chargement initial du tab Grid
   useEffect(() => {
     if (activeTab !== 'grid') return;
     loadVideos('grid');
@@ -172,12 +168,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const handleComment = async (videoId: string, comment: string) => {
-    // Implémentation via CommentsSheet (déjà fonctionnelle)
     console.log('Commentaire envoyé:', videoId, comment);
   };
 
   const handleFollow = async (followerId: string, followingId: string) => {
-    // Logique FollowButton (déjà intégrée)
     toast.success('Abonnement mis à jour');
   };
 
