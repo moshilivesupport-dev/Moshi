@@ -1,23 +1,33 @@
-import { redirect } from "next/navigation";
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { StoryForm } from "@/components/social/StoryForm";
-import { ChevronLeft } from "lucide-react";
+"use client";
 
-export default async function NewStoryPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
+import { useRouter } from "next/navigation";
+import { ChevronLeft, Camera } from "lucide-react";
+
+export default function NewStoryPage() {
+  const router = useRouter();
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6">
-      <Link href="/stories" className="inline-flex items-center gap-1 text-sm text-muted hover:text-white mb-4">
-        <ChevronLeft className="w-4 h-4" /> Stories
-      </Link>
-      <h1 className="text-2xl font-bold text-white mb-4">Nouvelle story</h1>
-      <StoryForm userId={user.id} />
+    <div className="min-h-[100dvh] bg-black text-white flex flex-col">
+      <header className="flex items-center gap-2 px-2 py-3">
+        <button onClick={() => router.back()} className="p-2">
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+        <h1 className="text-base font-semibold">Nouvelle Story</h1>
+      </header>
+
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <Camera className="w-16 h-16 text-neutral-700" />
+        <h2 className="text-white font-semibold text-lg">Créer une story</h2>
+        <p className="text-neutral-400 text-sm">
+          Prends une photo ou une vidéo qui disparaîtra dans 24h.
+        </p>
+        <button 
+          onClick={() => alert("Fonctionnalité de story bientôt disponible !")}
+          className="mt-4 px-6 py-3 bg-red-500 text-white rounded-full font-semibold"
+        >
+          Ouvrir l'appareil photo
+        </button>
+      </div>
     </div>
   );
 }
