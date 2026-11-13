@@ -1,32 +1,23 @@
-import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import LiveRoom from "@/components/live/LiveRoom";
+import { notFound } from "next/navigation";
+import LiveRoomClient from "./LiveRoomClient";
 
 export const dynamic = "force-dynamic";
 
-interface PageProps {
-  params: Promise<{ id: string }>;
-}
-
-export default async function LivePage({ params }: PageProps) {
+export default async function LivePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Charger le live
+  // 1. Charger le live
   const { data: live, error } = await supabase
     .from("live_sessions")
-    .select(`
-      id, title, host_id, host_role, status, room_name, product_ids,
-      profiles:host_id (username, full_name, avatar_url)
-    `)
+    .select("id, title, host_id, host_role, status, room_name, product_ids")
     .eq("id", id)
     .single();
 
   if (error || !live) notFound();
 
-  // Charger les produits si vendeur
+  // 2. Charger les produits associés (si vendeur)
   let products: any[] = [];
   if (live.product_ids && live.product_ids.length > 0) {
     const { data: productData } = await supabase
@@ -36,17 +27,17 @@ export default async function LivePage({ params }: PageProps) {
     products = productData || [];
   }
 
-  const roomName = live.room_name || `moshi-live-${live.id}`;
+  // 3. Vérifier si l'utilisateur est l'hôte
+  const { data: { user } } = await supabase.auth.getUser();
   const isHost = user?.id === live.host_id;
-  const isSellerLive = live.host_role === "vendeur";
 
   return (
-    <LiveRoom
+    <LiveRoomClient
       liveId={live.id}
-      roomName={roomName}
+      roomName={live.room_name || `moshi-live-${live.id}`}
       isHost={isHost}
       products={products}
-      isSellerLive={isSellerLive}
+      isSellerLive={live.host_role === "vendeur"}
     />
   );
 }
