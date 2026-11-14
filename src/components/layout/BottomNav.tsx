@@ -9,8 +9,8 @@ const links = [
   { href: "/", label: "Accueil", icon: Home },
   { href: "/live", label: "Live", icon: Radio },
   { href: "/create", label: "Créer", icon: Plus, central: true },
-  { href: "/shop", label: "Boutique", icon: ShoppingBag },
-  { href: "/profile/me", label: "Profil", icon: User },
+  { href: "/boutique", label: "Boutique", icon: ShoppingBag },
+  { href: "/profile", label: "Profil", icon: User },
 ];
 
 export default function BottomNav() {
