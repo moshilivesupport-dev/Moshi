@@ -53,7 +53,6 @@ export default function HomeFeed() {
     getUser();
   }, [supabase]);
 
-  // ✅ Mélange aléatoire (algorithme de Fisher-Yates)
   const shuffleArray = <T,>(array: T[]): T[] => {
     const shuffled = [...array];
     for (let i = shuffled.length - 1; i > 0; i--) {
@@ -66,12 +65,15 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // 1. Vidéos
-    const { data: videosData } = await supabase
+    // 1. Vidéos (sans filtre de statut pour être sûr de les avoir toutes)
+    const { data: videosData, error: videosError } = await supabase
       .from("videos")
       .select(`id, url, caption, title, like_count, comment_count, view_count, user_id, created_at, profiles:user_id (username, avatar_url, full_name)`)
-      .eq("status", "published")
       .limit(20);
+
+    if (videosError) {
+      console.error("Erreur chargement vidéos:", videosError);
+    }
 
     const videos: FeedItem[] = (videosData || []).map((v: any) => ({
       id: v.id,
@@ -88,11 +90,15 @@ export default function HomeFeed() {
     }));
 
     // 2. Lives en cours
-    const { data: livesData } = await supabase
+    const { data: livesData, error: livesError } = await supabase
       .from("live_sessions")
       .select(`id, title, room_name, host_id, created_at, profiles:host_id (username, avatar_url, full_name)`)
       .eq("status", "live")
       .limit(10);
+
+    if (livesError) {
+      console.error("Erreur chargement lives:", livesError);
+    }
 
     const lives: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
@@ -107,7 +113,7 @@ export default function HomeFeed() {
       profiles: Array.isArray(l.profiles) ? l.profiles[0] : l.profiles,
     }));
 
-    // ✅ 3. Fusionner ET MÉLANGER aléatoirement
+    // 3. Fusionner et mélanger
     const all = shuffleArray([...videos, ...lives]);
     setItems(all);
 
@@ -129,7 +135,6 @@ export default function HomeFeed() {
 
   useEffect(() => { loadFeed(); }, [loadFeed]);
 
-  // Observer pour le scroll
   useEffect(() => {
     const root = containerRef.current;
     if (!root) return;
@@ -148,7 +153,6 @@ export default function HomeFeed() {
     return () => obs.disconnect();
   }, [items]);
 
-  // Charger le token LiveKit quand un live est actif
   useEffect(() => {
     const activeItem = items[active];
     if (activeItem?.type === "live" && activeItem.room_name && !liveTokens[activeItem.id]) {
@@ -225,7 +229,6 @@ export default function HomeFeed() {
         const author = item.profiles;
         const name = author?.username || author?.full_name || "user";
 
-        // ✅ SI C'EST UN LIVE
         if (item.type === "live") {
           const liveToken = liveTokens[item.id];
           return (
@@ -278,7 +281,6 @@ export default function HomeFeed() {
           );
         }
 
-        // ✅ SI C'EST UNE VIDÉO
         const displayText = item.caption || item.title || "";
         return (
           <section key={item.id} data-index={index} className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black">
