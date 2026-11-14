@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { Plus } from "lucide-react";
+import { Plus, Heart, Bell } from "lucide-react";
 
 interface Story {
   id: string;
@@ -22,7 +22,6 @@ export default function StoriesBar({ currentUserId }: { currentUserId: string })
 
   useEffect(() => {
     const loadStories = async () => {
-      // On charge toutes les stories qui n'ont pas expiré (24h)
       const now = new Date().toISOString();
       const { data } = await supabase
         .from("stories")
@@ -34,7 +33,6 @@ export default function StoriesBar({ currentUserId }: { currentUserId: string })
         .order("created_at", { ascending: false });
 
       if (data) {
-        // On déduplique pour ne garder qu'une story par utilisateur
         const uniqueUsers = new Map();
         data.forEach((story: any) => {
           if (!uniqueUsers.has(story.user_id)) {
@@ -55,7 +53,18 @@ export default function StoriesBar({ currentUserId }: { currentUserId: string })
   return (
     <div className="w-full overflow-x-auto scrollbar-hide border-b border-neutral-800 pb-3">
       <div className="flex gap-4 px-4 pt-3">
-        {/* Bouton "Créer une story" */}
+        
+        {/* ✅ 1. BOUTON ACTIVITÉ (Notifications) */}
+        <Link href="/notifications" className="flex flex-col items-center gap-1 flex-shrink-0">
+          <div className="relative w-16 h-16 rounded-full bg-neutral-900 border-2 border-neutral-700 flex items-center justify-center">
+            <Bell className="w-7 h-7 text-white" />
+            {/* Petit badge rouge pour dire qu'il y a des notifications */}
+            <div className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-black" />
+          </div>
+          <span className="text-[10px] text-white font-semibold">Activité</span>
+        </Link>
+
+        {/* ✅ 2. BOUTON CRÉER UNE STORY */}
         <Link href="/stories/new" className="flex flex-col items-center gap-1 flex-shrink-0">
           <div className="relative w-16 h-16">
             <div className="w-full h-full rounded-full border-2 border-dashed border-neutral-600 bg-neutral-900 flex items-center justify-center overflow-hidden">
@@ -65,7 +74,7 @@ export default function StoriesBar({ currentUserId }: { currentUserId: string })
           <span className="text-[10px] text-white font-semibold">Créer</span>
         </Link>
 
-        {/* Liste des stories */}
+        {/* ✅ 3. LISTE DES STORIES */}
         {stories.map((story) => (
           <Link
             key={story.id}
