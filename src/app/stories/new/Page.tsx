@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, ImageIcon, Send } from "lucide-react";
+import { X, ImageIcon, Send, Camera } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function NewStoryPage() {
@@ -32,11 +32,13 @@ export default function NewStoryPage() {
       const ext = file.name.split(".").pop() || "jpg";
       const path = `${user.id}/${Date.now()}.${ext}`;
       
+      // Upload dans le bucket "stories"
       const { error: uploadError } = await supabase.storage.from("stories").upload(path, file);
       if (uploadError) throw uploadError;
 
       const { data: urlData } = supabase.storage.from("stories").getPublicUrl(path);
 
+      // Insérer dans la table stories
       const { error } = await supabase.from("stories").insert({
         user_id: user.id,
         media_url: urlData.publicUrl,
@@ -45,6 +47,8 @@ export default function NewStoryPage() {
       });
 
       if (error) throw error;
+      
+      // Rediriger vers la page Messages (où il y a la barre de stories)
       router.push("/messages");
     } catch (err) {
       alert("Erreur lors de la publication de la story.");
@@ -54,12 +58,16 @@ export default function NewStoryPage() {
 
   return (
     <div className="fixed inset-0 z-[60] bg-black">
+      {/* Header */}
       <div className="absolute top-0 left-0 right-0 z-30 p-4 flex items-center justify-between">
-        <button onClick={() => router.back()} className="p-2"><X className="w-7 h-7 text-white" /></button>
+        <button onClick={() => router.back()} className="p-2">
+          <X className="w-7 h-7 text-white" />
+        </button>
         <h1 className="text-white font-semibold">Nouvelle Story</h1>
         <div className="w-10" />
       </div>
 
+      {/* Zone d'aperçu ou de sélection */}
       <div className="absolute inset-0 flex items-center justify-center">
         {preview ? (
           <img src={preview} alt="Preview" className="max-w-full max-h-full object-contain" />
@@ -69,11 +77,13 @@ export default function NewStoryPage() {
               <ImageIcon className="w-10 h-10 text-neutral-400" />
             </div>
             <p className="text-white text-sm">Choisir une photo/vidéo</p>
+            <p className="text-neutral-500 text-xs">(Galerie de ton appareil)</p>
             <input type="file" accept="image/*,video/*" onChange={handleFile} className="hidden" />
           </label>
         )}
       </div>
 
+      {/* Zone de publication en bas */}
       {preview && (
         <div className="absolute bottom-0 left-0 right-0 z-30 p-4 bg-black/80">
           <input
