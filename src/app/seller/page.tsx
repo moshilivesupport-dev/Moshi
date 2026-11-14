@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Plus, ShoppingBag, Package, TrendingUp, Loader2, Edit, Trash2 } from "lucide-react";
-import { formatNumber } from "@/lib/utils";
 
 export default function SellerDashboard() {
   const router = useRouter();
@@ -36,10 +35,29 @@ export default function SellerDashboard() {
     load();
   }, [supabase, router]);
 
+  // ✅ Supprimer un produit ET son image du storage
   const deleteProduct = async (id: string) => {
-    if (!confirm("Supprimer ce produit ?")) return;
-    await supabase.from("products").delete().eq("id", id);
-    setProducts(products.filter((p) => p.id !== id));
+    if (!confirm("Supprimer ce produit définitivement ?")) return;
+
+    try {
+      const product = products.find(p => p.id === id);
+
+      // 1. Supprimer de la base de données
+      const { error } = await supabase.from("products").delete().eq("id", id);
+      if (error) throw error;
+
+      // 2. Supprimer l'image du storage
+      if (product?.image_url) {
+        const urlParts = product.image_url.split("/");
+        const fileName = urlParts[urlParts.length - 1];
+        await supabase.storage.from("products").remove([`${product.seller_id}/${fileName}`]);
+      }
+
+      // 3. Retirer de la liste locale
+      setProducts(products.filter((p) => p.id !== id));
+    } catch (err) {
+      alert("Erreur lors de la suppression du produit.");
+    }
   };
 
   if (loading) {
