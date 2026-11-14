@@ -19,6 +19,7 @@ export default function VideoPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const [video, setVideo] = useState<any>(null);
+  const [author, setAuthor] = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [muted, setMuted] = useState(true);
@@ -31,17 +32,14 @@ export default function VideoPage() {
     const load = async () => {
       if (!videoId) return;
       
-      // On charge l'utilisateur
+      // 1. Charger l'utilisateur connecté
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
 
-      // On charge la vidéo côté CLIENT
+      // 2. Charger la vidéo (SANS jointure pour éviter les erreurs)
       const { data: videoData, error } = await supabase
         .from("videos")
-        .select(`
-          id, url, caption, title, like_count, comment_count, view_count, user_id,
-          profiles:user_id (username, full_name, avatar_url)
-        `)
+        .select("id, url, caption, title, like_count, comment_count, view_count, user_id")
         .eq("id", videoId)
         .single();
 
@@ -53,9 +51,18 @@ export default function VideoPage() {
 
       setVideo(videoData);
       setLikeCount(videoData.like_count || 0);
+
+      // 3. Charger le profil de l'auteur séparément
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("username, full_name, avatar_url")
+        .eq("id", videoData.user_id)
+        .maybeSingle();
+
+      setAuthor(profileData);
       setLoading(false);
 
-      // On vérifie si on a déjà liké
+      // 4. Vérifier si on a déjà liké
       if (user) {
         const { data: likeData } = await supabase
           .from("video_likes")
@@ -126,7 +133,6 @@ export default function VideoPage() {
     );
   }
 
-  const author = Array.isArray(video.profiles) ? video.profiles[0] : video.profiles;
   const name = author?.username || author?.full_name || "user";
   const isOwner = currentUser?.id === video.user_id;
 
