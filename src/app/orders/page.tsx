@@ -31,7 +31,7 @@ export default function OrdersPage() {
       const query = supabase
         .from("orders")
         .select(`
-          id, quantity, total_price, currency, status, created_at,
+          id, buyer_id, seller_id, quantity, total_price, currency, status, created_at,
           product:product_id (id, title, image_url),
           buyer:buyer_id (username, full_name),
           seller:seller_id (username, full_name)
@@ -54,8 +54,31 @@ export default function OrdersPage() {
   const updateStatus = async (orderId: string, newStatus: string) => {
     setUpdatingId(orderId);
     try {
+      const order = orders.find(o => o.id === orderId);
+      
       await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+
+      // ✅ Créer une notification pour l'acheteur
+      if (order && order.buyer_id) {
+        const messages: Record<string, string> = {
+          "paid": "Ton paiement a été confirmé par le vendeur.",
+          "shipped": "Ta commande a été expédiée !",
+          "delivered": "Ta commande a bien été livrée 🎉",
+        };
+
+        if (messages[newStatus]) {
+          await fetch("/api/notifications/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: order.buyer_id,
+              type: "order",
+              message: messages[newStatus],
+            }),
+          });
+        }
+      }
     } catch (err) {
       alert("Erreur lors de la mise à jour");
     } finally {
@@ -136,7 +159,6 @@ export default function OrdersPage() {
                     </span>
                   </div>
 
-                  {/* ✅ BOUTONS D'ACTION POUR LE VENDEUR */}
                   {role === "seller" && (
                     <div className="flex gap-2">
                       {order.status === "pending" && (
@@ -177,7 +199,6 @@ export default function OrdersPage() {
                     </div>
                   )}
 
-                  {/* Message pour l'acheteur */}
                   {role === "buyer" && order.status === "pending" && (
                     <div className="flex items-center gap-2 text-[10px] text-yellow-500 bg-yellow-500/10 p-2 rounded-lg">
                       <Clock className="w-3 h-3" /> En attente de confirmation du vendeur
