@@ -16,7 +16,6 @@ export default function NotificationsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth/login"); return; }
 
-      // ✅ On cherche les notifs pour "to_user_id" (le destinataire)
       const { data } = await supabase
         .from("notifications")
         .select(`
