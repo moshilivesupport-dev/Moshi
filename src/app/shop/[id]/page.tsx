@@ -25,7 +25,7 @@ export default function ProductDetailPage() {
       const { data, error } = await supabase
         .from("products")
         .select(`
-          id, title, description, price, currency, image_url, stock, is_featured,
+          id, title, description, price, currency, image_url, stock, is_featured, seller_id,
           profiles:seller_id (id, username, full_name, avatar_url)
         `)
         .eq("id", productId)
@@ -49,7 +49,6 @@ export default function ProductDetailPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth/login"); return; }
 
-      // Créer la commande
       const totalPrice = Number(product.price) * quantity;
       
       const { error } = await supabase.from("orders").insert({
@@ -64,10 +63,21 @@ export default function ProductDetailPage() {
 
       if (error) throw error;
 
-      // Redirection vers la page de confirmation
+      // ✅ Créer une notification pour le vendeur
+      await fetch("/api/notifications/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: product.seller_id,
+          actorId: user.id,
+          type: "order",
+          message: `a passé une commande pour "${product.title}" (${quantity}x) !`,
+        }),
+      });
+
       router.push("/orders?success=true");
     } catch (err) {
-      alert("Erreur lors de la commande. Vérifie ta connexion.");
+      alert("Erreur lors de la commande.");
       setBuying(false);
     }
   };
@@ -90,7 +100,6 @@ export default function ProductDetailPage() {
 
   return (
     <div className="min-h-[100dvh] bg-black text-white pb-24">
-      {/* Header avec retour */}
       <header className="sticky top-0 z-30 bg-black/80 backdrop-blur-md flex items-center gap-2 px-4 py-3">
         <button onClick={() => router.back()} className="p-2">
           <ChevronLeft className="w-6 h-6" />
@@ -98,7 +107,6 @@ export default function ProductDetailPage() {
         <h1 className="text-base font-semibold">Détail du produit</h1>
       </header>
 
-      {/* Image du produit */}
       <div className="relative aspect-square bg-neutral-900">
         {product.image_url ? (
           <img src={product.image_url} alt={product.title} className="w-full h-full object-cover" />
@@ -114,14 +122,12 @@ export default function ProductDetailPage() {
         )}
       </div>
 
-      {/* Infos */}
       <div className="p-4">
         <h2 className="text-xl font-bold mb-2">{product.title}</h2>
         <p className="text-3xl font-bold text-green-400 mb-4">
           {Number(product.price).toFixed(2)} {product.currency || "€"}
         </p>
 
-        {/* Vendeur */}
         {seller && (
           <Link href={`/profile/${seller.id}`} className="flex items-center gap-2 mb-4 bg-neutral-900 p-3 rounded-xl border border-neutral-800">
             <div className="w-10 h-10 rounded-full bg-neutral-800 overflow-hidden flex-shrink-0">
@@ -138,7 +144,6 @@ export default function ProductDetailPage() {
           </Link>
         )}
 
-        {/* Garanties */}
         <div className="flex gap-2 mb-4">
           <div className="flex-1 bg-neutral-900 p-3 rounded-xl border border-neutral-800 flex items-center gap-2">
             <Shield className="w-5 h-5 text-green-400" />
@@ -150,7 +155,6 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
-        {/* Description */}
         {product.description && (
           <div className="mb-4">
             <h3 className="text-sm font-bold text-neutral-400 uppercase mb-2">Description</h3>
@@ -158,16 +162,13 @@ export default function ProductDetailPage() {
           </div>
         )}
 
-        {/* Stock */}
         <p className="text-xs text-neutral-500 mb-4">
           {product.stock > 0 ? `${product.stock} en stock` : "Rupture de stock"}
         </p>
       </div>
 
-      {/* Barre d'achat fixe en bas */}
       <div className="fixed bottom-16 left-0 right-0 z-30 bg-black border-t border-neutral-800 p-4">
         <div className="flex items-center gap-3">
-          {/* Quantité */}
           <div className="flex items-center gap-2 bg-neutral-900 rounded-xl px-2 py-2 border border-neutral-700">
             <button 
               onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -184,7 +185,6 @@ export default function ProductDetailPage() {
             </button>
           </div>
 
-          {/* Bouton acheter */}
           <button
             onClick={handleBuy}
             disabled={buying || product.stock === 0}
