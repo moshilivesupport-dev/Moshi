@@ -4,21 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   X, RefreshCw, Zap, ZapOff, Timer, LayoutGrid, Sparkles, Captions,
-  Music2, ImagePlus, Radio, Wand2, Scissors, Subtitles, Square, RotateCcw,
+  Music2, ImagePlus, Radio, Wand2, Square, RotateCcw,
   Settings2, Smartphone, Clapperboard, Bookmark
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 type Tab = "LIVE" | "CAMÉRA" | "CRÉER";
 type CaptureMode = "10 min" | "60 s" | "15 s" | "PHOTO" | "TEXTE";
-
-const tools = [
-  { label: "Éditeur de photos", icon: ImagePlus },
-  { label: "AutoCut", icon: Clapperboard },
-  { label: "Légendes", icon: Subtitles },
-  { label: "AI Self", icon: Sparkles },
-  { label: "Détourage", icon: Scissors },
-];
 
 export default function CreatePage() {
   const router = useRouter();
@@ -29,7 +21,7 @@ export default function CreatePage() {
   const chunksRef = useRef<Blob[]>([]);
   const galleryRef = useRef<HTMLInputElement>(null);
   
-  const [tab, setTab] = useState<Tab>("CAMÉRA");
+  const [tab, setTab] = useState<Tab>("CRÉER"); // On démarre sur CRÉER par défaut
   const [mode, setMode] = useState<CaptureMode>("15 s");
   const [facing, setFacing] = useState<"user" | "environment">("user");
   const [recording, setRecording] = useState(false);
@@ -254,12 +246,6 @@ export default function CreatePage() {
     }
   };
 
-  const chooseTool = (label: string) => {
-    if (label === "Légendes") setNotice("Ajoute ta description dans le champ de légende avant publication.");
-    else if (label === "Éditeur de photos") galleryRef.current?.click();
-    else setNotice(`${label} : ce module nécessite un moteur dédié qui n'est pas configuré.`);
-  };
-
   return (
     <main className="fixed inset-0 z-[70] flex flex-col bg-black text-white">
       {tab === "CAMÉRA" && (
@@ -269,14 +255,12 @@ export default function CreatePage() {
               <video ref={videoRef} autoPlay playsInline muted className={`absolute inset-0 h-full w-full object-cover ${facing === "user" ? "scale-x-[-1]" : ""}`} />
               {grid && <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3">{Array.from({length: 4}).map((_,i)=><i key={i} className="border-r border-white/40" />)}</div>}
               
-              {/* ✅ HEADER (boutons plus petits) */}
               <header className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 pt-5">
                 <button onClick={() => router.back()} aria-label="Fermer" className="rounded-full bg-black/30 p-2"><X size={24}/></button>
                 <button onClick={() => setNotice("Sélection du son : importe un fichier audio.")} className="rounded-full bg-black/40 px-4 py-2 text-sm font-semibold"><Music2 className="mr-2 inline" size={16}/>Ajouter un son</button>
                 <button onClick={() => setFacing(facing === "user" ? "environment" : "user")} aria-label="Retourner la caméra" className="rounded-full bg-black/30 p-2"><RefreshCw size={22}/></button>
               </header>
 
-              {/* ✅ BARRE LATÉRALE DROITE (icônes plus petites) */}
               <div className="absolute right-3 top-24 z-20 flex flex-col gap-4">
                 <button onClick={async () => {
                   const track = streamRef.current?.getVideoTracks()[0];
@@ -296,19 +280,15 @@ export default function CreatePage() {
 
               {teleprompter && <div className="absolute left-5 right-20 top-28 rounded-xl bg-black/55 p-3 text-sm">Ton texte de téléprompteur apparaîtra ici.</div>}
 
-              {/* ✅ BOUTONS DU BAS (plus petits) */}
               <div className="absolute bottom-5 left-0 right-0 z-20">
                 <div className="mb-4 flex items-center justify-center gap-3 overflow-x-auto px-3 text-xs font-bold">
                   {(["10 min","60 s","15 s","PHOTO","TEXTE"] as CaptureMode[]).map((m)=><button key={m} onClick={()=>setMode(m)} className={`whitespace-nowrap rounded-full px-3 py-1 ${mode===m?"bg-white text-black":"text-white"}`}>{m}</button>)}
                 </div>
                 <div className="flex items-center justify-between px-6">
                   <button onClick={()=>galleryRef.current?.click()} aria-label="Ouvrir la galerie" className="h-12 w-12 overflow-hidden rounded-full border border-white/50 bg-black/40"><ImagePlus className="mx-auto" size={20}/></button>
-                  
-                  {/* ✅ BOUTON D'ENREGISTREMENT (plus petit) */}
                   <button onClick={recording?stopRecording:beginRecording} aria-label={recording?"Arrêter":mode === "PHOTO" ? "Prendre une photo" : "Enregistrer"} className="flex h-20 w-20 items-center justify-center rounded-full border-[4px] border-white bg-white/15 shadow-xl">
                     {recording?<Square className="h-8 w-8 fill-rose-500 text-rose-500"/>:<span className="h-14 w-14 rounded-full bg-[#fe2c55]"/>}
                   </button>
-
                   <button onClick={()=>setNotice("Effets favoris : à venir.")} aria-label="Effets" className="h-12 w-12 rounded-full bg-black/40"><Sparkles className="mx-auto" size={20}/></button>
                 </div>
                 {recording && <p className="mt-2 text-center text-xs font-semibold text-rose-400">Enregistrement en cours</p>}
@@ -351,19 +331,31 @@ export default function CreatePage() {
       {tab === "CRÉER" && (
         <section className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-4">
           <header className="mb-7 flex items-center justify-between"><button onClick={()=>router.back()} aria-label="Fermer"><X size={24}/></button><h1 className="text-2xl font-extrabold tracking-wide">CRÉER</h1><span className="w-7"/></header>
-          <div className="mb-7 grid grid-cols-5 gap-2">
-            {tools.map(({label,icon:Icon})=><button key={label} onClick={()=>chooseTool(label)} className="flex flex-col items-center gap-2 text-center"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-900"><Icon size={20}/></span><span className="text-[10px] font-semibold leading-tight">{label}</span></button>)}
-          </div>
+          
+          {/* ✅ SEULEMENT 2 GROS BOUTONS UTILES */}
           <div className="mb-8 grid grid-cols-[1fr_112px] gap-3">
-            <button onClick={()=>{setTab("CAMÉRA");resetCapture();}} className="flex min-h-32 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-100 to-cyan-100 text-black"><span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"><PlusIcon/></span><span className="text-lg font-extrabold">Nouvelle vidéo</span></button>
-            <button onClick={()=>setNotice(drafts.length?`Brouillons : ${drafts.join(" | ")}`:"Aucun brouillon.")} className="flex flex-col items-center justify-center rounded-2xl bg-neutral-900"><Bookmark size={24}/><span className="mt-2 font-bold text-sm">Brouillons</span><span className="text-xs text-neutral-400">{drafts.length}</span></button>
+            <button onClick={()=>setTab("CAMÉRA")} className="flex min-h-32 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-100 to-cyan-100 text-black">
+              <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"><PlusIcon/></span>
+              <span className="text-lg font-extrabold">Nouvelle vidéo</span>
+            </button>
+            <button onClick={()=>setNotice(drafts.length?`Brouillons : ${drafts.join(" | ")}`:"Aucun brouillon.")} className="flex flex-col items-center justify-center rounded-2xl bg-neutral-900">
+              <Bookmark size={24}/>
+              <span className="mt-2 font-bold text-sm">Brouillons</span>
+              <span className="text-xs text-neutral-400">{drafts.length}</span>
+            </button>
           </div>
-          <div className="mb-4 flex items-center justify-between"><h2 className="text-xl font-extrabold">Modèles</h2><button onClick={()=>setNotice("Modèles à venir.")} className="rounded-full bg-neutral-900 p-2"><Settings2 size={20}/></button></div>
-          <div className="mb-4 flex gap-6 overflow-x-auto whitespace-nowrap text-sm font-bold text-neutral-400"><button className="border-b-2 border-white pb-2 text-white">Pour toi</button><button onClick={()=>setNotice("Pas de catalogue de chansons.")}>Chanson virale</button><button onClick={()=>setNotice("Tendances à venir.")}>Tendance</button><button onClick={()=>setNotice("IA à venir.")}>IA</button></div>
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={()=>{setTab("CAMÉRA");setNotice("Caméra prête.");}} className="overflow-hidden rounded-2xl text-left"><div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-gradient-to-br from-slate-500 via-neutral-800 to-pink-900"><Clapperboard size={36}/></div><p className="mt-2 font-bold text-sm">Créer avec la caméra</p><p className="text-xs text-neutral-400">Enregistre tes clips</p></button>
-            <button onClick={()=>galleryRef.current?.click()} className="overflow-hidden rounded-2xl text-left"><div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-gradient-to-br from-neutral-900 to-neutral-700"><ImagePlus size={36}/></div><p className="mt-2 font-bold text-sm">Importer un média</p><p className="text-xs text-neutral-400">Depuis ton appareil</p></button>
+
+          {/* ✅ SEULEMENT L'IMPORT DE MÉDIA (utile) */}
+          <div className="grid grid-cols-1 gap-3">
+            <button onClick={()=>galleryRef.current?.click()} className="flex items-center gap-4 rounded-2xl bg-neutral-900 p-4 text-left active:scale-[0.98] transition">
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-neutral-800"><ImagePlus size={24}/></div>
+              <div>
+                <p className="font-bold text-sm">Importer un média</p>
+                <p className="text-xs text-neutral-400">Depuis ton appareil</p>
+              </div>
+            </button>
           </div>
+
           <input ref={galleryRef} type="file" accept="video/*,image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){setMedia(f);setTab("CAMÉRA");}e.currentTarget.value="";}}/>
           {notice && <button onClick={()=>setNotice("")} className="mt-4 w-full rounded-xl bg-neutral-900 p-3 text-left text-sm">{notice} <span className="float-right">×</span></button>}
         </section>
