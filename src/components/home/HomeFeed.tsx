@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Heart, MessageCircle, Share2, Play, Music, Volume2, VolumeX, Bookmark, Radio } from "lucide-react";
+import { Heart, MessageCircle, Share2, Play, Music, Volume2, VolumeX, Bookmark, Radio, MoreVertical, Trash2 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 import { LiveKitRoom, VideoConference, RoomAudioRenderer } from "@livekit/components-react";
 import "@livekit/components-styles";
@@ -44,6 +44,7 @@ export default function HomeFeed() {
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [commentsOpenVideoId, setCommentsOpenVideoId] = useState<string | null>(null);
   const [liveTokens, setLiveTokens] = useState<Record<string, string>>({});
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null); // ✅ État pour le menu
 
   useEffect(() => {
     const getUser = async () => {
@@ -65,15 +66,12 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // 1. Vidéos (sans filtre de statut pour être sûr de les avoir toutes)
     const { data: videosData, error: videosError } = await supabase
       .from("videos")
       .select(`id, url, caption, title, like_count, comment_count, view_count, user_id, created_at, profiles:user_id (username, avatar_url, full_name)`)
       .limit(20);
 
-    if (videosError) {
-      console.error("Erreur chargement vidéos:", videosError);
-    }
+    if (videosError) console.error("Erreur chargement vidéos:", videosError);
 
     const videos: FeedItem[] = (videosData || []).map((v: any) => ({
       id: v.id,
@@ -89,16 +87,13 @@ export default function HomeFeed() {
       profiles: Array.isArray(v.profiles) ? v.profiles[0] : v.profiles,
     }));
 
-    // 2. Lives en cours
     const { data: livesData, error: livesError } = await supabase
       .from("live_sessions")
       .select(`id, title, room_name, host_id, created_at, profiles:host_id (username, avatar_url, full_name)`)
       .eq("status", "live")
       .limit(10);
 
-    if (livesError) {
-      console.error("Erreur chargement lives:", livesError);
-    }
+    if (livesError) console.error("Erreur chargement lives:", livesError);
 
     const lives: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
@@ -113,11 +108,9 @@ export default function HomeFeed() {
       profiles: Array.isArray(l.profiles) ? l.profiles[0] : l.profiles,
     }));
 
-    // 3. Fusionner et mélanger
     const all = shuffleArray([...videos, ...lives]);
     setItems(all);
 
-    // 4. Charger les likes et favoris
     if (currentUser) {
       const { data: likesData } = await supabase.from("video_likes").select("video_id").eq("user_id", currentUser.id);
       const likedMap: Record<string, boolean> = {};
@@ -208,6 +201,33 @@ export default function HomeFeed() {
     }
   }, []);
 
+  // ✅ Supprimer une vidéo
+  const handleDeleteVideo = async (videoId: string) => {
+    if (!confirm("Supprimer cette vidéo définitivement ?")) return;
+
+    try {
+      const video = items.find(v => v.id === videoId);
+      if (!video) return;
+
+      // Supprimer de la base de données
+      const { error: dbError } = await supabase.from("videos").delete().eq("id", videoId);
+      if (dbError) throw dbError;
+
+      // Supprimer du storage
+      if (video.url) {
+        const urlParts = video.url.split("/");
+        const fileName = urlParts[urlParts.length - 1];
+        await supabase.storage.from("videos").remove([`${video.user_id}/${fileName}`]);
+      }
+
+      // Retirer de la liste locale
+      setItems(items.filter(v => v.id !== videoId));
+      setMenuOpenId(null);
+    } catch (err) {
+      alert("Erreur lors de la suppression");
+    }
+  };
+
   if (loading) {
     return <div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" /></div>;
   }
@@ -228,6 +248,7 @@ export default function HomeFeed() {
         const isActive = index === active;
         const author = item.profiles;
         const name = author?.username || author?.full_name || "user";
+        const isOwner = currentUser?.id === item.user_id;
 
         if (item.type === "live") {
           const liveToken = liveTokens[item.id];
@@ -306,6 +327,29 @@ export default function HomeFeed() {
             <button onClick={() => setMuted(!muted)} className="absolute top-20 right-4 z-30 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center">
               {muted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
             </button>
+
+            {/* ✅ BOUTON OPTIONS (visible seulement pour le propriétaire) */}
+            {isOwner && (
+              <div className="absolute top-20 right-16 z-40">
+                <button
+                  onClick={() => setMenuOpenId(menuOpenId === item.id ? null : item.id)}
+                  className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center"
+                >
+                  <MoreVertical className="w-5 h-5 text-white" />
+                </button>
+
+                {menuOpenId === item.id && (
+                  <div className="absolute top-12 right-0 bg-neutral-900 rounded-xl shadow-lg overflow-hidden border border-neutral-700 min-w-[150px]">
+                    <button
+                      onClick={() => handleDeleteVideo(item.id)}
+                      className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-neutral-800 w-full text-left text-sm font-semibold"
+                    >
+                      <Trash2 className="w-4 h-4" /> Supprimer
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="absolute right-2 bottom-24 z-20 flex flex-col items-center gap-4">
               <div className="relative mb-2">
