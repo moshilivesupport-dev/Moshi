@@ -1,22 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, ChevronLeft, ChevronRight, Eye } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Eye, MoreVertical, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
 
 interface StoryViewerProps {
   storyIds: string[];
   initialIndex?: number;
   onClose: () => void;
+  onDelete?: () => void; // ✅ Callback pour rafraîchir la barre
 }
 
-export default function StoryViewer({ storyIds, initialIndex = 0, onClose }: StoryViewerProps) {
+export default function StoryViewer({ storyIds, initialIndex = 0, onClose, onDelete }: StoryViewerProps) {
   const supabase = createClient();
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [story, setStory] = useState<any>(null);
   const [viewCount, setViewCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showMenu, setShowMenu] = useState(false);
 
   const currentStoryId = storyIds[currentIndex];
 
@@ -25,6 +27,10 @@ export default function StoryViewer({ storyIds, initialIndex = 0, onClose }: Sto
     const load = async () => {
       if (!currentStoryId) return;
       setLoading(true);
+
+      // Récupérer l'utilisateur
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
 
       const { data: storyData } = await supabase
         .from("stories")
@@ -50,7 +56,6 @@ export default function StoryViewer({ storyIds, initialIndex = 0, onClose }: Sto
         setViewCount(count || 0);
 
         // Enregistrer la vue
-        const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           await supabase.from("story_views").insert({
             story_id: currentStoryId,
@@ -62,6 +67,30 @@ export default function StoryViewer({ storyIds, initialIndex = 0, onClose }: Sto
     };
     load();
   }, [currentStoryId, supabase]);
+
+  // ✅ Supprimer la story
+  const handleDelete = async () => {
+    if (!confirm("Supprimer cette story définitivement ?")) return;
+
+    try {
+      // 1. Supprimer de la BDD
+      const { error: dbError } = await supabase.from("stories").delete().eq("id", story.id);
+      if (dbError) throw dbError;
+
+      // 2. Supprimer du Storage
+      if (story.media_url) {
+        const urlParts = story.media_url.split("/");
+        const fileName = urlParts[urlParts.length - 1];
+        await supabase.storage.from("stories").remove([`${story.user_id}/${fileName}`]);
+      }
+
+      setShowMenu(false);
+      if (onDelete) onDelete();
+      onClose();
+    } catch (err) {
+      alert("Erreur lors de la suppression");
+    }
+  };
 
   // Navigation
   const nextStory = () => {
@@ -86,15 +115,17 @@ export default function StoryViewer({ storyIds, initialIndex = 0, onClose }: Sto
         }
         return p + 1;
       });
-    }, 50); // 5 secondes
+    }, 50);
     return () => clearInterval(interval);
   }, [currentIndex]);
 
   if (loading || !story) return <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center text-white">Chargement...</div>;
 
+  const isOwner = currentUser?.id === story.user_id;
+
   return (
     <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center">
-      {/* Barre de progression en haut */}
+      {/* Barre de progression */}
       <div className="absolute top-4 left-4 right-4 flex gap-1 z-20">
         {storyIds.map((_, i) => (
           <div key={i} className="flex-1 h-0.5 bg-white/30 rounded-full overflow-hidden">
@@ -106,7 +137,7 @@ export default function StoryViewer({ storyIds, initialIndex = 0, onClose }: Sto
         ))}
       </div>
 
-      {/* Header avec l'auteur */}
+      {/* Header */}
       <div className="absolute top-8 left-4 right-4 flex items-center justify-between z-20">
         <div className="flex items-center gap-2">
           <div className="w-9 h-9 rounded-full overflow-hidden bg-neutral-800">
@@ -125,12 +156,33 @@ export default function StoryViewer({ storyIds, initialIndex = 0, onClose }: Sto
             </p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2">
-          <X className="w-6 h-6 text-white" />
-        </button>
+        
+        <div className="flex items-center gap-2">
+          {/* ✅ BOUTON OPTIONS (visible seulement si propriétaire) */}
+          {isOwner && (
+            <div className="relative">
+              <button onClick={() => setShowMenu(!showMenu)} className="p-2">
+                <MoreVertical className="w-6 h-6 text-white" />
+              </button>
+              {showMenu && (
+                <div className="absolute top-10 right-0 bg-neutral-900 rounded-xl shadow-lg overflow-hidden border border-neutral-700 min-w-[150px]">
+                  <button
+                    onClick={handleDelete}
+                    className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-neutral-800 w-full text-left text-sm font-semibold"
+                  >
+                    <Trash2 className="w-4 h-4" /> Supprimer
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          <button onClick={onClose} className="p-2">
+            <X className="w-6 h-6 text-white" />
+          </button>
+        </div>
       </div>
 
-      {/* Image de la story */}
+      {/* Image */}
       <img src={story.media_url} alt="" className="w-full h-full object-contain" />
 
       {/* Navigation */}
@@ -141,7 +193,7 @@ export default function StoryViewer({ storyIds, initialIndex = 0, onClose }: Sto
         <ChevronRight className="w-8 h-8 text-white" />
       </button>
 
-      {/* Compteur de vues en bas */}
+      {/* Compteur de vues */}
       <div className="absolute bottom-6 left-4 right-4 z-20 flex items-center gap-2 bg-black/50 backdrop-blur-md rounded-full px-4 py-2 w-fit">
         <Eye className="w-4 h-4 text-white" />
         <span className="text-white text-sm font-semibold">{viewCount} vue{viewCount > 1 ? 's' : ''}</span>
