@@ -1,6 +1,6 @@
 "use client";
 
-import "../live-room.css";
+import "./live-room.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
