@@ -14,7 +14,9 @@ export default function FollowingFeed() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       if (!user) {
         setEmpty(true);
@@ -35,22 +37,25 @@ export default function FollowingFeed() {
         return;
       }
 
-      // ✅ VRAIES COLONNES
       const { data: videos } = await supabase
         .from("videos")
-        .select(`
+        .select(
+          `
           id, title, caption, url, thumbnail_url,
           duration_seconds, view_count, like_count, comment_count,
           created_at, user_id,
           profiles:user_id (id, username, full_name, avatar_url)
-        `)
+        `
+        )
         .in("user_id", ids)
-        .eq("is_public", true)
+        .eq("status", "published")
         .order("created_at", { ascending: false })
         .limit(40);
 
+      // ✅ Correction : on ajoute le type "video" pour correspondre au nouveau FeedItem
       const feed: FeedItem[] = (videos || []).map((v: any) => ({
         id: v.id,
+        type: "video", // 👈 LA LIGNE MANQUANTE
         title: v.title,
         caption: v.caption,
         url: v.url,
@@ -87,12 +92,15 @@ export default function FollowingFeed() {
         <p className="text-neutral-400 text-sm mb-6">
           Suivez des créateurs pour voir leurs vidéos ici.
         </p>
-        <Link href="/search" className="px-6 py-2.5 rounded-full bg-red-500 text-sm font-semibold">
+        <Link
+          href="/search"
+          className="px-6 py-2.5 rounded-full bg-red-500 text-sm font-semibold"
+        >
           Trouver des créateurs
         </Link>
       </div>
     );
   }
 
-  return <HomeFeed initialItems={items} />;
+  return <HomeFeed />;
 }
