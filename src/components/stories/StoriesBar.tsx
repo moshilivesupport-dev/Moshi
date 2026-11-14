@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { Plus, Heart, Bell } from "lucide-react";
+import { Plus, Bell } from "lucide-react";
 
 interface Story {
   id: string;
@@ -19,6 +19,7 @@ export default function StoriesBar({ currentUserId }: { currentUserId: string })
   const supabase = createClient();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0); // ✅ Pour rafraîchir
 
   useEffect(() => {
     const loadStories = async () => {
@@ -48,23 +49,22 @@ export default function StoriesBar({ currentUserId }: { currentUserId: string })
     };
 
     loadStories();
-  }, [supabase]);
+  }, [supabase, refreshKey]);
 
   return (
     <div className="w-full overflow-x-auto scrollbar-hide border-b border-neutral-800 pb-3">
       <div className="flex gap-4 px-4 pt-3">
         
-        {/* ✅ 1. BOUTON ACTIVITÉ (Notifications) */}
+        {/* Bouton Activité */}
         <Link href="/notifications" className="flex flex-col items-center gap-1 flex-shrink-0">
           <div className="relative w-16 h-16 rounded-full bg-neutral-900 border-2 border-neutral-700 flex items-center justify-center">
             <Bell className="w-7 h-7 text-white" />
-            {/* Petit badge rouge pour dire qu'il y a des notifications */}
             <div className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-black" />
           </div>
           <span className="text-[10px] text-white font-semibold">Activité</span>
         </Link>
 
-        {/* ✅ 2. BOUTON CRÉER UNE STORY */}
+        {/* Bouton Créer */}
         <Link href="/stories/new" className="flex flex-col items-center gap-1 flex-shrink-0">
           <div className="relative w-16 h-16">
             <div className="w-full h-full rounded-full border-2 border-dashed border-neutral-600 bg-neutral-900 flex items-center justify-center overflow-hidden">
@@ -74,7 +74,7 @@ export default function StoriesBar({ currentUserId }: { currentUserId: string })
           <span className="text-[10px] text-white font-semibold">Créer</span>
         </Link>
 
-        {/* ✅ 3. LISTE DES STORIES */}
+        {/* Stories */}
         {stories.map((story) => (
           <Link
             key={story.id}
