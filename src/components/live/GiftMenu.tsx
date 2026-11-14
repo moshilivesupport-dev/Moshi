@@ -53,7 +53,7 @@ export default function GiftMenu({ liveId, receiverId, onClose, onGiftSent }: Gi
         .update({ coins_balance: wallet.coins_balance - gift.price_coins })
         .eq("user_id", user.id);
 
-      // 2. Ajouter les pièces au vendeur (90% pour le vendeur)
+      // 2. Ajouter les pièces au vendeur (90%)
       const { data: sellerWallet } = await supabase
         .from("wallets")
         .select("coins_balance")
@@ -69,7 +69,7 @@ export default function GiftMenu({ liveId, receiverId, onClose, onGiftSent }: Gi
           .eq("user_id", receiverId);
       }
 
-      // 3. Enregistrer le cadeau dans l'historique
+      // 3. Enregistrer le cadeau
       await supabase.from("live_gifts").insert({
         live_id: liveId,
         sender_id: user.id,
@@ -78,10 +78,19 @@ export default function GiftMenu({ liveId, receiverId, onClose, onGiftSent }: Gi
         quantity: 1,
       });
 
-      // 4. Mettre à jour le solde local
-      await reloadWallet();
+      // ✅ 4. Créer une notification pour le vendeur
+      await fetch("/api/notifications/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: receiverId,
+          actorId: user.id,
+          type: "gift",
+          message: `t'a envoyé un cadeau ${gift.emoji} ${gift.name} !`,
+        }),
+      });
 
-      // 5. Déclencher l'animation
+      await reloadWallet();
       onGiftSent(gift);
       onClose();
 
