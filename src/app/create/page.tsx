@@ -6,7 +6,7 @@ import {
   X, RefreshCw, Zap, ZapOff, Timer, LayoutGrid, Sparkles, Captions,
   ChevronDown, Music2, ImagePlus, Video, Radio, Wand2, Type, Scissors,
   Subtitles, Camera, Circle, Square, Upload, RotateCcw, Check, Volume2,
-  Settings2, Play, Trash2, Mic, Smartphone, Clapperboard, Bookmark, Plus
+  Settings2, Play, Trash2, Mic, Smartphone, Clapperboard, Bookmark
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -29,7 +29,6 @@ export default function CreatePage() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const galleryRef = useRef<HTMLInputElement>(null);
-  
   const [tab, setTab] = useState<Tab>("CAMÉRA");
   const [mode, setMode] = useState<CaptureMode>("15 s");
   const [facing, setFacing] = useState<"user" | "environment">("user");
