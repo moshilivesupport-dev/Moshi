@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import ConversationList from "@/components/messages/ConversationList";
+import StoriesBar from "@/components/stories/StoriesBar";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,10 @@ export default async function MessagesPage() {
         </Link>
       </header>
 
-      {/* Liste */}
+      {/* ✅ BARRE DE STORIES */}
+      <StoriesBar currentUserId={user.id} />
+
+      {/* Liste des conversations */}
       <main className="px-4 py-2">
         <ConversationList userId={user.id} />
       </main>
