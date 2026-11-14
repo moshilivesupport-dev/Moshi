@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Image as ImageIcon, Send } from "lucide-react";
+import { X, ImageIcon, Send } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function NewStoryPage() {
   const router = useRouter();
   const supabase = createClient();
-  const [caption, setCaption] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,40 +29,37 @@ export default function NewStoryPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/auth/login"); return; }
 
-      // Uploader le fichier
-      const fileName = `${user.id}/story_${Date.now()}.${file.name.split(".").pop()}`;
-      await supabase.storage.from("stories").upload(fileName, file);
-      const { data: urlData } = supabase.storage.from("stories").getPublicUrl(fileName);
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      
+      const { error: uploadError } = await supabase.storage.from("stories").upload(path, file);
+      if (uploadError) throw uploadError;
 
-      // Insérer en base
+      const { data: urlData } = supabase.storage.from("stories").getPublicUrl(path);
+
       const { error } = await supabase.from("stories").insert({
         user_id: user.id,
         media_url: urlData.publicUrl,
         caption: caption || null,
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24h
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
 
       if (error) throw error;
-
-      router.push("/");
+      router.push("/messages");
     } catch (err) {
-      alert("Erreur lors de la publication de la story");
+      alert("Erreur lors de la publication de la story.");
       setUploading(false);
     }
   };
 
   return (
     <div className="fixed inset-0 z-[60] bg-black">
-      {/* Header */}
       <div className="absolute top-0 left-0 right-0 z-30 p-4 flex items-center justify-between">
-        <button onClick={() => router.back()} className="p-2">
-          <X className="w-7 h-7 text-white" />
-        </button>
+        <button onClick={() => router.back()} className="p-2"><X className="w-7 h-7 text-white" /></button>
         <h1 className="text-white font-semibold">Nouvelle Story</h1>
         <div className="w-10" />
       </div>
 
-      {/* Aperçu ou sélecteur */}
       <div className="absolute inset-0 flex items-center justify-center">
         {preview ? (
           <img src={preview} alt="Preview" className="max-w-full max-h-full object-contain" />
@@ -77,7 +74,6 @@ export default function NewStoryPage() {
         )}
       </div>
 
-      {/* Barre de publication */}
       {preview && (
         <div className="absolute bottom-0 left-0 right-0 z-30 p-4 bg-black/80">
           <input
