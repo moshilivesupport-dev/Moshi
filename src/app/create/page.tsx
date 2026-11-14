@@ -1,9 +1,25 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Camera, RefreshCw, Zap, ZapOff, Circle, Square } from "lucide-react";
+import {
+  X, RefreshCw, Zap, ZapOff, Timer, LayoutGrid, Sparkles, Captions,
+  ChevronDown, Music2, ImagePlus, Video, Radio, Wand2, Type, Scissors,
+  Subtitles, Camera, Circle, Square, Upload, RotateCcw, Check, Volume2,
+  Settings2, Play, Trash2, Mic, Smartphone, Clapperboard, Bookmark, Plus
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+
+type Tab = "LIVE" | "CAMÉRA" | "CRÉER";
+type CaptureMode = "10 min" | "60 s" | "15 s" | "PHOTO" | "TEXTE";
+
+const tools = [
+  { label: "Éditeur de photos", icon: ImagePlus },
+  { label: "AutoCut", icon: Clapperboard },
+  { label: "Légendes", icon: Subtitles },
+  { label: "AI Self", icon: Sparkles },
+  { label: "Détourage", icon: Scissors },
+];
 
 export default function CreatePage() {
   const router = useRouter();
@@ -12,150 +28,373 @@ export default function CreatePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  
+  const [tab, setTab] = useState<Tab>("CAMÉRA");
+  const [mode, setMode] = useState<CaptureMode>("15 s");
+  const [facing, setFacing] = useState<"user" | "environment">("user");
+  const [streamReady, setStreamReady] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
-  const [flashOn, setFlashOn] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [recorded, setRecorded] = useState<Blob | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [caption, setCaption] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [flash, setFlash] = useState(false);
+  const [timer, setTimer] = useState(false);
+  const [grid, setGrid] = useState(false);
+  const [beauty, setBeauty] = useState(false);
+  const [teleprompter, setTeleprompter] = useState(false);
+  const [filter, setFilter] = useState(false);
+  const [format, setFormat] = useState(false);
+  const [soundName, setSoundName] = useState("");
+  const [textOverlay, setTextOverlay] = useState("");
+  const [drafts, setDrafts] = useState<string[]>([]);
 
-  // Démarrer la caméra
-  useEffect(() => {
-    startCamera();
-    return () => stopCamera();
-  }, [facingMode]);
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setStreamReady(false);
+  }, []);
 
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
+    setError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("La caméra nécessite HTTPS et un navigateur compatible.");
+      return;
+    }
+    stopCamera();
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode },
+      const media = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 } },
         audio: true,
       });
-      setStream(mediaStream);
-      streamRef.current = mediaStream;
+      streamRef.current = media;
       if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
+        videoRef.current.srcObject = media;
+        await videoRef.current.play().catch(() => undefined);
       }
-    } catch (err) {
-      setError("Impossible d'accéder à la caméra");
+      setStreamReady(true);
+    } catch {
+      setError("Autorise l'accès à la caméra et au microphone dans ton navigateur.");
     }
+  }, [facing, stopCamera]);
+
+  useEffect(() => {
+    if ((tab === "CAMÉRA" || tab === "LIVE") && !previewUrl) void startCamera();
+    else stopCamera();
+    return () => stopCamera();
+  }, [tab, facing, previewUrl, startCamera, stopCamera]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("moshi-creator-drafts") || "[]");
+      if (Array.isArray(saved)) setDrafts(saved);
+    } catch { /* ignore invalid local draft data */ }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const setMedia = (file: File) => {
+    if (!file.type.startsWith("video/") && !file.type.startsWith("image/")) {
+      setError("Choisis une photo ou une vidéo.");
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      setError("Le fichier dépasse la limite de 100 Mo.");
+      return;
+    }
+    stopCamera();
+    setSelectedFile(file);
+    setRecorded(null);
+    setPreviewUrl(URL.createObjectURL(file));
+    setError("");
   };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) {
+      setError("La caméra n'est pas encore prête pour la photo.");
+      return;
     }
-    if (videoRef.current) videoRef.current.srcObject = null;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    if (facing === "user") {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], `moshi-photo-${Date.now()}.jpg`, { type: "image/jpeg" });
+      setSelectedFile(file);
+      setRecorded(null);
+      setPreviewUrl(URL.createObjectURL(blob));
+      stopCamera();
+    }, "image/jpeg", 0.92);
   };
 
-  const toggleRecording = () => {
-    if (recording) {
-      // Arrêter l'enregistrement
-      if (recorderRef.current && recorderRef.current.state !== "inactive") {
-        recorderRef.current.stop();
+  const beginRecording = () => {
+    if (mode === "PHOTO") {
+      capturePhoto();
+      return;
+    }
+    if (mode === "TEXTE") {
+      const message = window.prompt("Écris ton texte Moshi :");
+      if (message?.trim()) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1080; canvas.height = 1920;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.fillStyle = "#101010"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#ffffff"; ctx.textAlign = "center"; ctx.font = "bold 64px sans-serif";
+        const words = message.trim().split(/\s+/); let line = ""; let y = 900;
+        for (const word of words) {
+          const next = line ? `${line} ${word}` : word;
+          if (ctx.measureText(next).width > 900 && line) { ctx.fillText(line, 540, y); y += 82; line = word; }
+          else line = next;
+        }
+        if (line) ctx.fillText(line, 540, y);
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const file = new File([blob], `moshi-texte-${Date.now()}.png`, { type: "image/png" });
+          setSelectedFile(file); setPreviewUrl(URL.createObjectURL(blob)); stopCamera();
+        }, "image/png");
       }
-      setRecording(false);
-    } else {
-      // Démarrer l'enregistrement
-      if (!streamRef.current) return;
+      return;
+    }
+    const stream = streamRef.current;
+    if (!stream) {
+      setError("La caméra n'est pas encore prête.");
+      return;
+    }
+    if (typeof MediaRecorder === "undefined") {
+      setError("L'enregistrement vidéo n'est pas pris en charge par ce navigateur.");
+      return;
+    }
+    const mime = ["video/mp4;codecs=h264,aac", "video/webm;codecs=vp9,opus", "video/webm"]
+      .find((type) => MediaRecorder.isTypeSupported(type));
+    try {
       chunksRef.current = [];
-      const recorder = new MediaRecorder(streamRef.current, { mimeType: "video/webm" });
-      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "video/webm" });
-        uploadVideo(blob);
+      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunksRef.current.push(event.data);
       };
-      recorder.start();
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "video/webm" });
+        setRecorded(blob);
+        setSelectedFile(new File([blob], `moshi-${Date.now()}.${blob.type.includes("mp4") ? "mp4" : "webm"}`, { type: blob.type }));
+        setPreviewUrl(URL.createObjectURL(blob));
+        stopCamera();
+      };
+      recorder.start(250);
       recorderRef.current = recorder;
       setRecording(true);
+      setError("");
+      if (mode === "15 s" || mode === "60 s" || mode === "10 min") {
+        const duration = mode === "15 s" ? 15000 : mode === "60 s" ? 60000 : 600000;
+        window.setTimeout(() => {
+          if (recorder.state === "recording") {
+            recorder.stop();
+            setRecording(false);
+          }
+        }, duration);
+      }
+    } catch {
+      setError("Impossible de démarrer l'enregistrement.");
     }
   };
 
-  const uploadVideo = async (blob: Blob) => {
-    setUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/auth/login"); return; }
+  const stopRecording = () => {
+    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+    setRecording(false);
+  };
 
-      const fileName = `${user.id}/${Date.now()}.webm`;
-      const { error: upError } = await supabase.storage.from("videos").upload(fileName, blob);
-      if (upError) throw upError;
+  const resetCapture = () => {
+    if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl("");
+    setSelectedFile(null);
+    setRecorded(null);
+    setCaption("");
+    setTextOverlay("");
+    setError("");
+    setNotice("");
+  };
 
-      const { data: urlData } = supabase.storage.from("videos").getPublicUrl(fileName);
-      
-      const { error: dbError } = await supabase.from("videos").insert({
-        user_id: user.id,
-        url: urlData.publicUrl,
-        caption: "",
-        is_public: true,
-        status: "published",
-        view_count: 0, like_count: 0, comment_count: 0,
-      });
-      if (dbError) throw dbError;
-
-      router.push("/");
-    } catch (err) {
-      setError("Erreur lors de la publication");
-      setUploading(false);
+  const saveDraft = () => {
+    if (!selectedFile) {
+      setNotice("Enregistre ou importe un média avant de créer un brouillon.");
+      return;
     }
+    const entry = `${selectedFile.name} · ${new Date().toLocaleString("fr-FR")}`;
+    const next = [entry, ...drafts].slice(0, 20);
+    setDrafts(next);
+    localStorage.setItem("moshi-creator-drafts", JSON.stringify(next));
+    setNotice("Brouillon enregistré sur cet appareil.");
+  };
+
+  const publish = async () => {
+    if (!selectedFile || !selectedFile.type.startsWith("video/")) {
+      setError("Sélectionne une vidéo pour la publier dans le fil Moshi.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        router.push("/auth/login");
+        return;
+      }
+      const ext = selectedFile.name.split(".").pop() || "webm";
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("videos").upload(path, selectedFile, {
+        cacheControl: "3600", upsert: false, contentType: selectedFile.type,
+      });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from("videos").getPublicUrl(path);
+      const { error: insertError } = await supabase.from("videos").insert({
+        user_id: user.id, url: urlData.publicUrl, caption: caption.trim(),
+        is_public: true, status: "published", view_count: 0, like_count: 0, comment_count: 0,
+      });
+      if (insertError) throw insertError;
+      router.push("/");
+      router.refresh();
+    } catch (e: any) {
+      setError(e?.message || "La publication a échoué. Vérifie le stockage Supabase et réessaie.");
+      setBusy(false);
+    }
+  };
+
+  const chooseTool = (label: string) => {
+    if (label === "Légendes") setNotice("Ajoute ta description dans le champ de légende avant publication.");
+    else if (label === "Éditeur de photos") galleryRef.current?.click();
+    else setNotice(`${label} : ce module nécessite un moteur de traitement dédié qui n'est pas configuré dans le dépôt.`);
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black">
-      {/* Caméra */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className={`absolute inset-0 w-full h-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
-      />
-
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-30 p-4 flex items-center justify-between">
-        <button onClick={() => { stopCamera(); router.back(); }} className="p-2">
-          <X className="w-7 h-7 text-white" />
-        </button>
-        <div className="flex gap-4">
-          <button onClick={() => setFlashOn(!flashOn)} className="p-2">
-            {flashOn ? <Zap className="w-6 h-6 text-yellow-400" /> : <ZapOff className="w-6 h-6 text-white" />}
-          </button>
-          <button onClick={() => setFacingMode(facingMode === "user" ? "environment" : "user")} className="p-2">
-            <RefreshCw className="w-6 h-6 text-white" />
-          </button>
-        </div>
-      </div>
-
-      {/* Erreur */}
-      {error && (
-        <div className="absolute top-20 left-4 right-4 z-30 bg-red-600 text-white p-3 rounded-lg text-sm text-center">
-          {error}
-        </div>
+    <main className="fixed inset-0 z-[70] flex flex-col bg-black text-white">
+      {tab === "CAMÉRA" && (
+        <section className="relative min-h-0 flex-1 overflow-hidden bg-neutral-950">
+          {!previewUrl ? (
+            <>
+              <video ref={videoRef} autoPlay playsInline muted className={`absolute inset-0 h-full w-full object-cover ${facing === "user" ? "scale-x-[-1]" : ""}`} />
+              {grid && <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3">{Array.from({length: 4}).map((_,i)=><i key={i} className="border-r border-white/40" />)}</div>}
+              <header className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 pt-5">
+                <button onClick={() => router.back()} aria-label="Fermer" className="rounded-full bg-black/30 p-2"><X size={28}/></button>
+                <button onClick={() => setNotice("Sélection du son : importe un fichier audio depuis ton appareil.")} className="rounded-full bg-black/40 px-5 py-3 font-semibold"><Music2 className="mr-2 inline" size={18}/>{soundName || "Ajouter un son"}</button>
+                <button onClick={() => setFacing(facing === "user" ? "environment" : "user")} aria-label="Retourner la caméra" className="rounded-full bg-black/30 p-2"><RefreshCw size={27}/></button>
+              </header>
+              <div className="absolute right-3 top-24 z-20 flex flex-col gap-5">
+                <button onClick={async () => {
+                  const track = streamRef.current?.getVideoTracks()[0];
+                  const capabilities = track?.getCapabilities?.() as any;
+                  if (!capabilities?.torch) { setNotice("Le flash vidéo n'est pas pris en charge par cette caméra."); return; }
+                  try { await track.applyConstraints({ advanced: [{ torch: !flash } as any] }); setFlash(!flash); }
+                  catch { setNotice("Impossible de commander le flash sur cet appareil."); }
+                }} title="Flash">{flash ? <Zap className="h-7 w-7"/> : <ZapOff className="h-7 w-7"/>}</button>
+                <button onClick={() => setTimer(!timer)} title="Minuteur"><Timer className="h-7 w-7"/></button>
+                <button onClick={() => setGrid(!grid)} title="Disposition"><LayoutGrid className="h-7 w-7"/></button>
+                <button onClick={() => setBeauty(!beauty)} title="Retouche"><Sparkles className={`h-7 w-7 ${beauty ? "text-pink-400" : ""}`}/></button>
+                <button onClick={() => setTeleprompter(!teleprompter)} title="Téléprompteur"><Captions className={`h-7 w-7 ${teleprompter ? "text-pink-400" : ""}`}/></button>
+                <button onClick={() => setFilter(!filter)} title="Filtres"><Wand2 className={`h-7 w-7 ${filter ? "text-pink-400" : ""}`}/></button>
+                <button onClick={() => setFormat(!format)} title="Format"><Smartphone className="h-7 w-7"/></button>
+              </div>
+              {teleprompter && <div className="absolute left-5 right-20 top-28 rounded-xl bg-black/55 p-3 text-sm">Ton texte de téléprompteur apparaîtra ici. Modifie-le dans l'onglet texte après la capture.</div>}
+              <div className="absolute bottom-5 left-0 right-0 z-20">
+                <div className="mb-5 flex items-center justify-center gap-5 overflow-x-auto px-3 text-sm font-bold">
+                  {(["10 min","60 s","15 s","PHOTO","TEXTE"] as CaptureMode[]).map((m)=><button key={m} onClick={()=>setMode(m)} className={`whitespace-nowrap rounded-full px-3 py-1.5 ${mode===m?"bg-white text-black":"text-white"}`}>{m}</button>)}
+                </div>
+                <div className="flex items-center justify-between px-6">
+                  <button onClick={()=>galleryRef.current?.click()} aria-label="Ouvrir la galerie" className="h-16 w-16 overflow-hidden rounded-full border border-white/50 bg-black/40"><ImagePlus className="mx-auto"/></button>
+                  <button onClick={recording?stopRecording:beginRecording} aria-label={recording?"Arrêter":mode === "PHOTO" ? "Prendre une photo" : "Enregistrer"} className="flex h-28 w-28 items-center justify-center rounded-full border-[5px] border-white bg-white/15 shadow-xl">
+                    {recording?<Square className="h-12 w-12 fill-rose-500 text-rose-500"/>:<span className="h-20 w-20 rounded-full bg-[#fe2c55]"/>}
+                  </button>
+                  <button onClick={()=>setNotice("Les effets favoris apparaîtront ici lorsqu'ils seront ajoutés à Moshi.")} aria-label="Effets" className="h-16 w-16 rounded-full bg-black/40"><Sparkles className="mx-auto"/></button>
+                </div>
+                {recording && <p className="mt-2 text-center text-sm font-semibold text-rose-400">Enregistrement en cours · appuie pour arrêter</p>}
+              </div>
+            </>
+          ) : (
+            <div className="absolute inset-0 flex flex-col">
+              {selectedFile?.type.startsWith("video/") ? <video src={previewUrl} controls playsInline className="min-h-0 flex-1 bg-black object-contain"/> : <img src={previewUrl} alt="Aperçu" className="min-h-0 flex-1 object-contain"/>}
+              <div className="space-y-3 bg-neutral-950 p-4 pb-8">
+                <div className="flex items-center justify-between"><h2 className="text-lg font-bold">Aperçu</h2><button onClick={resetCapture} className="rounded-full p-2"><RotateCcw/></button></div>
+                <textarea value={caption} onChange={e=>setCaption(e.target.value)} placeholder="Ajouter une description…" className="w-full rounded-xl border border-neutral-700 bg-neutral-900 p-3 text-sm outline-none focus:border-pink-500"/>
+                {textOverlay && <p className="text-xs text-neutral-400">Texte ajouté : {textOverlay}</p>}
+                <div className="flex gap-3"><button onClick={saveDraft} className="flex-1 rounded-xl border border-neutral-700 py-3 font-semibold"><Bookmark className="mr-2 inline h-4 w-4"/>Brouillon</button><button onClick={publish} disabled={busy} className="flex-1 rounded-xl bg-[#fe2c55] py-3 font-bold disabled:opacity-50">{busy?"Publication…":"Publier"}</button></div>
+              </div>
+            </div>
+          )}
+          <input ref={galleryRef} type="file" accept="video/*,image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)setMedia(f);e.currentTarget.value="";}}/>
+          {error && <div className="absolute left-4 right-4 top-20 z-40 rounded-xl bg-red-600/95 p-3 text-sm">{error}</div>}
+          {notice && <button onClick={()=>setNotice("")} className="absolute left-4 right-4 top-20 z-40 rounded-xl bg-neutral-900/95 p-3 text-left text-sm">{notice} <span className="float-right">×</span></button>}
+        </section>
       )}
 
-      {/* Bouton d'enregistrement */}
-      <div className="absolute bottom-10 left-0 right-0 z-30 flex flex-col items-center">
-        {uploading ? (
-          <div className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+      {tab === "LIVE" && (
+        <section className="relative min-h-0 flex-1 overflow-hidden bg-neutral-950">
+          <div className="absolute inset-0">
+            <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover opacity-70"/>
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80"/>
           </div>
-        ) : (
-          <button
-            onClick={toggleRecording}
-            className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center bg-black/30"
-          >
-            {recording ? (
-              <Square className="w-8 h-8 text-red-500 fill-red-500" />
-            ) : (
-              <Circle className="w-8 h-8 text-white fill-white" />
-            )}
-          </button>
-        )}
-        <p className="text-white text-xs mt-3">
-          {recording ? "Appuyez pour arrêter" : "Appuyez pour enregistrer"}
-        </p>
-      </div>
-    </div>
+          <header className="relative z-10 flex items-center justify-between p-5">
+            <button onClick={()=>router.back()}><X size={28}/></button>
+            <span className="rounded-full bg-black/40 px-4 py-3 font-bold">Récompenses LIVE</span>
+            <button onClick={()=>setNotice("Les récompenses et statistiques LIVE dépendent de la configuration du service de diffusion.")}><Settings2/></button>
+          </header>
+          <div className="absolute inset-x-5 bottom-16 z-10 space-y-6">
+            <div className="grid grid-cols-5 gap-2 text-center text-xs font-semibold">
+              {[["Retourner",RefreshCw],["Embellir",Sparkles],["Effets",Wand2],["Paramètres",Settings2],["Service +",Radio]].map(([label,Icon]:any)=><button key={label} onClick={()=>setNotice(`${label} : option de configuration LIVE.`)} className="flex flex-col items-center gap-2"><Icon size={25}/>{label}</button>)}
+            </div>
+            <input value={caption} onChange={e=>setCaption(e.target.value)} placeholder="Ajouter un titre" className="w-full rounded-xl bg-black/45 p-4 outline-none placeholder:text-neutral-300"/>
+            <button onClick={()=>router.push("/seller/live")} className="w-full rounded-full bg-[#fe2c55] py-5 text-lg font-extrabold">Passer en LIVE</button>
+            <p className="text-center text-xs text-neutral-300">La diffusion en direct utilise le service LIVE déjà configuré sur Moshi.</p>
+          </div>
+          {notice && <button onClick={()=>setNotice("")} className="absolute left-4 right-4 top-24 z-30 rounded-xl bg-neutral-900 p-3 text-sm">{notice} ×</button>}
+        </section>
+      )}
+
+      {tab === "CRÉER" && (
+        <section className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-4">
+          <header className="mb-7 flex items-center justify-between"><button onClick={()=>router.back()} aria-label="Fermer"><X size={27}/></button><h1 className="text-3xl font-extrabold tracking-wide">CREATE</h1><span className="w-7"/></header>
+          <div className="mb-7 grid grid-cols-5 gap-2">
+            {tools.map(({label,icon:Icon})=><button key={label} onClick={()=>chooseTool(label)} className="flex flex-col items-center gap-2 text-center"><span className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-900"><Icon size={25}/></span><span className="text-[11px] font-semibold leading-tight">{label}</span></button>)}
+          </div>
+          <div className="mb-8 grid grid-cols-[1fr_112px] gap-3">
+            <button onClick={()=>{setTab("CAMÉRA");resetCapture();}} className="flex min-h-32 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-100 to-cyan-100 text-black"><span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"><PlusIcon/></span><span className="text-xl font-extrabold">Nouvelle vidéo</span></button>
+            <button onClick={()=>setNotice(drafts.length?`Brouillons sur cet appareil : ${drafts.join(" | ")}`:"Aucun brouillon enregistré sur cet appareil.")} className="flex flex-col items-center justify-center rounded-2xl bg-neutral-900"><Bookmark size={30}/><span className="mt-2 font-bold">Brouillons</span><span className="text-xs text-neutral-400">{drafts.length}</span></button>
+          </div>
+          <div className="mb-4 flex items-center justify-between"><h2 className="text-2xl font-extrabold">Modèles</h2><button onClick={()=>setNotice("Les modèles seront affichés dès qu'une bibliothèque de modèles sera connectée.")} className="rounded-full bg-neutral-900 p-3"><Settings2/></button></div>
+          <div className="mb-4 flex gap-6 overflow-x-auto whitespace-nowrap text-sm font-bold text-neutral-400"><button className="border-b-2 border-white pb-2 text-white">Pour toi</button><button onClick={()=>setNotice("Aucun catalogue de chansons virales n'est connecté.")}>Chanson virale</button><button onClick={()=>setNotice("Les tendances apparaîtront avec le catalogue de modèles.")}>Tendance</button><button onClick={()=>setNotice("Les modèles IA nécessitent un fournisseur IA connecté.")}>IA</button></div>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={()=>{setTab("CAMÉRA");setNotice("Caméra prête : enregistre un clip pour créer ta vidéo.");}} className="overflow-hidden rounded-2xl text-left"><div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-gradient-to-br from-slate-500 via-neutral-800 to-pink-900"><Clapperboard size={48}/></div><p className="mt-2 font-bold">Créer avec la caméra</p><p className="text-xs text-neutral-400">Enregistre tes clips</p></button>
+            <button onClick={()=>galleryRef.current?.click()} className="overflow-hidden rounded-2xl text-left"><div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-gradient-to-br from-neutral-900 to-neutral-700"><ImagePlus size={48}/></div><p className="mt-2 font-bold">Importer un média</p><p className="text-xs text-neutral-400">Depuis ton appareil</p></button>
+          </div>
+          <input ref={galleryRef} type="file" accept="video/*,image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){setMedia(f);setTab("CAMÉRA");}e.currentTarget.value="";}}/>
+          {notice && <button onClick={()=>setNotice("")} className="mt-4 w-full rounded-xl bg-neutral-900 p-3 text-left text-sm">{notice} <span className="float-right">×</span></button>}
+        </section>
+      )}
+
+      <nav className="z-30 flex h-[72px] shrink-0 items-center justify-around border-t border-neutral-900 bg-black px-6 pb-2">
+        <button onClick={()=>setTab("LIVE")} className={`text-base font-extrabold ${tab==="LIVE"?"text-white":"text-neutral-500"}`}>LIVE</button>
+        <button onClick={()=>setTab("CAMÉRA")} className={`text-base font-extrabold ${tab==="CAMÉRA"?"text-white":"text-neutral-500"}`}>CAMÉRA</button>
+        <button onClick={()=>setTab("CRÉER")} className={`text-base font-extrabold ${tab==="CRÉER"?"text-white":"text-neutral-500"}`}>CRÉER</button>
+      </nav>
+    </main>
   );
+}
+
+function PlusIcon() {
+  return <span className="text-3xl leading-none">+</span>;
 }
