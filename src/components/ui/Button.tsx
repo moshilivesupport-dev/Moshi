@@ -3,10 +3,9 @@ import { ButtonHTMLAttributes } from "react";
 import { motion } from "framer-motion";
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "gradient" | "soft" | "glass";
+  variant?: "gradient" | "soft" | "glass" | "outline";
 };
 
-// ✅ On exporte la fonction nommée ET par défaut
 export function Button({
   variant = "soft",
   className = "",
@@ -17,6 +16,7 @@ export function Button({
     gradient: "bg-gradient-to-r from-[#FF8FB1] via-[#9D7BEA] to-[#60A5FA] text-white shadow-lg shadow-purple-200/40",
     soft: "bg-white text-[#1F2937] shadow-sm",
     glass: "border border-white/30 bg-white/20 text-white backdrop-blur-xl",
+    outline: "border border-gray-300 text-gray-700 bg-transparent hover:bg-gray-50",
   };
 
   return (
@@ -32,5 +32,4 @@ export function Button({
   );
 }
 
-// ✅ Export par défaut pour que les deux fonctionnent
 export default Button;
