@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Search, Gift } from "lucide-react";
 import HomeFeed from "@/components/home/HomeFeed";
 import { cn } from "@/lib/utils";
@@ -17,13 +18,16 @@ export default function HomePage() {
         {/* Ligne du haut (Logo + Search + Gift) */}
         <div className="flex items-center justify-between mb-5 pointer-events-auto">
           
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg moshi-gradient flex items-center justify-center text-white font-extrabold text-lg shadow-sm">
-              M
-            </div>
-            <span className="text-white font-bold text-2xl tracking-tight drop-shadow-md">
-              moshi
-            </span>
+          {/* TON VRAI LOGO */}
+          <div className="flex items-center">
+            <Image
+              src="/brand/moshi-logo.jpg"
+              alt="Moshi"
+              width={120}
+              height={40}
+              className="h-10 w-auto object-contain"
+              priority
+            />
           </div>
           
           <div className="flex items-center gap-3">
@@ -37,7 +41,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Onglets (Communauté / Suivis / Pour toi) */}
+        {/* Onglets */}
         <div className="flex items-center justify-center gap-8 pointer-events-auto">
           {["Communauté", "Suivis", "Pour toi"].map((tab) => (
             <button
@@ -57,7 +61,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* LE FEED (Il n'y a plus de bouton Live ici) */}
+      {/* LE FEED */}
       <div className="h-full">
         <HomeFeed />
       </div>
