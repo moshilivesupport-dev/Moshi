@@ -4,11 +4,13 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Heart, MessageCircle, Share2, Play, Music, Volume2, VolumeX, Bookmark, Radio, MoreVertical, Trash2 } from "lucide-react";
-import { cn, formatNumber } from "@/lib/utils";
+import { Heart, MessageCircle, Share2, Play, Music, Volume2, VolumeX, ShoppingBag, Radio, MoreVertical, Trash2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { LiveKitRoom, VideoConference, RoomAudioRenderer } from "@livekit/components-react";
 import "@livekit/components-styles";
 import CommentsSheet from "@/components/video/CommentsSheet";
+import Avatar from "@/components/ui/Avatar";
+import Button from "@/components/ui/Button";
 
 export type FeedItem = {
   id: string;
@@ -27,6 +29,13 @@ export type FeedItem = {
     avatar_url: string | null;
     full_name: string | null;
   } | null;
+  product?: {
+    id: string;
+    title: string;
+    price: number;
+    currency: string | null;
+    image_url: string | null;
+  } | null;
 };
 
 export default function HomeFeed() {
@@ -44,7 +53,7 @@ export default function HomeFeed() {
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [commentsOpenVideoId, setCommentsOpenVideoId] = useState<string | null>(null);
   const [liveTokens, setLiveTokens] = useState<Record<string, string>>({});
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null); // ✅ État pour le menu
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     const getUser = async () => {
@@ -66,12 +75,34 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
+    // 1. Vidéos (sans jointure)
     const { data: videosData, error: videosError } = await supabase
       .from("videos")
-      .select(`id, url, caption, title, like_count, comment_count, view_count, user_id, created_at, profiles:user_id (username, avatar_url, full_name)`)
+      .select(`id, url, caption, title, like_count, comment_count, view_count, user_id, created_at, product_id`)
       .limit(20);
 
     if (videosError) console.error("Erreur chargement vidéos:", videosError);
+
+    // 2. Profils séparément
+    const userIds = [...new Set((videosData || []).map(v => v.user_id))];
+    const { data: profilesData } = await supabase
+      .from("profiles")
+      .select("id, username, avatar_url, full_name")
+      .in("id", userIds);
+
+    const profilesMap: Record<string, any> = {};
+    (profilesData || []).forEach(p => { profilesMap[p.id] = p; });
+
+    // 3. Produits liés (si product_id existe)
+    const productIds = (videosData || []).map(v => v.product_id).filter(Boolean);
+    let productsMap: Record<string, any> = {};
+    if (productIds.length > 0) {
+      const { data: productsData } = await supabase
+        .from("products")
+        .select("id, title, price, currency, image_url")
+        .in("id", productIds);
+      (productsData || []).forEach(p => { productsMap[p.id] = p; });
+    }
 
     const videos: FeedItem[] = (videosData || []).map((v: any) => ({
       id: v.id,
@@ -84,16 +115,16 @@ export default function HomeFeed() {
       comment_count: v.comment_count || 0,
       created_at: v.created_at,
       user_id: v.user_id,
-      profiles: Array.isArray(v.profiles) ? v.profiles[0] : v.profiles,
+      profiles: profilesMap[v.user_id] || null,
+      product: v.product_id ? productsMap[v.product_id] : null,
     }));
 
-    const { data: livesData, error: livesError } = await supabase
+    // 4. Lives
+    const { data: livesData } = await supabase
       .from("live_sessions")
-      .select(`id, title, room_name, host_id, created_at, profiles:host_id (username, avatar_url, full_name)`)
+      .select(`id, title, room_name, host_id, created_at`)
       .eq("status", "live")
       .limit(10);
-
-    if (livesError) console.error("Erreur chargement lives:", livesError);
 
     const lives: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
@@ -105,22 +136,19 @@ export default function HomeFeed() {
       view_count: 0,
       like_count: 0,
       comment_count: 0,
-      profiles: Array.isArray(l.profiles) ? l.profiles[0] : l.profiles,
+      profiles: profilesMap[l.host_id] || null,
+      product: null,
     }));
 
-    const all = shuffleArray([...videos, ...lives]);
-    setItems(all);
+    // 5. Fusionner et mélanger
+    setItems(shuffleArray([...videos, ...lives]));
 
+    // 6. Likes
     if (currentUser) {
       const { data: likesData } = await supabase.from("video_likes").select("video_id").eq("user_id", currentUser.id);
       const likedMap: Record<string, boolean> = {};
       likesData?.forEach((l: any) => { likedMap[l.video_id] = true; });
       setLiked(likedMap);
-
-      const { data: bookmarksData } = await supabase.from("video_bookmarks").select("video_id").eq("user_id", currentUser.id);
-      const savedMap: Record<string, boolean> = {};
-      bookmarksData?.forEach((b: any) => { savedMap[b.video_id] = true; });
-      setSaved(savedMap);
     }
 
     setLoading(false);
@@ -156,9 +184,7 @@ export default function HomeFeed() {
       })
         .then(res => res.json())
         .then(data => {
-          if (data.token) {
-            setLiveTokens(prev => ({ ...prev, [activeItem.id]: data.token }));
-          }
+          if (data.token) setLiveTokens(prev => ({ ...prev, [activeItem.id]: data.token }));
         })
         .catch(err => console.error("Erreur token live:", err));
     }
@@ -175,218 +201,192 @@ export default function HomeFeed() {
       } else {
         await supabase.from("video_likes").insert({ video_id: videoId, user_id: currentUser.id });
       }
-    } catch (err) { console.error("Erreur like:", err); }
+    } catch (err) { console.error(err); }
   }, [currentUser, liked, supabase, router]);
 
-  const toggleSave = useCallback(async (videoId: string) => {
-    if (!currentUser) { router.push("/auth/login"); return; }
-    const isCurrentlySaved = saved[videoId];
-    setSaved((prev) => ({ ...prev, [videoId]: !isCurrentlySaved }));
-    try {
-      if (isCurrentlySaved) {
-        await supabase.from("video_bookmarks").delete().eq("video_id", videoId).eq("user_id", currentUser.id);
-      } else {
-        await supabase.from("video_bookmarks").insert({ video_id: videoId, user_id: currentUser.id });
-      }
-    } catch (err) { console.error("Erreur bookmark:", err); }
-  }, [currentUser, saved, supabase, router]);
-
-  const handleShare = useCallback(async (itemId: string, itemType: string, itemName: string) => {
-    const shareUrl = `${window.location.origin}/${itemType === 'live' ? 'live' : 'videos'}/${itemId}`;
-    const shareData = { title: `${itemType === 'live' ? 'Live' : 'Vidéo'} de @${itemName}`, url: shareUrl };
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try { await navigator.share(shareData); } catch {}
+  const handleShare = async (itemId: string, type: string, name: string) => {
+    const shareUrl = `${window.location.origin}/${type === 'live' ? 'live' : 'videos'}/${itemId}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: `Regarde sur Moshi`, url: shareUrl }); } catch {}
     } else {
-      try { await navigator.clipboard.writeText(shareUrl); alert("Lien copié !"); } catch {}
+      await navigator.clipboard.writeText(shareUrl);
+      alert("Lien copié !");
     }
-  }, []);
+  };
 
-  // ✅ Supprimer une vidéo
   const handleDeleteVideo = async (videoId: string) => {
-    if (!confirm("Supprimer cette vidéo définitivement ?")) return;
-
+    if (!confirm("Supprimer cette vidéo ?")) return;
     try {
       const video = items.find(v => v.id === videoId);
       if (!video) return;
-
-      // Supprimer de la base de données
-      const { error: dbError } = await supabase.from("videos").delete().eq("id", videoId);
-      if (dbError) throw dbError;
-
-      // Supprimer du storage
+      await supabase.from("videos").delete().eq("id", videoId);
       if (video.url) {
         const urlParts = video.url.split("/");
         const fileName = urlParts[urlParts.length - 1];
         await supabase.storage.from("videos").remove([`${video.user_id}/${fileName}`]);
       }
-
-      // Retirer de la liste locale
       setItems(items.filter(v => v.id !== videoId));
       setMenuOpenId(null);
-    } catch (err) {
-      alert("Erreur lors de la suppression");
-    }
+    } catch (err) { alert("Erreur"); }
   };
 
   if (loading) {
-    return <div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" /></div>;
+    return <div className="h-[100dvh] bg-white flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" /></div>;
   }
 
   if (!items.length) {
     return (
-      <div className="h-[100dvh] bg-black flex flex-col items-center justify-center gap-3 px-6 text-center">
-        <Play className="w-10 h-10 text-neutral-600" />
-        <p className="text-neutral-400">Aucun contenu pour le moment</p>
-        <Link href="/create" className="text-red-500 font-semibold text-sm">Publier la première</Link>
+      <div className="h-[100dvh] bg-white flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-[#FF8FB1] to-[#60A5FA] flex items-center justify-center">
+          <Play className="w-10 h-10 text-white fill-white" />
+        </div>
+        <p className="text-gray-500 font-semibold">Aucune vidéo pour le moment</p>
+        <Button variant="gradient" onClick={() => router.push("/create")}>Publier la première</Button>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide relative">
+    <div ref={containerRef} className="moshi-feed">
       {items.map((item, index) => {
         const isActive = index === active;
         const author = item.profiles;
         const name = author?.username || author?.full_name || "user";
         const isOwner = currentUser?.id === item.user_id;
 
+        // --- LIVE ---
         if (item.type === "live") {
           const liveToken = liveTokens[item.id];
           return (
-            <section key={item.id} data-index={index} className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black">
+            <section key={item.id} data-index={index} className="moshi-video relative bg-gray-900 flex items-center justify-center">
               {liveToken ? (
-                <LiveKitRoom
-                  token={liveToken}
-                  serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
-                  connect={true}
-                  video={false}
-                  audio={false}
-                  className="absolute inset-0"
-                >
+                <LiveKitRoom token={liveToken} serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL} connect={true} video={false} audio={false} className="absolute inset-0">
                   <VideoConference />
                   <RoomAudioRenderer />
                 </LiveKitRoom>
               ) : (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <p className="text-white text-sm">Chargement du live...</p>
-                </div>
+                <div className="w-10 h-10 border-2 border-white border-t-transparent rounded-full animate-spin" />
               )}
 
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
-
-              <div className="absolute top-20 left-4 z-30 flex items-center gap-2">
-                <div className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
-                  <Radio className="w-2.5 h-2.5" /> LIVE
+              <div className="absolute top-24 left-4 z-30">
+                <div className="flex items-center gap-2 rounded-full bg-white/20 backdrop-blur-xl px-3 py-1.5 border border-white/30 text-white">
+                  <span className="w-2 h-2 rounded-full bg-[#FF8FB1] animate-pulse" />
+                  <Radio size={14} />
+                  <span className="text-xs font-bold">LIVE</span>
                 </div>
               </div>
 
-              <div className="absolute right-2 bottom-24 z-20 flex flex-col items-center gap-4">
-                <Link href={`/profile/${item.user_id}`} className="relative block w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
-                  {author?.avatar_url ? <img src={author.avatar_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-sm font-bold">{name.charAt(0).toUpperCase()}</div>}
-                </Link>
-                <button onClick={() => handleShare(item.id, 'live', name)} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
-                  <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
-                  <span className="text-xs text-white font-semibold drop-shadow-md">Partager</span>
-                </button>
-              </div>
-
-              <div className="absolute left-4 right-24 bottom-20 z-20 space-y-2">
-                <Link href={`/profile/${item.user_id}`} className="font-bold text-white text-base hover:underline drop-shadow-md inline-block">@{name}</Link>
-                <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">{item.title}</p>
-                <Link href={`/live/${item.id}`} className="inline-block mt-2 bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-full">
-                  Rejoindre le live
+              <div className="absolute bottom-32 left-4 right-4 z-20 space-y-2">
+                <p className="text-white font-bold text-lg">@{name}</p>
+                <p className="text-white/90 text-sm line-clamp-2">{item.title}</p>
+                <Link href={`/live/${item.id}`} className="inline-block mt-2">
+                  <Button variant="gradient">Rejoindre le live</Button>
                 </Link>
               </div>
             </section>
           );
         }
 
-        const displayText = item.caption || item.title || "";
+        // --- VIDÉO ---
         return (
-          <section key={item.id} data-index={index} className="relative h-[100dvh] w-full snap-start snap-always flex items-center justify-center bg-black">
+          <section key={item.id} data-index={index} className="moshi-video relative bg-black">
             {item.url && (
               <video
                 ref={(el) => { videoRefs.current[item.id] = el; }}
                 src={item.url}
                 className="absolute inset-0 w-full h-full object-cover"
-                playsInline
-                loop
-                muted={muted}
-                autoPlay={isActive}
+                playsInline loop muted={muted} autoPlay={isActive}
                 onClick={(e) => {
                   const v = e.currentTarget;
-                  if (v.paused) v.play();
-                  else v.pause();
+                  if (v.paused) v.play(); else v.pause();
                 }}
               />
             )}
 
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
 
-            <button onClick={() => setMuted(!muted)} className="absolute top-20 right-4 z-30 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center">
-              {muted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
-            </button>
+            {/* Header flottant */}
+            <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between">
+              <span className="text-white text-xl font-extrabold tracking-tight">moshi</span>
+              <button onClick={() => setMuted(!muted)} className="moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white">
+                {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </button>
+            </div>
 
-            {/* ✅ BOUTON OPTIONS (visible seulement pour le propriétaire) */}
+            {/* Menu options (si propriétaire) */}
             {isOwner && (
-              <div className="absolute top-20 right-16 z-40">
-                <button
-                  onClick={() => setMenuOpenId(menuOpenId === item.id ? null : item.id)}
-                  className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center"
-                >
-                  <MoreVertical className="w-5 h-5 text-white" />
+              <div className="absolute top-20 right-4 z-40">
+                <button onClick={() => setMenuOpenId(menuOpenId === item.id ? null : item.id)} className="moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white">
+                  <MoreVertical size={18} />
                 </button>
-
                 {menuOpenId === item.id && (
-                  <div className="absolute top-12 right-0 bg-neutral-900 rounded-xl shadow-lg overflow-hidden border border-neutral-700 min-w-[150px]">
-                    <button
-                      onClick={() => handleDeleteVideo(item.id)}
-                      className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-neutral-800 w-full text-left text-sm font-semibold"
-                    >
-                      <Trash2 className="w-4 h-4" /> Supprimer
+                  <div className="absolute top-12 right-0 bg-white rounded-2xl shadow-xl overflow-hidden min-w-[140px]">
+                    <button onClick={() => handleDeleteVideo(item.id)} className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-red-50 w-full text-left text-sm font-semibold">
+                      <Trash2 size={16} /> Supprimer
                     </button>
                   </div>
                 )}
               </div>
             )}
 
-            <div className="absolute right-2 bottom-24 z-20 flex flex-col items-center gap-4">
-              <div className="relative mb-2">
-                <Link href={`/profile/${item.user_id}`} className="relative block w-12 h-12 rounded-full border-2 border-white overflow-hidden bg-neutral-800">
-                  {author?.avatar_url ? <img src={author.avatar_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-sm font-bold">{name.charAt(0).toUpperCase()}</div>}
-                </Link>
-              </div>
-
-              <button type="button" onClick={() => toggleLike(item.id)} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
-                <Heart className={cn("w-9 h-9 transition-all drop-shadow-lg", liked[item.id] ? "fill-red-500 text-red-500 scale-110" : "text-white")} />
-                <span className="text-xs text-white font-semibold drop-shadow-md">{formatNumber(item.like_count || 0)}</span>
+            {/* Actions à droite */}
+            <div className="absolute right-3 bottom-40 z-20 flex flex-col items-center gap-4">
+              <Avatar src={author?.avatar_url || undefined} name={name} size={48} />
+              
+              <button onClick={() => toggleLike(item.id)} className="flex flex-col items-center gap-1">
+                <motion.div whileTap={{ scale: 0.8 }} className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center">
+                  <Heart size={24} className={liked[item.id] ? "fill-[#FF8FB1] text-[#FF8FB1]" : "text-white"} />
+                </motion.div>
+                <span className="text-xs font-semibold text-white">{item.like_count}</span>
               </button>
 
-              <button type="button" onClick={() => setCommentsOpenVideoId(item.id)} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
-                <MessageCircle className="w-9 h-9 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">{formatNumber(item.comment_count || 0)}</span>
+              <button onClick={() => setCommentsOpenVideoId(item.id)} className="flex flex-col items-center gap-1">
+                <div className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center">
+                  <MessageCircle size={24} className="text-white" />
+                </div>
+                <span className="text-xs font-semibold text-white">{item.comment_count}</span>
               </button>
 
-              <button type="button" onClick={() => toggleSave(item.id)} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
-                <Bookmark className={cn("w-9 h-9 transition-all drop-shadow-lg", saved[item.id] ? "fill-white text-white" : "text-white")} />
-                <span className="text-xs text-white font-semibold drop-shadow-md">Enregistrer</span>
-              </button>
-
-              <button type="button" onClick={() => handleShare(item.id, 'video', name)} className="flex flex-col items-center gap-0.5 active:scale-90 transition">
-                <Share2 className="w-8 h-8 text-white drop-shadow-lg" />
-                <span className="text-xs text-white font-semibold drop-shadow-md">Partager</span>
+              <button onClick={() => handleShare(item.id, 'video', name)} className="flex flex-col items-center gap-1">
+                <div className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center">
+                  <Share2 size={22} className="text-white" />
+                </div>
+                <span className="text-xs font-semibold text-white">Partager</span>
               </button>
             </div>
 
-            <div className="absolute left-4 right-24 bottom-20 z-20 space-y-2">
-              <Link href={`/profile/${item.user_id}`} className="font-bold text-white text-base hover:underline drop-shadow-md inline-block">@{name}</Link>
-              {displayText && <p className="text-sm text-white/90 line-clamp-2 drop-shadow-md">{displayText}</p>}
+            {/* Infos en bas */}
+            <div className="absolute left-4 right-20 bottom-36 z-20 space-y-2">
+              <p className="text-white font-bold text-base">@{name}</p>
+              {item.caption && <p className="text-white/90 text-sm line-clamp-2">{item.caption}</p>}
               <div className="flex items-center gap-2">
-                <Music className="w-3.5 h-3.5 text-white" />
-                <p className="text-xs text-white/80 truncate max-w-[200px]">Son original - {name}</p>
+                <Music size={12} className="text-white" />
+                <p className="text-xs text-white/80">Son original - {name}</p>
               </div>
             </div>
+
+            {/* Carte Produit (Si lié) */}
+            {item.product && (
+              <div className="absolute bottom-[72px] left-3 right-3 z-30">
+                <div className="bg-white rounded-2xl p-2.5 flex items-center gap-3 shadow-xl">
+                  <div className="w-12 h-12 rounded-xl bg-gray-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                    {item.product.image_url ? (
+                      <img src={item.product.image_url} alt={item.product.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <ShoppingBag className="w-6 h-6 text-[#9D7BEA]" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-gray-500 font-medium">Produit présenté</p>
+                    <p className="text-sm font-bold text-gray-900 truncate">{item.product.title}</p>
+                    <p className="text-sm font-extrabold text-[#9D7BEA]">{item.product.price} {item.product.currency}</p>
+                  </div>
+                  <Link href={`/shop/${item.product.id}`}>
+                    <Button variant="gradient" className="px-4 py-2 text-xs">Acheter</Button>
+                  </Link>
+                </div>
+              </div>
+            )}
           </section>
         );
       })}
