@@ -4,18 +4,19 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { Mail, X, Loader2, ArrowRight, Eye, EyeOff, Check, User, Phone, Calendar, Globe, Users } from "lucide-react";
+import { Mail, X, Loader2, ArrowRight, Eye, EyeOff, Check, User, Phone, Calendar, Globe, Users, ShoppingBag, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [step, setStep] = useState(1); // 1: Email/Pseudo, 2: Infos, 3: Mot de passe
+  const [step, setStep] = useState(1); // 1: Rôle, 2: Email/Pseudo, 3: Infos, 4: Mot de passe
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Données du formulaire
+  // Données
+  const [role, setRole] = useState<"acheteur" | "vendeur" | "">("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -31,43 +32,24 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
 
-  // --- VERIFICATION DU NOM D'UTILISATEUR ---
+  // Vérif Username
   useEffect(() => {
-    if (username.length < 3) {
-      setUsernameStatus("idle");
-      return;
-    }
+    if (username.length < 3) { setUsernameStatus("idle"); return; }
     setUsernameStatus("checking");
     const timer = setTimeout(async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("username", username)
-        .maybeSingle();
-      
-      if (data) setUsernameStatus("taken");
-      else setUsernameStatus("available");
-    }, 500); // Anti-rebond (500ms)
+      const { data } = await supabase.from("profiles").select("username").eq("username", username).maybeSingle();
+      if (data) setUsernameStatus("taken"); else setUsernameStatus("available");
+    }, 500);
     return () => clearTimeout(timer);
   }, [username, supabase]);
 
-  // --- VALIDATION DU MOT DE PASSE ---
-  const isPasswordStrong = 
-    password.length >= 8 &&
-    /[A-Z]/.test(password) &&
-    /[0-9]/.test(password) &&
-    /[^A-Za-z0-9]/.test(password);
+  // Vérif Mot de passe
+  const isPasswordStrong = password.length >= 8 && /[A-Z]/.test(password) && /[0-9]/.test(password) && /[^A-Za-z0-9]/.test(password);
 
-  // --- SOUMISSION FINALE ---
+  // Soumission
   const handleSignup = async () => {
-    if (password !== confirmPassword) {
-      setError("Les mots de passe ne correspondent pas.");
-      return;
-    }
-    if (!isPasswordStrong) {
-      setError("Le mot de passe n'est pas assez fort.");
-      return;
-    }
+    if (password !== confirmPassword) { setError("Les mots de passe ne correspondent pas."); return; }
+    if (!isPasswordStrong) { setError("Le mot de passe n'est pas assez fort."); return; }
 
     setLoading(true);
     setError(null);
@@ -86,18 +68,17 @@ export default function LoginPage() {
             birth_date: birthDate,
             gender,
             country,
+            role, // <--- On enregistre le rôle ici
           },
         },
       });
 
       if (error) throw error;
-      
       alert("Compte créé ! Vérifie tes emails pour confirmer ton adresse.");
       router.push("/");
       router.refresh();
-
     } catch (err: any) {
-      setError(err.message || "Une erreur est survenue lors de l'inscription.");
+      setError(err.message || "Une erreur est survenue.");
     } finally {
       setLoading(false);
     }
@@ -115,8 +96,8 @@ export default function LoginPage() {
           {step > 1 ? <ArrowRight className="rotate-180" size={20} /> : <X size={20} />}
         </button>
         <div className="flex gap-1">
-          {[1, 2, 3].map((s) => (
-            <div key={s} className={cn("w-2 h-2 rounded-full", step >= s ? "bg-moshi-purple" : "bg-gray-300")} />
+          {[1, 2, 3, 4].map((s) => (
+            <div key={s} className={cn("w-2 h-2 rounded-full transition-colors", step >= s ? "bg-moshi-purple" : "bg-gray-300")} />
           ))}
         </div>
       </div>
@@ -130,22 +111,81 @@ export default function LoginPage() {
           </div>
         )}
 
-        <h1 className="text-2xl font-extrabold text-moshi-text text-center mb-6">
-          {step === 1 && "Créer ton compte"}
-          {step === 2 && "Faisons connaissance"}
-          {step === 3 && "Sécurise ton compte"}
+        <h1 className="text-2xl font-extrabold text-moshi-text text-center mb-2">
+          {step === 1 && "Rejoins Moshi"}
+          {step === 2 && "Créer ton compte"}
+          {step === 3 && "Faisons connaissance"}
+          {step === 4 && "Sécurise ton compte"}
         </h1>
+        <p className="text-sm text-gray-500 text-center mb-6 max-w-xs">
+          {step === 1 && "Choisis comment tu veux utiliser Moshi"}
+          {step === 2 && "Un email et un nom d'utilisateur unique"}
+          {step === 3 && "Quelques infos pour personnaliser ton profil"}
+          {step === 4 && "Un mot de passe fort pour protéger ton compte"}
+        </p>
 
-        {/* -------------------- ETAPE 1 : EMAIL + USERNAME -------------------- */}
+        {/* -------------------- ETAPE 1 : CHOIX DU ROLE -------------------- */}
         {step === 1 && (
+          <div className="w-full max-w-sm space-y-4">
+            
+            {/* ACHETEUR */}
+            <button
+              onClick={() => setRole("acheteur")}
+              className={cn(
+                "w-full p-5 rounded-2xl border-2 text-left transition-all",
+                role === "acheteur" ? "border-moshi-purple bg-purple-50" : "border-gray-200 bg-white"
+              )}
+            >
+              <div className="flex items-center gap-4">
+                <div className={cn("w-12 h-12 rounded-full flex items-center justify-center", role === "acheteur" ? "moshi-gradient text-white" : "bg-gray-100 text-gray-500")}>
+                  <ShoppingBag size={22} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-moshi-text">Je suis Acheteur</h3>
+                  <p className="text-xs text-gray-500 mt-1">Découvrir des produits et faire du shopping en live</p>
+                </div>
+                {role === "acheteur" && <Check className="w-5 h-5 text-moshi-purple" />}
+              </div>
+            </button>
+
+            {/* VENDEUR */}
+            <button
+              onClick={() => setRole("vendeur")}
+              className={cn(
+                "w-full p-5 rounded-2xl border-2 text-left transition-all",
+                role === "vendeur" ? "border-moshi-purple bg-purple-50" : "border-gray-200 bg-white"
+              )}
+            >
+              <div className="flex items-center gap-4">
+                <div className={cn("w-12 h-12 rounded-full flex items-center justify-center", role === "vendeur" ? "moshi-gradient text-white" : "bg-gray-100 text-gray-500")}>
+                  <Store size={22} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-moshi-text">Je suis Vendeur</h3>
+                  <p className="text-xs text-gray-500 mt-1">Vendre mes produits et lancer des lives shopping</p>
+                </div>
+                {role === "vendeur" && <Check className="w-5 h-5 text-moshi-purple" />}
+              </div>
+            </button>
+
+            <button
+              onClick={() => setStep(2)}
+              disabled={!role}
+              className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg shadow-purple-200/50 active:scale-95 transition disabled:opacity-50 mt-4"
+            >
+              Continuer
+            </button>
+
+          </div>
+        )}
+
+        {/* -------------------- ETAPE 2 : EMAIL + USERNAME -------------------- */}
+        {step === 2 && (
           <div className="w-full max-w-sm space-y-4">
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-                type="email"
-                placeholder="Ton email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="email" placeholder="Ton email" value={email} onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
               />
             </div>
@@ -153,10 +193,7 @@ export default function LoginPage() {
             <div className="relative">
               <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-                type="text"
-                placeholder="Nom d'utilisateur (ex: moshishop)"
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                type="text" placeholder="Nom d'utilisateur (ex: moshishop)" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
                 className={cn(
                   "w-full pl-12 pr-12 py-4 rounded-2xl bg-white border outline-none text-sm font-medium",
                   usernameStatus === "available" ? "border-green-400 focus:border-green-500" : 
@@ -173,7 +210,7 @@ export default function LoginPage() {
             {usernameStatus === "available" && <p className="text-green-500 text-xs ml-2">Ce nom d'utilisateur est disponible !</p>}
 
             <button
-              onClick={() => setStep(2)}
+              onClick={() => setStep(3)}
               disabled={!email || usernameStatus !== "available"}
               className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg shadow-purple-200/50 active:scale-95 transition disabled:opacity-50 mt-4"
             >
@@ -182,34 +219,26 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* -------------------- ETAPE 2 : INFOS PERSONNELLES -------------------- */}
-        {step === 2 && (
+        {/* -------------------- ETAPE 3 : INFOS PERSONNELLES -------------------- */}
+        {step === 3 && (
           <div className="w-full max-w-sm space-y-3">
             <div className="flex gap-3">
-              <input
-                type="text" placeholder="Prénom" value={firstName} onChange={(e) => setFirstName(e.target.value)}
-                className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
-              />
-              <input
-                type="text" placeholder="Nom" value={lastName} onChange={(e) => setLastName(e.target.value)}
-                className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
-              />
+              <input type="text" placeholder="Prénom" value={firstName} onChange={(e) => setFirstName(e.target.value)}
+                className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium" />
+              <input type="text" placeholder="Nom" value={lastName} onChange={(e) => setLastName(e.target.value)}
+                className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium" />
             </div>
 
             <div className="relative">
               <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium text-gray-500"
-              />
+              <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium text-gray-500" />
             </div>
 
             <div className="relative">
               <Users className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <select
-                value={gender} onChange={(e) => setGender(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium text-gray-600 appearance-none"
-              >
+              <select value={gender} onChange={(e) => setGender(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium text-gray-600 appearance-none">
                 <option value="" disabled>Sexe</option>
                 <option value="Femme">Femme</option>
                 <option value="Homme">Homme</option>
@@ -219,22 +248,18 @@ export default function LoginPage() {
 
             <div className="relative">
               <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text" placeholder="Pays" value={country} onChange={(e) => setCountry(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
-              />
+              <input type="text" placeholder="Pays" value={country} onChange={(e) => setCountry(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium" />
             </div>
 
             <div className="relative">
               <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="tel" placeholder="Numéro de téléphone (optionnel)" value={phone} onChange={(e) => setPhone(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
-              />
+              <input type="tel" placeholder="Numéro de téléphone (optionnel)" value={phone} onChange={(e) => setPhone(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium" />
             </div>
 
             <button
-              onClick={() => setStep(3)}
+              onClick={() => setStep(4)}
               disabled={!firstName || !lastName || !birthDate}
               className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg shadow-purple-200/50 active:scale-95 transition disabled:opacity-50 mt-4"
             >
@@ -243,37 +268,23 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* -------------------- ETAPE 3 : MOT DE PASSE -------------------- */}
-        {step === 3 && (
+        {/* -------------------- ETAPE 4 : MOT DE PASSE -------------------- */}
+        {step === 4 && (
           <div className="w-full max-w-sm space-y-4">
             
             <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Mot de passe"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
-              />
+              <input type={showPassword ? "text" : "password"} placeholder="Mot de passe" value={password} onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium" />
               <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
 
             <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Confirme le mot de passe"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className={cn(
-                  "w-full px-4 py-4 rounded-2xl bg-white border outline-none text-sm font-medium",
-                  confirmPassword && password !== confirmPassword ? "border-red-400" : "border-gray-200 focus:border-moshi-purple"
-                )}
-              />
+              <input type={showPassword ? "text" : "password"} placeholder="Confirme le mot de passe" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                className={cn("w-full px-4 py-4 rounded-2xl bg-white border outline-none text-sm font-medium", confirmPassword && password !== confirmPassword ? "border-red-400" : "border-gray-200 focus:border-moshi-purple")} />
             </div>
 
-            {/* Indicateur de force du mot de passe */}
             <div className="bg-gray-100 p-3 rounded-xl space-y-1">
               <p className="text-xs text-gray-500 font-semibold mb-1">Le mot de passe doit contenir :</p>
               <p className={cn("text-xs flex items-center gap-1", password.length >= 8 ? "text-green-500" : "text-gray-400")}>
