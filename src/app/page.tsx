@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Gift, Eye } from "lucide-react";
+import { Search, Gift } from "lucide-react";
 import HomeFeed from "@/components/home/HomeFeed";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +17,6 @@ export default function HomePage() {
         {/* Ligne du haut (Logo + Search + Gift) */}
         <div className="flex items-center justify-between mb-5 pointer-events-auto">
           
-          {/* LOGO MOSHI (Typographique, fiable à 100%) */}
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg moshi-gradient flex items-center justify-center text-white font-extrabold text-lg shadow-sm">
               M
@@ -38,7 +37,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Onglets */}
+        {/* Onglets (Communauté / Suivis / Pour toi) */}
         <div className="flex items-center justify-center gap-8 pointer-events-auto">
           {["Communauté", "Suivis", "Pour toi"].map((tab) => (
             <button
@@ -58,15 +57,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* BOUTON LIVE (à gauche, sous les onglets) */}
-      <div className="absolute top-36 left-4 z-40">
-        <button className="flex items-center gap-2 bg-white/20 backdrop-blur-md border border-white/20 rounded-full px-3 py-1.5 text-white text-xs font-semibold shadow-sm">
-          <span className="w-2 h-2 rounded-full bg-[#FF4B72] animate-pulse"></span>
-          Live 2.5k <Eye size={12} className="text-white/70" />
-        </button>
-      </div>
-
-      {/* LE FEED */}
+      {/* LE FEED (Il n'y a plus de bouton Live ici) */}
       <div className="h-full">
         <HomeFeed />
       </div>
