@@ -1,32 +1,26 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Heart, MessageCircle, Share2, Volume2, VolumeX, ShoppingBag, ChevronRight } from "lucide-react";
+import { Heart, MessageCircle, Share2, Volume2, VolumeX, Play, ShoppingBag, ChevronRight } from "lucide-react";
+import { motion } from "framer-motion";
+import { createClient } from "@/lib/supabase/client";
 
-// Données de démo calquées EXACTEMENT sur ta maquette
-const DEMO_VIDEOS = [
-  {
-    id: "1",
-    url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1000&auto=format&fit=crop", // Image de fond
-    caption: "Découvrez notre nouvelle collection ✨💜\n#Moshi #LiveShopping #Mode",
-    like_count: 125400,
-    comment_count: 3200,
-    share_count: 12100,
-    user_id: "demo-1",
-    profiles: {
-      username: "moshishop",
-      full_name: "Moshi Shop",
-      avatar_url: "https://i.pravatar.cc/150?img=5",
-    },
-    product: {
-      title: "Sac Élégance Premium",
-      price: "29 900 FCFA",
-      image: "https://images.unsplash.com/photo-1584916201218-f4242ceb4809?w=150&h=150&fit=crop&q=80",
-    },
-  },
-];
+interface FeedItem {
+  id: string;
+  url: string;
+  caption: string | null;
+  title?: string | null;
+  like_count: number;
+  comment_count: number;
+  user_id: string;
+  profiles: {
+    username: string | null;
+    avatar_url: string | null;
+    full_name: string | null;
+  } | null;
+}
 
 function formatNumber(num: number): string {
   if (num >= 1_000_000) return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
@@ -35,125 +29,224 @@ function formatNumber(num: number): string {
 }
 
 export default function HomeFeed() {
+  const supabase = createClient();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [videos] = useState<any[]>(DEMO_VIDEOS);
+
+  const [videos, setVideos] = useState<FeedItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
+    };
+    getUser();
+  }, [supabase]);
+
+  const loadVideos = useCallback(async () => {
+    setLoading(true);
+
+    // 1. Charger les vidéos depuis Supabase
+    const { data: videosData, error } = await supabase
+      .from("videos")
+      .select("id, url, caption, title, like_count, comment_count, user_id")
+      .eq("status", "published") // Assure-toi que tes vidéos ont le statut 'published' sur Supabase
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error("Erreur chargement vidéos:", error);
+      setLoading(false);
+      return;
+    }
+
+    // 2. Charger les profils
+    const userIds = [...new Set((videosData || []).map((v) => v.user_id))];
+    const { data: profilesData } = await supabase
+      .from("profiles")
+      .select("id, username, avatar_url, full_name")
+      .in("id", userIds);
+
+    const profilesMap: Record<string, any> = {};
+    (profilesData || []).forEach((p) => {
+      profilesMap[p.id] = p;
+    });
+
+    // 3. Fusionner
+    const items: FeedItem[] = (videosData || []).map((v: any) => ({
+      id: v.id,
+      url: v.url,
+      caption: v.caption,
+      title: v.title,
+      like_count: v.like_count || 0,
+      comment_count: v.comment_count || 0,
+      user_id: v.user_id,
+      profiles: profilesMap[v.user_id] || null,
+    }));
+
+    setVideos(items);
+
+    // 4. Charger les likes
+    if (currentUser) {
+      const { data: likesData } = await supabase
+        .from("video_likes")
+        .select("video_id")
+        .eq("user_id", currentUser.id);
+      const likedMap: Record<string, boolean> = {};
+      likesData?.forEach((l) => {
+        likedMap[l.video_id] = true;
+      });
+      setLiked(likedMap);
+    }
+
+    setLoading(false);
+  }, [supabase, currentUser]);
+
+  useEffect(() => {
+    loadVideos();
+  }, [loadVideos]);
+
+  if (loading) {
+    return (
+      <div className="h-[100dvh] bg-black flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (videos.length === 0) {
+    return (
+      <div className="h-[100dvh] bg-black flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <Play className="w-12 h-12 text-neutral-600" />
+        <p className="text-neutral-400 font-medium">Aucune vidéo pour le moment</p>
+        <Link href="/create">
+          <button className="moshi-gradient text-white font-bold px-6 py-3 rounded-full">
+            Publier la première
+          </button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="moshi-feed">
       {videos.map((video) => {
         const isLiked = liked[video.id];
         const author = video.profiles;
-        const authorName = author?.full_name || author?.username || "user";
+        const authorName = author?.username || author?.full_name || "user";
 
         return (
           <section key={video.id} className="moshi-video relative bg-black">
             
-            {/* 1. L'IMAGE DE FOND (au lieu de la vidéo) */}
-            <Image
+            {/* LA VIDÉO SUPABASE */}
+            <video
               src={video.url}
-              alt="Background"
-              fill
-              className="object-cover"
-              priority
-              unoptimized
+              className="absolute inset-0 w-full h-full object-cover"
+              autoPlay
+              loop
+              muted={muted}
+              playsInline
             />
 
-            {/* Overlay dégradé pour lire le texte */}
+            {/* Overlay sombre */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
-            {/* 2. BOUTON MUTE */}
+            {/* BOUTON MUTE (Taille réduite) */}
             <button
               onClick={() => setMuted(!muted)}
-              className="absolute bottom-[210px] right-3 z-30 w-11 h-11 rounded-full bg-white flex items-center justify-center shadow-lg"
+              className="absolute bottom-[160px] right-3 z-30 w-9 h-9 rounded-full bg-white flex items-center justify-center shadow-lg"
             >
-              {muted ? <VolumeX size={20} className="text-gray-900" /> : <Volume2 size={20} className="text-gray-900" />}
+              {muted ? <VolumeX size={16} className="text-gray-900" /> : <Volume2 size={16} className="text-gray-900" />}
             </button>
 
-            {/* 3. ACTIONS À DROITE */}
-            <div className="absolute right-3 bottom-[280px] z-20 flex flex-col items-center gap-5">
+            {/* ACTIONS À DROITE (Taille réduite) */}
+            <div className="absolute right-3 bottom-[220px] z-20 flex flex-col items-center gap-4">
               
-              {/* Avatar avec le bouton + */}
-              <div className="relative mb-2">
-                <div className="w-[52px] h-[52px] rounded-full overflow-hidden border-[3px] border-white bg-neutral-800 shadow-md">
-                  <Image src={author.avatar_url} alt={authorName} width={52} height={52} className="w-full h-full object-cover" unoptimized />
+              {/* Avatar */}
+              <div className="relative mb-1">
+                <div className="w-11 h-11 rounded-full overflow-hidden border-2 border-white bg-neutral-800 shadow-md">
+                  {author?.avatar_url ? (
+                    <Image src={author.avatar_url} alt={authorName} width={44} height={44} className="w-full h-full object-cover" unoptimized />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white font-bold text-sm">{authorName.charAt(0).toUpperCase()}</div>
+                  )}
                 </div>
-                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-[22px] h-[22px] bg-[#FF4B72] rounded-full flex items-center justify-center text-white text-sm font-bold border-2 border-black">
+                <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-5 bg-[#FF4B72] rounded-full flex items-center justify-center text-white text-xs font-bold border border-black">
                   +
                 </div>
               </div>
 
               {/* Like */}
-              <button onClick={() => setLiked(p => ({...p, [video.id]: !p[video.id]}))} className="flex flex-col items-center gap-1.5">
-                <div className="w-[50px] h-[50px] rounded-full bg-white flex items-center justify-center shadow-md">
-                  <Heart size={24} className={isLiked ? "fill-[#FF8FB1] text-[#FF8FB1]" : "text-gray-900"} />
+              <button onClick={() => setLiked(p => ({...p, [video.id]: !p[video.id]}))} className="flex flex-col items-center gap-1">
+                <div className="w-[42px] h-[42px] rounded-full bg-white flex items-center justify-center shadow-md">
+                  <Heart size={20} className={isLiked ? "fill-[#FF8FB1] text-[#FF8FB1]" : "text-gray-900"} />
                 </div>
-                <span className="text-[13px] font-semibold text-white drop-shadow-md">
+                <span className="text-[11px] font-semibold text-white drop-shadow-md">
                   {formatNumber(video.like_count + (isLiked ? 1 : 0))}
                 </span>
               </button>
 
               {/* Commentaires */}
-              <button className="flex flex-col items-center gap-1.5">
-                <div className="w-[50px] h-[50px] rounded-full bg-white flex items-center justify-center shadow-md">
-                  <MessageCircle size={24} className="text-gray-900" />
+              <button className="flex flex-col items-center gap-1">
+                <div className="w-[42px] h-[42px] rounded-full bg-white flex items-center justify-center shadow-md">
+                  <MessageCircle size={20} className="text-gray-900" />
                 </div>
-                <span className="text-[13px] font-semibold text-white drop-shadow-md">
+                <span className="text-[11px] font-semibold text-white drop-shadow-md">
                   {formatNumber(video.comment_count)}
                 </span>
               </button>
 
               {/* Partager */}
-              <button className="flex flex-col items-center gap-1.5">
-                <div className="w-[50px] h-[50px] rounded-full bg-white flex items-center justify-center shadow-md">
-                  <Share2 size={24} className="text-gray-900" />
+              <button className="flex flex-col items-center gap-1">
+                <div className="w-[42px] h-[42px] rounded-full bg-white flex items-center justify-center shadow-md">
+                  <Share2 size={20} className="text-gray-900" />
                 </div>
-                <span className="text-[13px] font-semibold text-white drop-shadow-md">
-                  {formatNumber(video.share_count)}
-                </span>
+                <span className="text-[11px] font-semibold text-white drop-shadow-md">Partager</span>
               </button>
             </div>
 
-            {/* 4. INFOS EN BAS À GAUCHE */}
-            <div className="absolute left-4 right-24 bottom-[220px] z-20 space-y-3">
+            {/* INFOS EN BAS À GAUCHE */}
+            <div className="absolute left-3 right-20 bottom-[170px] z-20 space-y-2">
               <div className="flex items-center gap-2">
-                <Link href={`/profile/${video.user_id}`} className="text-white font-bold text-[18px] drop-shadow-md">
-                  {authorName}
+                <Link href={`/profile/${video.user_id}`} className="text-white font-bold text-[15px] drop-shadow-md">
+                  @{authorName}
                 </Link>
-                <span className="w-[18px] h-[18px] bg-blue-500 rounded-full flex items-center justify-center text-[11px] text-white font-bold">✓</span>
+                <span className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-[10px] text-white font-bold">✓</span>
                 
-                {/* Bouton Suivre */}
-                <button className="ml-1 px-4 py-1.5 rounded-full border border-white/50 bg-black/20 backdrop-blur-sm text-white text-[13px] font-semibold">
+                <button className="ml-1 px-3 py-1 rounded-full border border-white/50 bg-black/20 backdrop-blur-sm text-white text-[11px] font-semibold">
                   Suivre
                 </button>
               </div>
               
-              <p className="text-white text-[15px] font-medium leading-snug drop-shadow-md whitespace-pre-line">
-                {video.caption}
-              </p>
+              {(video.caption || video.title) && (
+                <p className="text-white text-[13px] font-medium leading-snug drop-shadow-md whitespace-pre-line">
+                  {video.caption || video.title}
+                </p>
+              )}
             </div>
 
-            {/* 5. CARTE PRODUIT */}
-            {video.product && (
-              <div className="absolute bottom-[100px] left-3 right-3 z-30">
-                <div className="bg-white/95 backdrop-blur-md rounded-[24px] p-2.5 flex items-center gap-3 shadow-xl">
-                  <div className="w-[60px] h-[60px] rounded-2xl bg-gray-100 flex-shrink-0 overflow-hidden">
-                    <Image src={video.product.image} alt="Produit" width={60} height={60} className="w-full h-full object-cover" unoptimized />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[15px] font-bold text-gray-900 truncate">{video.product.title}</p>
-                    <p className="text-[16px] font-extrabold text-[#9D7BEA]">{video.product.price}</p>
-                  </div>
-                  
-                  {/* Bouton Acheter */}
-                  <button className="moshi-gradient text-white px-5 py-2.5 rounded-full text-[15px] font-bold flex items-center gap-2 shadow-md">
-                    <ShoppingBag size={18} /> Acheter
-                  </button>
-                  <ChevronRight size={22} className="text-gray-400 mr-1" />
+            {/* CARTE PRODUIT (Taille réduite, en attendant la vraie table produits) */}
+            <div className="absolute bottom-[85px] left-3 right-3 z-30">
+              <div className="bg-white/95 backdrop-blur-md rounded-[20px] p-2 flex items-center gap-3 shadow-xl">
+                <div className="w-12 h-12 rounded-xl bg-gray-200 flex-shrink-0 overflow-hidden">
+                   {/* Image générique en attendant la connexion produits */}
+                   <div className="w-full h-full flex items-center justify-center text-gray-400"><ShoppingBag size={20}/></div>
                 </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-bold text-gray-900 truncate">Produit Moshi</p>
+                  <p className="text-[14px] font-extrabold text-[#9D7BEA]">Voir la boutique</p>
+                </div>
+                <Link href="/shop">
+                  <button className="moshi-gradient text-white px-4 py-2 rounded-full text-[13px] font-bold flex items-center gap-1.5 shadow-md">
+                    <ShoppingBag size={14} /> Acheter
+                  </button>
+                </Link>
+                <ChevronRight size={18} className="text-gray-400 mr-1" />
               </div>
-            )}
+            </div>
           </section>
         );
       })}
