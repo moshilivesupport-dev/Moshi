@@ -20,7 +20,7 @@ export default function HomePage() {
           <div className="flex items-center gap-2">
             {/* Le logo (assure toi d'avoir moshi-logo.jpg ou logo.png dans public) */}
             <Image
-              src="/moshi-logo.jpg"
+              src="/brand/moshi-logo.jpg"
               alt="Moshi"
               width={100}
               height={40}
