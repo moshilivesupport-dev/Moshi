@@ -10,7 +10,7 @@ const links = [
   { href: "/", label: "Accueil", icon: Home },
   { href: "/shop", label: "Boutique", icon: ShoppingBag },
   { href: "/create", label: "Créer", icon: Plus, central: true },
-  { href: "/messages", label: "Messages", icon: MessageCircle },
+  { href: "/messages", label: "Messagerie", icon: MessageCircle, badge: 3 },
   { href: "/profile/me", label: "Profil", icon: User },
 ];
 
@@ -19,8 +19,8 @@ export default function BottomNav() {
   const router = useRouter();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-gray-100 pb-safe">
-      <div className="mx-auto flex h-[72px] max-w-lg items-center justify-around px-2">
+    <div className="fixed bottom-4 left-4 right-4 z-50 pb-safe">
+      <nav className="mx-auto flex h-[72px] max-w-lg items-center justify-around rounded-[28px] bg-white/95 backdrop-blur-xl shadow-lg px-2">
         {links.map((link) => {
           const Icon = link.icon;
           const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
@@ -31,15 +31,13 @@ export default function BottomNav() {
                 key={link.href}
                 onClick={() => router.push("/create")}
                 aria-label="Créer"
-                className="relative -top-5 flex flex-col items-center"
+                className="relative -top-3 flex flex-col items-center"
               >
                 <motion.div
                   whileTap={{ scale: 0.9 }}
-                  className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-[#FF8FB1] via-[#9D7BEA] to-[#60A5FA] p-[2px] shadow-lg shadow-purple-200/50"
+                  className="flex h-[60px] w-[60px] items-center justify-center rounded-2xl moshi-gradient shadow-lg shadow-purple-200/50"
                 >
-                  <div className="flex h-full w-full items-center justify-center rounded-full bg-white">
-                    <Plus className="h-7 w-7 text-[#9D7BEA]" strokeWidth={3} />
-                  </div>
+                  <Plus className="h-8 w-8 text-white" strokeWidth={2.5} />
                 </motion.div>
               </button>
             );
@@ -51,31 +49,32 @@ export default function BottomNav() {
               href={link.href}
               className="relative flex min-w-[60px] flex-col items-center justify-center gap-1 py-2"
             >
-              <Icon
-                className={cn(
-                  "h-6 w-6 transition-colors",
-                  isActive ? "text-[#9D7BEA]" : "text-gray-400"
+              <div className="relative">
+                <Icon
+                  className={cn(
+                    "h-[26px] w-[26px] transition-colors",
+                    isActive ? "text-[#9D7BEA]" : "text-gray-600"
+                  )}
+                  strokeWidth={isActive ? 2.5 : 2}
+                />
+                {link.badge && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#FF4B72] text-[9px] font-bold text-white">
+                    {link.badge}
+                  </span>
                 )}
-                strokeWidth={isActive ? 2.5 : 2}
-              />
+              </div>
               <span
                 className={cn(
                   "text-[10px] font-semibold transition-colors",
-                  isActive ? "text-[#9D7BEA]" : "text-gray-400"
+                  isActive ? "text-[#9D7BEA]" : "text-gray-600"
                 )}
               >
                 {link.label}
               </span>
-              {isActive && (
-                <motion.div
-                  layoutId="nav-indicator"
-                  className="absolute -bottom-1 h-1 w-1 rounded-full bg-[#9D7BEA]"
-                />
-              )}
             </Link>
           );
         })}
-      </div>
-    </nav>
+      </nav>
+    </div>
   );
 }
