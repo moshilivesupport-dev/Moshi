@@ -55,7 +55,8 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      // 1. Créer l'utilisateur dans Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -68,17 +69,39 @@ export default function LoginPage() {
             birth_date: birthDate,
             gender,
             country,
-            role, // <--- On enregistre le rôle ici
+            role,
           },
         },
       });
 
-      if (error) throw error;
-      alert("Compte créé ! Vérifie tes emails pour confirmer ton adresse.");
+      if (authError) throw authError;
+
+      // 2. Créer le profil manuellement dans la table profiles
+      if (authData.user) {
+        const { error: profileError } = await supabase.from("profiles").insert({
+          id: authData.user.id,
+          username: username,
+          full_name: `${firstName} ${lastName}`,
+          first_name: firstName,
+          last_name: lastName,
+          phone: phone,
+          birth_date: birthDate || null,
+          gender: gender,
+          country: country,
+          role: role,
+        });
+
+        if (profileError) {
+          throw new Error("Erreur profil : " + profileError.message);
+        }
+      }
+
+      alert("Compte créé avec succès !");
       router.push("/");
       router.refresh();
+
     } catch (err: any) {
-      setError(err.message || "Une erreur est survenue.");
+      setError(err.message || "Une erreur est survenue lors de l'inscription.");
     } finally {
       setLoading(false);
     }
@@ -246,10 +269,30 @@ export default function LoginPage() {
               </select>
             </div>
 
+            {/* MENU DÉROULANT POUR LE PAYS */}
             <div className="relative">
               <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input type="text" placeholder="Pays" value={country} onChange={(e) => setCountry(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium" />
+              <select 
+                value={country} 
+                onChange={(e) => setCountry(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium text-gray-600 appearance-none"
+              >
+                <option value="" disabled>Sélectionne ton pays</option>
+                <option value="TG">🇹🇬 Togo</option>
+                <option value="BJ">🇧🇯 Bénin</option>
+                <option value="CI">🇨🇮 Côte d'Ivoire</option>
+                <option value="SN">🇸🇳 Sénégal</option>
+                <option value="BF">🇧🇫 Burkina Faso</option>
+                <option value="ML">🇲🇱 Mali</option>
+                <option value="NE">🇳🇪 Niger</option>
+                <option value="GH">🇬🇭 Ghana</option>
+                <option value="NG">🇳🇬 Nigeria</option>
+                <option value="CM">🇨🇲 Cameroun</option>
+                <option value="FR">🇫🇷 France</option>
+                <option value="US">🇺🇸 États-Unis</option>
+                <option value="CA">🇨🇦 Canada</option>
+                <option value="OTHER">🌍 Autre</option>
+              </select>
             </div>
 
             <div className="relative">
