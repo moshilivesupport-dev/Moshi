@@ -1,61 +1,32 @@
-import { cn } from "@/lib/utils";
-import { ButtonHTMLAttributes, forwardRef } from "react";
+"use client";
+import { ButtonHTMLAttributes } from "react";
+import { motion } from "framer-motion";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?:
-    | "default"
-    | "primary"
-    | "outline"
-    | "ghost"
-    | "gold"
-    | "danger"
-    | "secondary";
-  size?: "sm" | "md" | "lg";
-  loading?: boolean;
+type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "gradient" | "soft" | "glass";
+};
+
+export default function Button({
+  variant = "soft",
+  className = "",
+  children,
+  ...props
+}: Props) {
+  const styles = {
+    gradient: "bg-gradient-to-r from-[#FF8FB1] via-[#9D7BEA] to-[#60A5FA] text-white shadow-lg shadow-purple-200/40",
+    soft: "bg-white text-[#1F2937] shadow-sm",
+    glass: "border border-white/30 bg-white/20 text-white backdrop-blur-xl",
+  };
+
+  return (
+    <motion.button
+      whileTap={{ scale: 0.96 }}
+      whileHover={{ scale: 1.02 }}
+      transition={{ duration: 0.18 }}
+      className={`inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition ${styles[variant]} ${className}`}
+      {...props}
+    >
+      {children}
+    </motion.button>
+  );
 }
-
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  (
-    {
-      className,
-      variant = "default",
-      size = "md",
-      loading = false,
-      disabled,
-      children,
-      ...props
-    },
-    ref
-  ) => {
-    return (
-      <button
-        ref={ref}
-        disabled={disabled || loading}
-        className={cn(
-          "inline-flex items-center justify-center rounded-full font-semibold transition active:scale-95 disabled:opacity-50 disabled:pointer-events-none",
-          (variant === "default" || variant === "primary") &&
-            "bg-red-500 text-white hover:bg-red-600",
-          variant === "outline" &&
-            "border border-neutral-600 bg-transparent text-white hover:bg-neutral-800",
-          variant === "ghost" && "bg-transparent text-white hover:bg-neutral-800",
-          variant === "gold" &&
-            "bg-gradient-to-r from-amber-400 to-yellow-500 text-black hover:from-amber-300 hover:to-yellow-400",
-          variant === "danger" && "bg-red-700 text-white hover:bg-red-800",
-          variant === "secondary" &&
-            "bg-neutral-800 text-white hover:bg-neutral-700",
-          size === "sm" && "px-3 py-1.5 text-xs",
-          size === "md" && "px-5 py-2.5 text-sm",
-          size === "lg" && "px-6 py-3 text-base",
-          className
-        )}
-        {...props}
-      >
-        {loading && (
-          <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current" />
-        )}
-        {children}
-      </button>
-    );
-  }
-);
-Button.displayName = "Button";
