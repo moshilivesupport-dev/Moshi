@@ -13,6 +13,7 @@ import {
   Heart,
   MoreVertical,
   Trash2,
+  Settings
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -23,6 +24,8 @@ interface ProfileData {
   avatar_url: string | null;
   bio: string | null;
   role: string | null;
+  first_name: string | null;
+  last_name: string | null;
 }
 
 interface Video {
@@ -60,7 +63,7 @@ export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps)
     const loadData = async () => {
       setLoading(true);
 
-      // 1. Charger les vidéos de cet utilisateur
+      // Charger les vidéos
       const { data: videosData } = await supabase
         .from("videos")
         .select("id, url, view_count, like_count, caption")
@@ -70,26 +73,21 @@ export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps)
 
       setVideos(videosData || []);
 
-      // 2. Calculer le total de likes
-      const totalLikes = (videosData || []).reduce(
-        (sum, v) => sum + (v.like_count || 0),
-        0
-      );
+      // Total likes
+      const totalLikes = (videosData || []).reduce((sum, v) => sum + (v.like_count || 0), 0);
 
-      // 3. Charger les followers (si la table existe)
+      // Followers (si table existe)
       try {
         const [{ count: followers }, { count: following }] = await Promise.all([
           supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", profile.id),
           supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", profile.id),
         ]);
-
         setStats({
           followers_count: followers || 0,
           following_count: following || 0,
           total_likes: totalLikes,
         });
-      } catch (err) {
-        // Si la table follows n'existe pas encore, on affiche 0
+      } catch {
         setStats({ followers_count: 0, following_count: 0, total_likes: totalLikes });
       }
 
@@ -99,25 +97,21 @@ export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps)
     loadData();
   }, [profile.id, supabase]);
 
-  const handleDeleteVideo = async (videoId: string, videoUrl: string) => {
+  const handleDeleteVideo = async (videoId: string) => {
     if (!confirm("Supprimer cette vidéo définitivement ?")) return;
-
     try {
-      // 1. Supprimer de la BDD
       const { error } = await supabase.from("videos").delete().eq("id", videoId);
       if (error) throw error;
-
-      // 2. Retirer de la liste locale
       setVideos(videos.filter((v) => v.id !== videoId));
       setMenuOpenId(null);
     } catch (err) {
       alert("Erreur lors de la suppression.");
-      console.error(err);
     }
   };
 
   const name = profile.full_name || profile.username || "Utilisateur";
   const handle = profile.username ? `@${profile.username}` : "";
+  const isVendeur = profile.role === "vendeur";
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg text-moshi-text pb-24">
@@ -139,12 +133,19 @@ export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps)
         </div>
       </header>
 
-      {/* INFOS PROFIL */}
+      {/* INFOS */}
       <div className="px-4 flex items-start justify-between mb-4 mt-2">
         <div className="flex-1">
-          <div className="flex items-center gap-1 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h1 className="text-2xl font-bold">{name}</h1>
             <span className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-[10px] text-white font-bold">✓</span>
+            
+            {/* Badge Vendeur */}
+            {isVendeur && (
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-[#FF8FB1] to-[#9D7BEA] text-white">
+                Vendeur
+              </span>
+            )}
           </div>
           <p className="text-sm text-moshi-text/60">{handle}</p>
         </div>
@@ -183,9 +184,7 @@ export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps)
 
       {/* BIO */}
       {profile.bio && (
-        <p className="px-4 text-sm whitespace-pre-wrap leading-snug mb-4">
-          {profile.bio}
-        </p>
+        <p className="px-4 text-sm whitespace-pre-wrap leading-snug mb-4">{profile.bio}</p>
       )}
 
       {/* BOUTON MODIFIER */}
@@ -197,23 +196,17 @@ export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps)
         </div>
       )}
 
-      {/* ONGLETS (Vidéos, Privé, Favoris, Likes) */}
+      {/* ONGLETS */}
       <div className="flex border-b border-gray-200">
         <button className="flex-1 py-3 flex justify-center border-b-2 border-moshi-purple">
           <Grid3X3 className="w-5 h-5 text-moshi-purple" />
         </button>
-        <button className="flex-1 py-3 flex justify-center text-gray-400">
-          <Lock className="w-5 h-5" />
-        </button>
-        <button className="flex-1 py-3 flex justify-center text-gray-400">
-          <Bookmark className="w-5 h-5" />
-        </button>
-        <button className="flex-1 py-3 flex justify-center text-gray-400">
-          <Heart className="w-5 h-5" />
-        </button>
+        <button className="flex-1 py-3 flex justify-center text-gray-400"><Lock className="w-5 h-5" /></button>
+        <button className="flex-1 py-3 flex justify-center text-gray-400"><Bookmark className="w-5 h-5" /></button>
+        <button className="flex-1 py-3 flex justify-center text-gray-400"><Heart className="w-5 h-5" /></button>
       </div>
 
-      {/* GRILLE DE VIDÉOS */}
+      {/* GRILLE VIDÉOS */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" />
@@ -235,39 +228,22 @@ export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps)
           {videos.map((video) => (
             <div key={video.id} className="relative aspect-[9/16] bg-gray-900 overflow-hidden rounded-lg">
               <Link href={`/videos/${video.id}`}>
-                <video
-                  src={`${video.url}#t=0.1`}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  className="w-full h-full object-cover"
-                />
+                <video src={`${video.url}#t=0.1`} muted playsInline preload="metadata" className="w-full h-full object-cover" />
               </Link>
-
-              {/* Vues */}
               <div className="absolute bottom-1 left-1 flex items-center gap-1 text-white text-xs font-semibold drop-shadow-md pointer-events-none">
-                <Play className="w-3 h-3 fill-white" />
-                {formatNumber(video.view_count || 0)}
+                <Play className="w-3 h-3 fill-white" />{formatNumber(video.view_count || 0)}
               </div>
 
-              {/* Menu Options */}
               {isOwnProfile && (
                 <div className="absolute top-1 right-1 z-20">
-                  <button
-                    onClick={() => setMenuOpenId(menuOpenId === video.id ? null : video.id)}
-                    className="w-7 h-7 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center text-white"
-                  >
+                  <button onClick={() => setMenuOpenId(menuOpenId === video.id ? null : video.id)} className="w-7 h-7 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center text-white">
                     <MoreVertical size={14} />
                   </button>
-
                   {menuOpenId === video.id && (
                     <>
                       <div className="fixed inset-0 z-30" onClick={() => setMenuOpenId(null)} />
                       <div className="absolute top-9 right-0 z-40 bg-white rounded-xl shadow-xl overflow-hidden min-w-[120px]">
-                        <button
-                          onClick={() => handleDeleteVideo(video.id, video.url)}
-                          className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-red-50 w-full text-left text-xs font-semibold"
-                        >
+                        <button onClick={() => handleDeleteVideo(video.id)} className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-red-50 w-full text-left text-xs font-semibold">
                           <Trash2 size={14} /> Supprimer
                         </button>
                       </div>
