@@ -92,9 +92,9 @@ export default function HomeFeed() {
     const profilesMap: Record<string, any> = {};
     (profilesData || []).forEach(p => { profilesMap[p.id] = p; });
 
-    // 3. Produits liés
+    // 3. Produits liés (✅ const au lieu de let)
     const productIds = (videosData || []).map(v => v.product_id).filter(Boolean);
-    let productsMap: Record<string, any> = {};
+    const productsMap: Record<string, any> = {};
     if (productIds.length > 0) {
       const { data: productsData } = await supabase
         .from("products")
