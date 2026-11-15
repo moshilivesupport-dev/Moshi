@@ -12,10 +12,10 @@ export default async function ProfilePage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // 1. Charger le profil
+  // On récupère TOUTES les infos du profil, y compris le rôle
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, username, full_name, avatar_url, bio, role")
+    .select("id, username, full_name, avatar_url, bio, role, first_name, last_name")
     .eq("id", id)
     .single();
 
@@ -23,7 +23,6 @@ export default async function ProfilePage({ params }: PageProps) {
     notFound();
   }
 
-  // 2. Vérifier si c'est notre propre profil
   const { data: { user } } = await supabase.auth.getUser();
   const isOwnProfile = user?.id === profile.id;
 
