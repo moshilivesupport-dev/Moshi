@@ -6,7 +6,8 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "gradient" | "soft" | "glass";
 };
 
-export default function Button({
+// ✅ On exporte la fonction nommée ET par défaut
+export function Button({
   variant = "soft",
   className = "",
   children,
@@ -30,3 +31,6 @@ export default function Button({
     </motion.button>
   );
 }
+
+// ✅ Export par défaut pour que les deux fonctionnent
+export default Button;
