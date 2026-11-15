@@ -7,11 +7,43 @@ import { Heart, MessageCircle, Share2, Music, Volume2, VolumeX, Play } from "luc
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 
+// 👇 METS true POUR VOIR LES VIDÉOS DE DÉMO, false POUR LIRE SUPABASE
+const USE_DEMO_DATA = true;
+
+const DEMO_VIDEOS = [
+  {
+    id: "1",
+    url: "https://cdn.pixabay.com/video/2023/10/22/185527-877680478_large.mp4",
+    caption: "Découvrez notre nouvelle collection ✨💜 #Moshi #Mode",
+    like_count: 125400,
+    comment_count: 3200,
+    user_id: "demo-1",
+    profiles: {
+      username: "moshishop",
+      full_name: "Moshi Shop",
+      avatar_url: "https://i.pravatar.cc/150?img=5",
+    },
+  },
+  {
+    id: "2",
+    url: "https://cdn.pixabay.com/video/2020/09/08/49662-458400481_large.mp4",
+    caption: "Nouveau drop 🔥 #Streetwear",
+    like_count: 89000,
+    comment_count: 1500,
+    user_id: "demo-2",
+    profiles: {
+      username: "urbanstyle",
+      full_name: "Urban Style",
+      avatar_url: "https://i.pravatar.cc/150?img=12",
+    },
+  },
+];
+
 interface FeedItem {
   id: string;
   url: string;
   caption: string | null;
-  title: string | null;
+  title?: string | null;
   like_count: number;
   comment_count: number;
   user_id: string;
@@ -32,13 +64,14 @@ export default function HomeFeed() {
   const supabase = createClient();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const [videos, setVideos] = useState<FeedItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [videos, setVideos] = useState<FeedItem[]>(USE_DEMO_DATA ? (DEMO_VIDEOS as any) : []);
+  const [loading, setLoading] = useState(!USE_DEMO_DATA);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
 
   useEffect(() => {
+    if (USE_DEMO_DATA) return;
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
@@ -47,9 +80,9 @@ export default function HomeFeed() {
   }, [supabase]);
 
   const loadVideos = useCallback(async () => {
+    if (USE_DEMO_DATA) return;
     setLoading(true);
 
-    // 1. Charger les vidéos
     const { data: videosData, error } = await supabase
       .from("videos")
       .select("id, url, caption, title, like_count, comment_count, user_id")
@@ -63,7 +96,6 @@ export default function HomeFeed() {
       return;
     }
 
-    // 2. Charger les profils séparément
     const userIds = [...new Set((videosData || []).map((v) => v.user_id))];
     const { data: profilesData } = await supabase
       .from("profiles")
@@ -75,7 +107,6 @@ export default function HomeFeed() {
       profilesMap[p.id] = p;
     });
 
-    // 3. Fusionner
     const items: FeedItem[] = (videosData || []).map((v: any) => ({
       id: v.id,
       url: v.url,
@@ -88,29 +119,16 @@ export default function HomeFeed() {
     }));
 
     setVideos(items);
-
-    // 4. Charger les likes de l'utilisateur
-    if (currentUser) {
-      const { data: likesData } = await supabase
-        .from("video_likes")
-        .select("video_id")
-        .eq("user_id", currentUser.id);
-      const likedMap: Record<string, boolean> = {};
-      likesData?.forEach((l) => {
-        likedMap[l.video_id] = true;
-      });
-      setLiked(likedMap);
-    }
-
     setLoading(false);
-  }, [supabase, currentUser]);
+  }, [supabase]);
 
   useEffect(() => {
     loadVideos();
   }, [loadVideos]);
 
   const toggleLike = async (videoId: string) => {
-    if (!currentUser) return;
+    if (!currentUser && !USE_DEMO_DATA) return;
+    
     const isCurrentlyLiked = liked[videoId];
     setLiked((prev) => ({ ...prev, [videoId]: !isCurrentlyLiked }));
     setVideos((prev) =>
@@ -121,17 +139,13 @@ export default function HomeFeed() {
       )
     );
 
+    if (USE_DEMO_DATA) return; // Pas de sauvegarde BDD en mode démo
+
     try {
       if (isCurrentlyLiked) {
-        await supabase
-          .from("video_likes")
-          .delete()
-          .eq("video_id", videoId)
-          .eq("user_id", currentUser.id);
+        await supabase.from("video_likes").delete().eq("video_id", videoId).eq("user_id", currentUser!.id);
       } else {
-        await supabase
-          .from("video_likes")
-          .insert({ video_id: videoId, user_id: currentUser.id });
+        await supabase.from("video_likes").insert({ video_id: videoId, user_id: currentUser!.id });
       }
     } catch (err) {
       console.error("Erreur like:", err);
@@ -170,7 +184,6 @@ export default function HomeFeed() {
 
         return (
           <section key={video.id} className="moshi-video relative bg-black">
-            {/* Vidéo */}
             <video
               src={video.url}
               className="absolute inset-0 w-full h-full object-cover"
@@ -180,10 +193,8 @@ export default function HomeFeed() {
               playsInline
             />
 
-            {/* Overlay dégradé */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
 
-            {/* Bouton Mute */}
             <button
               onClick={() => setMuted(!muted)}
               className="absolute top-20 right-4 z-30 moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white"
@@ -191,9 +202,7 @@ export default function HomeFeed() {
               {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
 
-            {/* Actions à droite */}
             <div className="absolute right-3 bottom-32 z-20 flex flex-col items-center gap-4">
-              {/* Avatar */}
               <div className="relative">
                 <Link href={`/profile/${video.user_id}`}>
                   <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-neutral-800">
@@ -215,26 +224,15 @@ export default function HomeFeed() {
                 </Link>
               </div>
 
-              {/* Like */}
-              <button
-                onClick={() => toggleLike(video.id)}
-                className="flex flex-col items-center gap-1"
-              >
-                <motion.div
-                  whileTap={{ scale: 0.8 }}
-                  className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center"
-                >
-                  <Heart
-                    size={24}
-                    className={isLiked ? "fill-[#FF8FB1] text-[#FF8FB1]" : "text-white"}
-                  />
+              <button onClick={() => toggleLike(video.id)} className="flex flex-col items-center gap-1">
+                <motion.div whileTap={{ scale: 0.8 }} className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center">
+                  <Heart size={24} className={isLiked ? "fill-[#FF8FB1] text-[#FF8FB1]" : "text-white"} />
                 </motion.div>
                 <span className="text-xs font-semibold text-white">
                   {formatNumber(video.like_count + (isLiked ? 1 : 0))}
                 </span>
               </button>
 
-              {/* Commentaires */}
               <button className="flex flex-col items-center gap-1">
                 <div className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center">
                   <MessageCircle size={24} className="text-white" />
@@ -244,7 +242,6 @@ export default function HomeFeed() {
                 </span>
               </button>
 
-              {/* Partager */}
               <button className="flex flex-col items-center gap-1">
                 <div className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center">
                   <Share2 size={22} className="text-white" />
@@ -252,13 +249,11 @@ export default function HomeFeed() {
                 <span className="text-xs font-semibold text-white">Partager</span>
               </button>
 
-              {/* Musique */}
               <div className="w-12 h-12 rounded-full bg-black/50 border border-white/20 flex items-center justify-center mt-2">
                 <Music size={20} className="text-white" />
               </div>
             </div>
 
-            {/* Infos en bas à gauche */}
             <div className="absolute left-4 right-20 bottom-24 z-20 space-y-2">
               <Link href={`/profile/${video.user_id}`} className="text-white font-bold text-base hover:underline">
                 @{authorName}
