@@ -1,63 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { Search } from "lucide-react";
 import HomeFeed from "@/components/home/HomeFeed";
-import FollowingFeed from "@/components/feed/FollowingFeed";
 import { cn } from "@/lib/utils";
 
-type Tab = "community" | "following" | "foryou";
-
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<Tab>("foryou");
+  const [activeTab, setActiveTab] = useState("Pour toi");
 
   return (
-    <div className="relative h-[100dvh] w-full bg-black">
-      {/* HEADER (sans LiveBar) */}
-      <div className="absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-black/90 via-black/60 to-transparent pb-2">
-        <div className="flex items-center justify-between px-4 pt-3 pb-2">
-          
-          {/* ✅ BOUTON LIVE CLIQUABLE */}
-          <Link href="/live/discover" className="flex items-center gap-1 text-white">
-            <div className="bg-red-500 border-2 border-red-500 rounded px-1.5 py-0.5 text-[10px] font-bold text-white">LIVE</div>
-          </Link>
+    <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
+      {/* HEADER FLOTTANT */}
+      <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-6 pb-2 bg-gradient-to-b from-black/60 to-transparent">
+        <div className="flex items-center justify-between mb-4">
+          <img src="/moshi-logo.jpg" alt="Moshi" className="h-8 w-auto object-contain" />
+          <button className="moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </button>
+        </div>
 
-          <div className="flex items-center gap-4">
+        {/* ONGLETS */}
+        <div className="flex items-center justify-center gap-6">
+          {["Communauté", "Suivis", "Pour toi"].map((tab) => (
             <button
-              onClick={() => setActiveTab("community")}
-              className={cn("text-sm font-semibold transition-colors", activeTab === "community" ? "text-white" : "text-white/60")}
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "text-sm font-semibold transition-colors relative pb-2",
+                activeTab === tab ? "text-white" : "text-white/60"
+              )}
             >
-              Communauté
-            </button>
-            <button
-              onClick={() => setActiveTab("following")}
-              className={cn("text-sm font-semibold transition-colors", activeTab === "following" ? "text-white" : "text-white/60")}
-            >
-              Suivis
-            </button>
-            <button
-              onClick={() => setActiveTab("foryou")}
-              className={cn("text-sm font-semibold transition-colors relative", activeTab === "foryou" ? "text-white" : "text-white/60")}
-            >
-              Pour toi
-              {activeTab === "foryou" && (
-                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-white rounded-full" />
+              {tab}
+              {activeTab === tab && (
+                <div className="absolute bottom-0 left-0 right-0 h-[3px] rounded-full moshi-gradient" />
               )}
             </button>
-          </div>
-
-          <Link href="/search" className="text-white">
-            <Search className="w-6 h-6" />
-          </Link>
+          ))}
         </div>
       </div>
 
-      {/* ✅ FEED (prend tout l'écran, plus de LiveBar) */}
+      {/* LE FEED */}
       <div className="h-full">
-        {activeTab === "foryou" && <HomeFeed />}
-        {activeTab === "following" && <FollowingFeed />}
-        {activeTab === "community" && <HomeFeed />}
+        <HomeFeed />
       </div>
     </div>
   );
