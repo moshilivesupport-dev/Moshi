@@ -8,8 +8,7 @@ export default async function MyProfilePage() {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    // Si pas connecté, on redirige vers l'accueil pour l'instant (on fera le login plus tard)
-    redirect("/");
+    redirect("/auth/login"); // <--- Redirection vers la page de login
   }
 
   redirect(`/profile/${user.id}`);
