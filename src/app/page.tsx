@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { Search, Gift, Eye } from "lucide-react";
 import HomeFeed from "@/components/home/HomeFeed";
 import { cn } from "@/lib/utils";
@@ -17,16 +16,15 @@ export default function HomePage() {
         
         {/* Ligne du haut (Logo + Search + Gift) */}
         <div className="flex items-center justify-between mb-5 pointer-events-auto">
+          
+          {/* LOGO MOSHI (Typographique, fiable à 100%) */}
           <div className="flex items-center gap-2">
-            {/* Le logo (assure toi d'avoir moshi-logo.jpg ou logo.png dans public) */}
-            <Image
-              src="/brand/moshi-logo.jpg"
-              alt="Moshi"
-              width={100}
-              height={40}
-              className="h-9 w-auto object-contain"
-              priority
-            />
+            <div className="w-8 h-8 rounded-lg moshi-gradient flex items-center justify-center text-white font-extrabold text-lg shadow-sm">
+              M
+            </div>
+            <span className="text-white font-bold text-2xl tracking-tight drop-shadow-md">
+              moshi
+            </span>
           </div>
           
           <div className="flex items-center gap-3">
