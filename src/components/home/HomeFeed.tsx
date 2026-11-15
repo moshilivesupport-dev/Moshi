@@ -4,14 +4,12 @@ import { useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Heart, MessageCircle, Share2, Volume2, VolumeX, ShoppingBag, ChevronRight } from "lucide-react";
-import { motion } from "framer-motion";
 
 // Données de démo calquées EXACTEMENT sur ta maquette
 const DEMO_VIDEOS = [
   {
     id: "1",
-    // J'utilise une vidéo de test très fiable
-    url: "https://assets.mixkit.co/videos/preview/mixkit-young-woman-smiling-at-the-camera-1230-large.mp4",
+    url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1000&auto=format&fit=crop", // Image de fond
     caption: "Découvrez notre nouvelle collection ✨💜\n#Moshi #LiveShopping #Mode",
     like_count: 125400,
     comment_count: 3200,
@@ -25,7 +23,6 @@ const DEMO_VIDEOS = [
     product: {
       title: "Sac Élégance Premium",
       price: "29 900 FCFA",
-      // L'image exacte du sac rose de ta maquette
       image: "https://images.unsplash.com/photo-1584916201218-f4242ceb4809?w=150&h=150&fit=crop&q=80",
     },
   },
@@ -53,14 +50,14 @@ export default function HomeFeed() {
         return (
           <section key={video.id} className="moshi-video relative bg-black">
             
-            {/* 1. LA VIDÉO */}
-            <video
+            {/* 1. L'IMAGE DE FOND (au lieu de la vidéo) */}
+            <Image
               src={video.url}
-              className="absolute inset-0 w-full h-full object-cover"
-              autoPlay
-              loop
-              muted={muted}
-              playsInline
+              alt="Background"
+              fill
+              className="object-cover"
+              priority
+              unoptimized
             />
 
             {/* Overlay dégradé pour lire le texte */}
