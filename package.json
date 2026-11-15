@@ -1,13 +1,13 @@
 {
   "name": "moshi",
-  "version": "1.3.0-complete",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build:cloudflare": "npx opennextjs-cloudflare build"
+    "build:cloudflare": "npx @opennextjs/cloudflare build"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
