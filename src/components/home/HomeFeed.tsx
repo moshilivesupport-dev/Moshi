@@ -48,7 +48,6 @@ export default function HomeFeed() {
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
-  const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [commentsOpenVideoId, setCommentsOpenVideoId] = useState<string | null>(null);
@@ -75,7 +74,7 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // 1. Vidéos (sans jointure)
+    // 1. Vidéos
     const { data: videosData, error: videosError } = await supabase
       .from("videos")
       .select(`id, url, caption, title, like_count, comment_count, view_count, user_id, created_at, product_id`)
@@ -83,7 +82,7 @@ export default function HomeFeed() {
 
     if (videosError) console.error("Erreur chargement vidéos:", videosError);
 
-    // 2. Profils séparément
+    // 2. Profils
     const userIds = [...new Set((videosData || []).map(v => v.user_id))];
     const { data: profilesData } = await supabase
       .from("profiles")
@@ -93,7 +92,7 @@ export default function HomeFeed() {
     const profilesMap: Record<string, any> = {};
     (profilesData || []).forEach(p => { profilesMap[p.id] = p; });
 
-    // 3. Produits liés (si product_id existe)
+    // 3. Produits liés
     const productIds = (videosData || []).map(v => v.product_id).filter(Boolean);
     let productsMap: Record<string, any> = {};
     if (productIds.length > 0) {
@@ -140,7 +139,7 @@ export default function HomeFeed() {
       product: null,
     }));
 
-    // 5. Fusionner et mélanger
+    // 5. Mélange
     setItems(shuffleArray([...videos, ...lives]));
 
     // 6. Likes
@@ -305,15 +304,19 @@ export default function HomeFeed() {
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
 
-            {/* Header flottant */}
+            {/* Header flottant avec LOGO */}
             <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between">
-              <span className="text-white text-xl font-extrabold tracking-tight">moshi</span>
+              <img 
+                src="/logo.png" 
+                alt="Moshi" 
+                className="h-8 w-auto object-contain" 
+              />
               <button onClick={() => setMuted(!muted)} className="moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white">
                 {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
               </button>
             </div>
 
-            {/* Menu options (si propriétaire) */}
+            {/* Menu options */}
             {isOwner && (
               <div className="absolute top-20 right-4 z-40">
                 <button onClick={() => setMenuOpenId(menuOpenId === item.id ? null : item.id)} className="moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white">
@@ -329,7 +332,7 @@ export default function HomeFeed() {
               </div>
             )}
 
-            {/* Actions à droite */}
+            {/* Actions */}
             <div className="absolute right-3 bottom-40 z-20 flex flex-col items-center gap-4">
               <Avatar src={author?.avatar_url || undefined} name={name} size={48} />
               
@@ -365,7 +368,7 @@ export default function HomeFeed() {
               </div>
             </div>
 
-            {/* Carte Produit (Si lié) */}
+            {/* Carte Produit */}
             {item.product && (
               <div className="absolute bottom-[72px] left-3 right-3 z-30">
                 <div className="bg-white rounded-2xl p-2.5 flex items-center gap-3 shadow-xl">
