@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Mail, Phone, X, Loader2, ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,7 +15,6 @@ export default function LoginPage() {
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +47,7 @@ export default function LoginPage() {
       
       {/* HEADER (Croix pour fermer) */}
       <div className="flex justify-between items-center mb-10">
-        <button className="w-8 h-8 rounded-full bg-gray-200/50 flex items-center justify-center text-gray-600">
+        <button onClick={() => router.push("/")} className="w-8 h-8 rounded-full bg-gray-200/50 flex items-center justify-center text-gray-600">
           <X size={20} />
         </button>
       </div>
@@ -97,21 +95,6 @@ export default function LoginPage() {
             >
               <Phone className="w-5 h-5 text-gray-700" />
               Continuer avec un téléphone
-            </button>
-
-            {/* Séparateur */}
-            <div className="flex items-center gap-4 py-4">
-              <div className="flex-1 h-px bg-gray-200"></div>
-              <span className="text-xs font-semibold text-gray-400">OU</span>
-              <div className="flex-1 h-px bg-gray-200"></div>
-            </div>
-
-            {/* Boutons Sociaux (design uniquement pour l'instant) */}
-            <button onClick={() => alert("Bientôt disponible")} className="w-full bg-white border border-gray-200 font-semibold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-sm">
-              Continuer avec Google
-            </button>
-            <button onClick={() => alert("Bientôt disponible")} className="w-full bg-white border border-gray-200 font-semibold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-sm">
-              Continuer avec Apple
             </button>
 
             {/* Lien Se Connecter */}
@@ -188,7 +171,7 @@ export default function LoginPage() {
                 className="flex-1 px-4 py-4 rounded-2xl bg-white border border-gray-200 outline-none text-sm font-medium"
               />
              </div>
-             <button onClick={() => alert("Nécessite l'activation de Twilio sur Supabase")} className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg mt-4">
+             <button onClick={() => alert("La connexion par téléphone nécessite l'activation de Twilio sur Supabase. Utilise l'email pour l'instant.")} className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg mt-4">
                Continuer
              </button>
              <button onClick={() => setStep("choice")} className="w-full text-center text-sm font-semibold text-gray-400 mt-2">
