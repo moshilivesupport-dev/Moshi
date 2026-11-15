@@ -307,7 +307,7 @@ export default function HomeFeed() {
             {/* Header flottant avec LOGO */}
             <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between">
               <img 
-                src="/logo.png" 
+                src="/moshi-logo.jpg" 
                 alt="Moshi" 
                 className="h-8 w-auto object-contain" 
               />
