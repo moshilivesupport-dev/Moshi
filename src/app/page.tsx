@@ -1,49 +1,57 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import Image from "next/image";
+import { Search } from "lucide-react";
+import HomeFeed from "@/components/home/HomeFeed";
+import { cn } from "@/lib/utils";
 
 export default function HomePage() {
+  const [activeTab, setActiveTab] = useState("Pour toi");
+
   return (
-    <main className="min-h-[100dvh] flex flex-col items-center justify-center gap-8 px-6">
-      {/* Logo */}
-      <div className="flex flex-col items-center gap-4">
-        <Image
-          src="/moshi-logo.jpg"
-          alt="Moshi"
-          width={120}
-          height={120}
-          className="rounded-3xl shadow-xl"
-          priority
-        />
-        <h1 className="text-3xl font-extrabold tracking-tight">
-          moshi
-        </h1>
-        <p className="text-sm text-moshi-text/60 font-medium">
-          Soft Social Commerce · v2.0
-        </p>
+    <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
+      {/* HEADER FLOTTANT */}
+      <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-6 pb-2 bg-gradient-to-b from-black/60 to-transparent">
+        <div className="flex items-center justify-between mb-4">
+          <Image
+            src="/moshi-logo.jpg"
+            alt="Moshi"
+            width={80}
+            height={32}
+            className="h-8 w-auto object-contain rounded-lg"
+            priority
+          />
+          <button className="moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white">
+            <Search size={20} />
+          </button>
+        </div>
+
+        {/* ONGLETS */}
+        <div className="flex items-center justify-center gap-6">
+          {["Communauté", "Suivis", "Pour toi"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "text-sm font-semibold transition-colors relative pb-2",
+                activeTab === tab ? "text-white" : "text-white/60"
+              )}
+            >
+              {tab}
+              {activeTab === tab && (
+                <div className="absolute bottom-0 left-0 right-0 h-[3px] rounded-full moshi-gradient" />
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Boutons de validation du Design System */}
-      <div className="flex flex-col gap-3 w-full max-w-xs mt-8">
-        <button className="moshi-gradient text-white font-bold py-3.5 rounded-full shadow-lg shadow-purple-200/50 active:scale-95 transition">
-          Démarrer l'aventure
-        </button>
-
-        <button className="bg-white text-moshi-text font-semibold py-3.5 rounded-full shadow-sm border border-gray-200 active:scale-95 transition">
-          Se connecter
-        </button>
-
-        <button className="border-2 border-moshi-purple text-moshi-purple font-semibold py-3.5 rounded-full active:scale-95 transition">
-          Créer un compte
-        </button>
+      {/* LE FEED */}
+      <div className="h-full">
+        <HomeFeed />
       </div>
-
-      {/* Indicateur visuel de la palette */}
-      <div className="flex gap-3 mt-8">
-        <div className="w-10 h-10 rounded-full bg-moshi-pink shadow-md" />
-        <div className="w-10 h-10 rounded-full bg-moshi-purple shadow-md" />
-        <div className="w-10 h-10 rounded-full bg-moshi-blue shadow-md" />
-      </div>
-    </main>
+    </div>
   );
 }
