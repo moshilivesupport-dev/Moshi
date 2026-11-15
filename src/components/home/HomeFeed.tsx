@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Heart, MessageCircle, Share2, Music, Volume2, VolumeX, ShoppingBag, Play } from "lucide-react";
+import { Heart, MessageCircle, Share2, Music, Volume2, VolumeX, Play } from "lucide-react";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 
