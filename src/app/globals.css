@@ -1,0 +1,75 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --moshi-pink: #FF8FB1;
+  --moshi-purple: #9D7BEA;
+  --moshi-blue: #60A5FA;
+  --moshi-bg: #F9FAFB;
+  --moshi-dark: #111111;
+  --moshi-text: #1F2937;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family: "Poppins", system-ui, sans-serif;
+  background: var(--moshi-bg);
+  color: var(--moshi-text);
+  overscroll-behavior: none;
+}
+
+/* Scrollbar masquée */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Dégradé signature */
+.moshi-gradient {
+  background: linear-gradient(110deg, #FF8FB1, #9D7BEA 55%, #60A5FA);
+}
+
+/* Glassmorphism */
+.moshi-glass {
+  background: rgba(255, 255, 255, 0.20);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+/* Feed vertical avec snap */
+.moshi-feed {
+  height: 100dvh;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+.moshi-feed::-webkit-scrollbar {
+  display: none;
+}
+.moshi-video {
+  height: 100dvh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/* Safe area pour iPhone (encoche en bas) */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
