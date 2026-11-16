@@ -4,7 +4,6 @@ import { useState } from "react";
 import Image from "next/image";
 import { Search, Gift } from "lucide-react";
 import HomeFeed from "@/components/home/HomeFeed";
-import StoriesBar from "@/components/home/StoriesBar";
 import { cn } from "@/lib/utils";
 
 export default function HomePage() {
@@ -13,7 +12,7 @@ export default function HomePage() {
   return (
     <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
       
-      {/* HEADER FLOTTANT AVEC DÉGRADÉ POUR LISIBILITÉ */}
+      {/* HEADER FLOTTANT */}
       <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-12 pb-2 bg-gradient-to-b from-black/90 via-black/60 to-transparent pointer-events-none">
         
         <div className="flex items-center justify-between mb-3 pointer-events-auto">
@@ -31,8 +30,6 @@ export default function HomePage() {
             </button>
           </div>
         </div>
-
-        <StoriesBar />
 
         <div className="flex items-center justify-between mt-4 pointer-events-auto">
           <div className="flex items-center gap-5">
