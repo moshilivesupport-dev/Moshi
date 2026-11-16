@@ -7,9 +7,11 @@ import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import {
   X, Eye, Heart, ShoppingBag, ChevronRight, Mic,
-  Camera, UserPlus, Gift, MoreHorizontal, Send, Smile, Crown
+  Camera, UserPlus, Gift, MoreHorizontal, Send, Smile, Crown, Coins
 } from "lucide-react";
 import { getFlag } from "@/lib/utils";
+import GiftPanel from "@/components/live/GiftPanel";
+import GiftAnimation from "@/components/live/GiftAnimation";
 
 const LiveKitRoomComponent = dynamic(() => import("@/components/live/LiveKitRoom"), { ssr: false });
 
@@ -28,6 +30,13 @@ interface ChatMessage {
   isGift?: boolean;
 }
 
+interface Gift {
+  id: string;
+  name: string;
+  icon: string;
+  price: number;
+}
+
 export default function LiveRoomPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -36,12 +45,18 @@ export default function LiveRoomPage() {
   const [live, setLive] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isHost, setIsHost] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [userName, setUserName] = useState("Viewer");
   const [chatMessage, setChatMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [topDonors, setTopDonors] = useState<any[]>([]);
   const [hearts, setHearts] = useState<HeartParticle[]>([]);
   const [likeCount, setLikeCount] = useState(0);
+  
+  // Pour le solde et l'envoi de cadeaux
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [isGiftPanelOpen, setIsGiftPanelOpen] = useState(false);
+  const [activeGiftAnimation, setActiveGiftAnimation] = useState<{ icon: string; name: string; senderName: string } | null>(null);
 
   // Tap pour envoyer des cœurs
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -70,6 +85,7 @@ export default function LiveRoomPage() {
   useEffect(() => {
     const loadLive = async () => {
       const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
       
       const { data } = await supabase.from("lives").select("*, product:products(*)").eq("id", id).single();
       if (data) {
@@ -79,30 +95,48 @@ export default function LiveRoomPage() {
         setUserName(profile?.username || profile?.full_name || "Viewer");
         setLikeCount(data.like_count || 0);
 
-        // Charger les top donateurs (ceux qui ont envoyé des cadeaux)
-        // Pour l'instant, on simule avec les 3 derniers abonnés pour l'exemple
-        // À remplacer par une vraie requête sur une table "gifts_sent" plus tard
-        const { data: donors } = await supabase
-          .from("profiles")
-          .select("id, username, full_name, avatar_url")
-          .limit(3);
-        setTopDonors(donors || []);
+        // Charger le solde de l'utilisateur
+        if (user) {
+          const { data: wallet } = await supabase.from("wallets").select("balance").eq("user_id", user.id).single();
+          if (wallet) setWalletBalance(wallet.balance);
+        }
+
+        // Charger les top donateurs (basé sur les cadeaux envoyés)
+        const { data: giftsData } = await supabase
+          .from("live_gifts")
+          .select("sender_id, total_price")
+          .eq("live_id", id);
+        
+        if (giftsData) {
+          // Grouper par sender_id et calculer le total
+          const donorTotals: Record<string, number> = {};
+          giftsData.forEach(g => {
+            donorTotals[g.sender_id] = (donorTotals[g.sender_id] || 0) + g.total_price;
+          });
+
+          // Récupérer les 3 top donateurs
+          const topIds = Object.entries(donorTotals)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([id]) => id);
+
+          if (topIds.length > 0) {
+            const { data: donors } = await supabase.from("profiles").select("id, username, avatar_url, full_name").in("id", topIds);
+            setTopDonors(donors || []);
+          }
+        }
       }
       setLoading(false);
     };
     if (id) loadLive();
   }, [id, supabase]);
 
-  // Chat en temps réel (basique)
+  // Chat en temps réel
   useEffect(() => {
     if (!id) return;
-    const channel = supabase
-      .channel(`live-chat-${id}`)
-      .on("broadcast", { event: "message" }, (payload) => {
-        setMessages((prev) => [...prev, payload.payload as ChatMessage]);
-      })
-      .subscribe();
-
+    const channel = supabase.channel(`live-chat-${id}`).on("broadcast", { event: "message" }, (payload) => {
+      setMessages((prev) => [...prev, payload.payload as ChatMessage]);
+    }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [id, supabase]);
 
@@ -112,6 +146,48 @@ export default function LiveRoomPage() {
     setMessages([...messages, newMsg]);
     supabase.channel(`live-chat-${id}`).send({ type: "broadcast", event: "message", payload: newMsg });
     setChatMessage("");
+  };
+
+  // ENVOYER UN CADEAU
+  const handleSendGift = async (gift: Gift) => {
+    if (!currentUser || !live) return;
+    if (walletBalance < gift.price) {
+      alert("Solde insuffisant ! Recharge ton portefeuille.");
+      return;
+    }
+
+    try {
+      // 1. Enregistrer dans live_gifts
+      await supabase.from("live_gifts").insert({
+        live_id: live.id,
+        gift_id: gift.id,
+        sender_id: currentUser.id,
+        recipient_id: live.host_id,
+        quantity: 1,
+        total_price: gift.price,
+      });
+
+      // 2. Déduire du wallet
+      await supabase.from("wallets").update({ balance: walletBalance - gift.price }).eq("user_id", currentUser.id);
+      setWalletBalance(walletBalance - gift.price);
+
+      // 3. Afficher l'animation
+      setActiveGiftAnimation({ icon: gift.icon, name: gift.name, senderName: userName });
+
+      // 4. Ajouter un message dans le chat
+      const giftMessage = {
+        id: Date.now().toString(),
+        name: userName,
+        text: `a envoyé ${gift.icon} ${gift.name} !`,
+        avatar: null,
+        isGift: true,
+      };
+      setMessages((prev) => [...prev, giftMessage]);
+      supabase.channel(`live-chat-${id}`).send({ type: "broadcast", event: "message", payload: giftMessage });
+
+    } catch (err: any) {
+      alert("Erreur envoi cadeau : " + err.message);
+    }
   };
 
   if (loading) return <div className="min-h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-4 border-moshi-purple border-t-transparent rounded-full animate-spin" /></div>;
@@ -124,6 +200,12 @@ export default function LiveRoomPage() {
       
       <LiveKitRoomComponent roomName={`live-${live.id}`} participantName={userName} isHost={isHost} />
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 pointer-events-none z-20" />
+
+      {/* ANIMATION DU CADEAU */}
+      <GiftAnimation 
+        gift={activeGiftAnimation} 
+        onComplete={() => setActiveGiftAnimation(null)} 
+      />
 
       {/* HEADER */}
       <header className="relative z-30 p-4 pt-safe pointer-events-none">
@@ -143,7 +225,7 @@ export default function LiveRoomPage() {
           )}
         </div>
 
-        {/* PROFIL HOTE + DRAPEAU */}
+        {/* PROFIL HOTE */}
         <div className="flex items-start justify-between pointer-events-auto">
           <div className="flex items-center gap-2">
             <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-gray-800 relative">
@@ -217,7 +299,7 @@ export default function LiveRoomPage() {
                 <div className="w-full h-full flex items-center justify-center text-white text-[10px]">{m.name.charAt(0)}</div>
               )}
             </div>
-            <div className="bg-black/30 backdrop-blur-sm px-3 py-1 rounded-2xl rounded-bl-sm">
+            <div className={cn("px-3 py-1 rounded-2xl rounded-bl-sm", m.isGift ? "bg-gradient-to-r from-pink-500 to-purple-500" : "bg-black/30 backdrop-blur-sm")}>
               <p className="text-white text-[10px] font-bold">{m.name}</p>
               <p className="text-white text-xs">{m.text}</p>
             </div>
@@ -249,7 +331,7 @@ export default function LiveRoomPage() {
         </div>
       )}
 
-      {/* CHAT INPUT */}
+      {/* CHAT INPUT + SOLDE */}
       <div className="relative z-30 px-4 mb-3 pointer-events-auto">
         <div className="flex items-center gap-2">
           <div className="flex-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-3 py-2 flex items-center gap-2">
@@ -264,8 +346,19 @@ export default function LiveRoomPage() {
             />
             <button onClick={handleSendMessage} className="text-white"><Send size={16} /></button>
           </div>
-          <button className="w-10 h-10 rounded-full moshi-gradient flex items-center justify-center text-white shadow-lg">
-            <Gift size={20} />
+
+          {/* BOUTON CADEAU + SOLDE */}
+          <button 
+            onClick={() => setIsGiftPanelOpen(true)}
+            className="flex flex-col items-center gap-0.5"
+          >
+            <div className="w-10 h-10 rounded-full moshi-gradient flex items-center justify-center text-white shadow-lg">
+              <Gift size={20} />
+            </div>
+            <div className="flex items-center gap-0.5 bg-yellow-500/20 px-1.5 py-0.5 rounded-full mt-0.5">
+              <Coins size={8} className="text-yellow-400" />
+              <span className="text-yellow-400 text-[9px] font-bold">{walletBalance}</span>
+            </div>
           </button>
         </div>
       </div>
@@ -289,6 +382,13 @@ export default function LiveRoomPage() {
           <span className="text-[9px] font-semibold">Plus</span>
         </button>
       </div>
+
+      {/* PANNEAU CADEAUX */}
+      <GiftPanel 
+        isOpen={isGiftPanelOpen} 
+        onClose={() => setIsGiftPanelOpen(false)} 
+        onSendGift={handleSendGift} 
+      />
     </div>
   );
 }
