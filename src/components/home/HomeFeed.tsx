@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Heart, MessageCircle, Share2, Volume2, VolumeX, Play, ShoppingBag, ChevronRight, Radio } from "lucide-react";
+import { Heart, MessageCircle, Share2, Volume2, VolumeX, Radio } from "lucide-react";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { getFlag } from "@/lib/utils";
@@ -52,21 +52,18 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // 1. Lives en cours
     const { data: livesData } = await supabase
       .from("lives")
       .select("id, title, host_id")
       .eq("status", "live")
       .order("created_at", { ascending: false });
 
-    // 2. Vidéos (on enlève le filtre status pour voir toutes les vidéos)
     const { data: videosData } = await supabase
       .from("videos")
       .select("id, url, caption, title, like_count, comment_count, user_id")
       .order("created_at", { ascending: false })
       .limit(20);
 
-    // 3. Profils
     const allUserIds = [
       ...(livesData || []).map(l => l.host_id),
       ...(videosData || []).map(v => v.user_id)
@@ -83,7 +80,6 @@ export default function HomeFeed() {
       profilesMap[p.id] = p;
     });
 
-    // 4. Fusion (Lives d'abord, puis vidéos)
     const livesItems: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
       type: "live",
@@ -143,14 +139,11 @@ export default function HomeFeed() {
     return <div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" /></div>;
   }
 
+  // SI LE FEED EST VIDE : on affiche juste un message discret, SANS bouton "Publier la première"
   if (items.length === 0) {
     return (
-      <div className="h-[100dvh] bg-black flex flex-col items-center justify-center gap-4 px-6 text-center">
-        <Play className="w-12 h-12 text-neutral-600" />
-        <p className="text-neutral-400 font-medium">Aucune vidéo pour le moment</p>
-        <Link href="/create">
-          <button className="moshi-gradient text-white font-bold px-6 py-3 rounded-full">Publier la première</button>
-        </Link>
+      <div className="h-[100dvh] bg-black flex flex-col items-center justify-center px-6 text-center">
+        <p className="text-neutral-400 font-medium">Aucun contenu pour le moment</p>
       </div>
     );
   }
