@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import {
   LiveKitRoom,
-  GridLayout,
   ParticipantTile,
   RoomAudioRenderer,
   useTracks,
@@ -20,7 +19,7 @@ interface LiveKitRoomProps {
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://moshi-shopping-cs02jcsj.livekit.cloud";
 
-// Composant interne qui affiche UNIQUEMENT la vidéo, sans les contrôles natifs
+// Composant qui affiche uniquement la vidéo, plein écran, sans contrôles
 function VideoOnly() {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }],
@@ -28,9 +27,16 @@ function VideoOnly() {
   );
 
   return (
-    <GridLayout tracks={tracks} className="h-full w-full">
-      <ParticipantTile />
-    </GridLayout>
+    <div className="absolute inset-0 w-full h-full">
+      {tracks.map((trackRef) => (
+        <ParticipantTile
+          key={trackRef.participant.identity}
+          trackRef={trackRef}
+          className="absolute inset-0 w-full h-full [&>video]:object-cover [&>video]:w-full [&>video]:h-full"
+          disableSpeakingIndicator
+        />
+      ))}
+    </div>
   );
 }
 
@@ -77,7 +83,6 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
       className="absolute inset-0 z-10"
       onDisconnected={() => { window.location.href = "/"; }}
     >
-      {/* ON REMPLACE VideoConference PAR NOTRE COMPOSANT VIDEOONLY */}
       <VideoOnly />
       <RoomAudioRenderer />
     </LiveKitRoom>
