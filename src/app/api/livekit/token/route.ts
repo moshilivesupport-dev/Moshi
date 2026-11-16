@@ -34,8 +34,9 @@ export async function GET(request: Request) {
   token.addGrant({
     room: roomName,
     roomJoin: true,
-    canPublish: true,
-    canSubscribe: true,
+    canPublish: true,    // Autorise la diffusion (hôte)
+    canSubscribe: true,  // Autorise la réception (viewers)
+    canPublishData: true,
   });
 
   return NextResponse.json({ token: await token.toJwt() });
