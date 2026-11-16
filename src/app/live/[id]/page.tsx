@@ -88,31 +88,32 @@ export default function LiveRoomPage() {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
       
+      if (user) {
+        const { data: userProfile } = await supabase.from("profiles").select("username, full_name, avatar_url").eq("id", user.id).single();
+        const name = userProfile?.username || userProfile?.full_name || "Viewer";
+        setUserName(name);
+        setUserAvatar(userProfile?.avatar_url || null);
+
+        const { data: wallet } = await supabase.from("wallets").select("balance").eq("user_id", user.id).single();
+        if (wallet) {
+          setWalletBalance(wallet.balance);
+        } else {
+          await supabase.from("wallets").insert({ user_id: user.id, balance: 1000 });
+          setWalletBalance(1000);
+        }
+      }
+      
       const { data } = await supabase.from("lives").select("*, product:products(*)").eq("id", id).single();
       if (data) {
+        if (data.status === "ended") {
+          router.push("/");
+          return;
+        }
         const { data: profile } = await supabase.from("profiles").select("username, full_name, avatar_url, country").eq("id", data.host_id).single();
         setLive({ ...data, profiles: profile });
         setIsHost(user?.id === data.host_id);
         setLikeCount(data.like_count || 0);
 
-        if (user) {
-          const { data: userProfile } = await supabase.from("profiles").select("username, full_name, avatar_url").eq("id", user.id).single();
-          const name = userProfile?.username || userProfile?.full_name || "Viewer";
-          setUserName(name);
-          setUserAvatar(userProfile?.avatar_url || null);
-
-          // Charger le solde
-          const { data: wallet } = await supabase.from("wallets").select("balance").eq("user_id", user.id).single();
-          if (wallet) {
-            setWalletBalance(wallet.balance);
-          } else {
-            // Si pas de wallet, en créer un
-            await supabase.from("wallets").insert({ user_id: user.id, balance: 1000 });
-            setWalletBalance(1000);
-          }
-        }
-
-        // Charger les top donateurs
         const { data: giftsData } = await supabase.from("live_gifts").select("sender_id, total_price").eq("live_id", id);
         if (giftsData && giftsData.length > 0) {
           const donorTotals: Record<string, number> = {};
@@ -129,9 +130,8 @@ export default function LiveRoomPage() {
       setLoading(false);
     };
     if (id) loadLive();
-  }, [id, supabase]);
+  }, [id, supabase, router]);
 
-  // Chat + notifications de "Join" en temps réel
   useEffect(() => {
     if (!id || !userName) return;
     
@@ -202,6 +202,11 @@ export default function LiveRoomPage() {
     }
   };
 
+  const handleEndLive = async () => {
+    await supabase.from("lives").update({ status: "ended" }).eq("id", live.id);
+    router.push("/");
+  };
+
   if (loading) return <div className="min-h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-4 border-moshi-purple border-t-transparent rounded-full animate-spin" /></div>;
   if (!live) return <div className="min-h-[100dvh] bg-black flex items-center justify-center text-white">Live introuvable</div>;
 
@@ -215,14 +220,13 @@ export default function LiveRoomPage() {
 
       <GiftAnimation gift={activeGiftAnimation} onComplete={() => setActiveGiftAnimation(null)} />
 
-      {/* HEADER avec LOGO + z-index élevé */}
       <header className="relative z-40 p-4 pt-safe pointer-events-none">
         <div className="flex items-center justify-between mb-4 pointer-events-auto">
           <div className="flex items-center gap-2">
             <Image src="/brand/moshi-logo.jpg" alt="Moshi" width={100} height={30} className="h-8 w-auto object-contain" priority />
           </div>
           {isHost ? (
-            <button onClick={() => router.push("/")} className="bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+            <button onClick={handleEndLive} className="bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
               <span className="w-3 h-3 bg-white rounded-sm" /> Terminer live
             </button>
           ) : (
@@ -232,7 +236,6 @@ export default function LiveRoomPage() {
           )}
         </div>
 
-        {/* PROFIL HOTE (z-index élevé aussi) */}
         <div className="flex items-start justify-between pointer-events-auto relative z-40">
           <div className="flex items-center gap-2">
             <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-gray-800 relative shrink-0">
@@ -264,7 +267,6 @@ export default function LiveRoomPage() {
           </div>
         </div>
 
-        {/* TOP DONATEURS */}
         {topDonors.length > 0 && (
           <div className="mt-3 flex items-center gap-2 bg-black/20 w-fit px-3 py-1.5 rounded-full backdrop-blur-sm pointer-events-auto relative z-40">
             <p className="text-white/80 text-[10px] font-semibold">👑 Top donateurs</p>
@@ -286,7 +288,6 @@ export default function LiveRoomPage() {
 
       <div className="flex-1 pointer-events-none" />
 
-      {/* COEURS ANIMES */}
       <div className="absolute inset-0 z-25 pointer-events-none overflow-hidden">
         {hearts.map((h) => (
           <div key={h.id} className="absolute" style={{ left: h.x, top: h.y }}>
@@ -295,7 +296,6 @@ export default function LiveRoomPage() {
         ))}
       </div>
 
-      {/* CHAT (hauteur réduite) */}
       <div className="relative z-30 px-4 space-y-1.5 mb-2 max-h-[20vh] overflow-y-auto scrollbar-hide pointer-events-auto">
         {messages.slice(-3).map((m) => (
           <div key={m.id} className="flex items-center gap-2">
@@ -315,7 +315,6 @@ export default function LiveRoomPage() {
         <div ref={chatEndRef} />
       </div>
 
-      {/* PRODUIT EPINGLE */}
       {live.product && (
         <div className="relative z-30 px-4 mb-2 pointer-events-auto">
           <div className="bg-white/95 backdrop-blur-md rounded-2xl p-2 flex items-center gap-3 shadow-xl">
@@ -338,7 +337,6 @@ export default function LiveRoomPage() {
         </div>
       )}
 
-      {/* CHAT INPUT + BOUTON CADEAU (plus compact) */}
       <div className="relative z-40 px-4 mb-3 pointer-events-auto">
         <div className="flex items-center gap-2">
           <div className="flex-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-3 py-2 flex items-center gap-2 max-w-[75%]">
@@ -366,7 +364,6 @@ export default function LiveRoomPage() {
         </div>
       </div>
 
-      {/* ACTIONS BAS (cliquables) */}
       <div className="relative z-40 flex items-center justify-around px-4 pb-safe pb-4 pointer-events-auto">
         <button className="flex flex-col items-center gap-1 text-white/80">
           <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center"><Mic size={18} /></div>
