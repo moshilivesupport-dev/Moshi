@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ArrowLeft, Radio, Loader2, Package } from "lucide-react";
 import Image from "next/image";
 
-export default function StartLivePage() {
+// Composant interne qui utilise useSearchParams
+function StartLiveForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const mode = searchParams.get("mode") || "simple"; // 'simple' ou 'vendeur'
+  const mode = searchParams.get("mode") || "simple";
   const supabase = createClient();
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -31,14 +32,12 @@ export default function StartLivePage() {
       const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
       setRole(profile?.role || "acheteur");
 
-      // Si on est en mode vendeur mais que le rôle est acheteur, on bloque
       if (mode === "vendeur" && profile?.role !== "vendeur") {
         alert("Cette option est réservée aux vendeurs.");
         router.push("/");
         return;
       }
 
-      // Charger les produits seulement si vendeur
       if (profile?.role === "vendeur") {
         const { data: prodData } = await supabase.from("products").select("id, title, price, image_url").eq("seller_id", user.id);
         setProducts(prodData || []);
@@ -92,7 +91,6 @@ export default function StartLivePage() {
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Décris ce que tu vas présenter..." className="w-full mt-1 px-4 py-3 rounded-xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium resize-none" />
         </div>
 
-        {/* PRODUIT ÉPINGLÉ (vendeur uniquement) */}
         {role === "vendeur" && (
           <div>
             <label className="text-xs font-bold text-gray-500 ml-1 mb-2 block">Épingler un produit</label>
@@ -125,5 +123,14 @@ export default function StartLivePage() {
         </button>
       </div>
     </div>
+  );
+}
+
+// Le composant principal qui enveloppe dans Suspense
+export default function StartLivePage() {
+  return (
+    <Suspense fallback={<div className="min-h-[100dvh] flex items-center justify-center"><Loader2 className="w-10 h-10 text-moshi-purple animate-spin" /></div>}>
+      <StartLiveForm />
+    </Suspense>
   );
 }
