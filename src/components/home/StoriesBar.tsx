@@ -27,7 +27,6 @@ export default function StoriesBar() {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
 
-      // Charger les stories actives (< 24h)
       const { data } = await supabase
         .from("stories")
         .select("id, user_id, image_url")
@@ -35,7 +34,6 @@ export default function StoriesBar() {
         .order("created_at", { ascending: false });
 
       if (data) {
-        // Récupérer les profils des auteurs
         const userIds = [...new Set(data.map(s => s.user_id))];
         const { data: profilesData } = await supabase
           .from("profiles")
@@ -55,7 +53,6 @@ export default function StoriesBar() {
     <div className="absolute top-[110px] left-0 right-0 z-30 px-4">
       <div className="flex gap-4 overflow-x-auto scrollbar-hide py-2">
         
-        {/* Bouton Ajouter (si connecté) */}
         {currentUser && (
           <button onClick={() => router.push("/create?mode=story")} className="flex flex-col items-center gap-1 shrink-0">
             <div className="w-16 h-16 rounded-full border-2 border-dashed border-white/50 flex items-center justify-center bg-black/30 backdrop-blur-md">
@@ -65,7 +62,6 @@ export default function StoriesBar() {
           </button>
         )}
 
-        {/* Liste des stories */}
         {stories.map((story) => {
           const name = story.profiles?.username || "user";
           return (
