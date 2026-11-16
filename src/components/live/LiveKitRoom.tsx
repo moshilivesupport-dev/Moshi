@@ -5,9 +5,10 @@ import {
   LiveKitRoom,
   RoomAudioRenderer,
   useTracks,
+  VideoTrack,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { Track, VideoTrack } from "livekit-client";
+import { Track } from "livekit-client";
 import { Loader2 } from "lucide-react";
 
 interface LiveKitRoomProps {
