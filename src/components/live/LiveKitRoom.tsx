@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import {
   LiveKitRoom,
-  VideoConference,
+  GridLayout,
+  ParticipantTile,
   RoomAudioRenderer,
+  useTracks,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
+import { Track } from "livekit-client";
 import { Loader2 } from "lucide-react";
 
 interface LiveKitRoomProps {
@@ -15,8 +18,21 @@ interface LiveKitRoomProps {
   isHost: boolean;
 }
 
-// Valeur par défaut pour l'URL LiveKit
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://moshi-shopping-cs02jcsj.livekit.cloud";
+
+// Composant interne qui affiche UNIQUEMENT la vidéo, sans les contrôles natifs
+function VideoOnly() {
+  const tracks = useTracks(
+    [{ source: Track.Source.Camera, withPlaceholder: true }],
+    { onlySubscribed: false }
+  );
+
+  return (
+    <GridLayout tracks={tracks} className="h-full w-full">
+      <ParticipantTile />
+    </GridLayout>
+  );
+}
 
 export default function LiveKitRoomComponent({ roomName, participantName, isHost }: LiveKitRoomProps) {
   const [token, setToken] = useState<string | null>(null);
@@ -41,7 +57,6 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
       <div>
         <p className="text-lg font-bold mb-2">Erreur LiveKit</p>
         <p className="text-sm text-red-400">{error}</p>
-        <p className="text-xs text-white/50 mt-4">Vérifie tes clés API sur Cloudflare (Settings &gt; Environment Variables).</p>
       </div>
     </div>
   );
@@ -61,9 +76,9 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
       audio={isHost}
       className="absolute inset-0 z-10"
       onDisconnected={() => { window.location.href = "/"; }}
-      onError={(err) => setError(err.message)}
     >
-      <VideoConference />
+      {/* ON REMPLACE VideoConference PAR NOTRE COMPOSANT VIDEOONLY */}
+      <VideoOnly />
       <RoomAudioRenderer />
     </LiveKitRoom>
   );
