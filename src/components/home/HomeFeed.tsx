@@ -52,22 +52,18 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // 1. Charger les LIVES EN COURS
     const { data: livesData } = await supabase
       .from("lives")
       .select("id, title, host_id")
       .eq("status", "live")
       .order("created_at", { ascending: false });
 
-    // 2. Charger les VIDÉOS
     const { data: videosData } = await supabase
       .from("videos")
       .select("id, url, caption, title, like_count, comment_count, user_id")
-      .eq("status", "published")
       .order("created_at", { ascending: false })
       .limit(20);
 
-    // 3. Fusionner les profils
     const allUserIds = [
       ...(livesData || []).map(l => l.host_id),
       ...(videosData || []).map(v => v.user_id)
@@ -84,7 +80,6 @@ export default function HomeFeed() {
       profilesMap[p.id] = p;
     });
 
-    // 4. Construire la liste finale (Lives d'abord, puis vidéos)
     const livesItems: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
       type: "live",
@@ -163,7 +158,6 @@ export default function HomeFeed() {
         const author = item.profiles;
         const authorName = author?.username || author?.full_name || "user";
 
-        // SI C'EST UN LIVE, on affiche une carte spéciale
         if (item.type === "live") {
           return (
             <section key={item.id} className="moshi-video relative bg-gradient-to-br from-purple-900 via-pink-900 to-black flex items-center justify-center">
@@ -184,7 +178,6 @@ export default function HomeFeed() {
           );
         }
 
-        // SINON, c'est une vidéo normale
         return (
           <section key={item.id} className="moshi-video relative bg-black">
             <video src={item.url} className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted={muted} playsInline />
