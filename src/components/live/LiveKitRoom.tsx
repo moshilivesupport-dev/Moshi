@@ -18,14 +18,12 @@ interface LiveKitRoomProps {
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://moshi-shopping-cs02jcsj.livekit.cloud";
 
-// Composant qui affiche UNIQUEMENT la vidéo de l'hôte en plein écran
 function FullScreenVideo() {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: false }],
     { onlySubscribed: false }
   );
 
-  // On ne garde que la piste de l'hôte (le premier participant qui a une caméra)
   const hostTrack = tracks.find(t => t.participant.identity !== "");
 
   if (!hostTrack) {
