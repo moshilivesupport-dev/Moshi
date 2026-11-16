@@ -14,3 +14,19 @@ export function formatNumber(num: number): string {
   }
   return num.toString();
 }
+
+// NOUVEAU : Helper pour les drapeaux
+export function getFlag(countryCode: string | null | undefined): string {
+  if (!countryCode) return "🌍";
+  const flags: Record<string, string> = {
+    TG: "🇹🇬", BJ: "🇧🇯", CI: "🇨🇮", SN: "🇸🇳", BF: "🇧🇫",
+    ML: "🇲🇱", NE: "🇳🇪", GH: "🇬🇭", NG: "🇳🇬", CM: "🇨🇲",
+    GA: "🇬🇦", CD: "🇨🇩", CG: "🇨🇬", TD: "🇹🇩", CF: "🇨🇫",
+    MA: "🇲🇦", DZ: "🇩🇿", TN: "🇹🇳", EG: "🇪🇬",
+    FR: "🇫🇷", BE: "🇧🇪", CH: "🇨🇭", CA: "🇨🇦",
+    US: "🇺🇸", GB: "🇬🇧", DE: "🇩🇪", IT: "🇮🇹",
+    ES: "🇪🇸", PT: "🇵🇹", BR: "🇧🇷", CN: "🇨🇳",
+    JP: "🇯🇵", IN: "🇮🇳", AE: "🇦🇪", SA: "🇸🇦", ZA: "🇿🇦",
+  };
+  return flags[countryCode.toUpperCase()] || "🌍";
+}
