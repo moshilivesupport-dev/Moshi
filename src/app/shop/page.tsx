@@ -22,12 +22,17 @@ export default function ShopPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
+      // On retire le filtre .eq("status", "active") pour être sûr de voir tous les produits
+      const { data, error } = await supabase
         .from("products")
         .select("id, title, price, image_url, category")
-        .eq("status", "active")
         .order("created_at", { ascending: false });
-      setProducts(data || []);
+
+      if (error) {
+        console.error("Erreur chargement produits:", error);
+      } else {
+        setProducts(data || []);
+      }
       setLoading(false);
     };
     load();
@@ -49,14 +54,22 @@ export default function ShopPage() {
         <div className="px-4 pb-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" placeholder="Rechercher un produit..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-100 text-sm outline-none" />
+            <input 
+              type="text" 
+              placeholder="Rechercher un produit..." 
+              value={search} 
+              onChange={(e) => setSearch(e.target.value)} 
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-100 text-sm outline-none" 
+            />
           </div>
         </div>
       </header>
 
       <div className="p-4 max-w-md mx-auto">
         {loading ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-moshi-purple animate-spin" /></div>
+          <div className="flex justify-center py-20">
+            <Loader2 className="w-8 h-8 text-moshi-purple animate-spin" />
+          </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Package className="w-12 h-12 text-gray-300" />
@@ -70,13 +83,17 @@ export default function ShopPage() {
                   {p.image_url ? (
                     <Image src={p.image_url} alt={p.title} fill className="object-cover" unoptimized />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-300"><Package size={32} /></div>
+                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                      <Package size={32} />
+                    </div>
                   )}
                 </div>
                 <div className="p-3">
                   <p className="text-sm font-bold truncate">{p.title}</p>
                   {p.category && <p className="text-[10px] text-gray-400">{p.category}</p>}
-                  <p className="text-sm font-extrabold text-moshi-purple mt-1">{p.price.toLocaleString()} FCFA</p>
+                  <p className="text-sm font-extrabold text-moshi-purple mt-1">
+                    {p.price.toLocaleString()} FCFA
+                  </p>
                 </div>
               </Link>
             ))}
