@@ -1,5 +1,6 @@
 "use client";
 
+import Soundboard from "@/components/live/Soundboard";
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
