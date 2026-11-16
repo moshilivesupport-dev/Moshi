@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { ArrowLeft, Heart, MessageCircle, Share2, Volume2, VolumeX, Eye } from "lucide-react";
-import CommentsSheet from "@/components/video/CommentsSheet";
 
 export default function VideoDetailPage() {
   const { id } = useParams();
@@ -18,9 +17,7 @@ export default function VideoDetailPage() {
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [viewCount, setViewCount] = useState(0);
-  const [commentCount, setCommentCount] = useState(0);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [showComments, setShowComments] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -38,7 +35,6 @@ export default function VideoDetailPage() {
         setVideo(videoData);
         setLikeCount(videoData.like_count || 0);
         setViewCount(videoData.view_count || 0);
-        setCommentCount(videoData.comment_count || 0);
 
         // 2. Charger le profil de l'auteur
         const { data: profile } = await supabase
@@ -126,11 +122,11 @@ export default function VideoDetailPage() {
           <span className="text-xs font-semibold text-white">{likeCount}</span>
         </button>
 
-        <button onClick={() => setShowComments(true)} className="flex flex-col items-center gap-1">
+        <button className="flex flex-col items-center gap-1">
           <div className="w-[46px] h-[46px] rounded-full bg-white flex items-center justify-center shadow-md">
             <MessageCircle size={22} className="text-gray-900" />
           </div>
-          <span className="text-xs font-semibold text-white">{commentCount}</span>
+          <span className="text-xs font-semibold text-white">{video.comment_count || 0}</span>
         </button>
 
         <button className="flex flex-col items-center gap-1">
@@ -155,10 +151,6 @@ export default function VideoDetailPage() {
           </div>
         </div>
       </div>
-
-      {showComments && (
-        <CommentsSheet videoId={video.id} onClose={() => setShowComments(false)} />
-      )}
     </div>
   );
 }
