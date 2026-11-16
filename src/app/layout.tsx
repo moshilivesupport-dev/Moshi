@@ -1,6 +1,22 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import BottomNav from "@/components/layout/BottomNav";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Moshi",
+  description: "Live Shopping Social",
+  applicationName: "Moshi",
+  appleWebApp: {
+    capable: true,
+    title: "Moshi",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/apple-touch-icon.png",
+  },
+};
 
 export const metadata: Metadata = {
   title: "Moshi – Soft Social Commerce",
