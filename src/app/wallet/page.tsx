@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { ArrowLeft, Coins, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, Coins, Loader2, Sparkles, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CoinPack {
@@ -30,11 +30,9 @@ export default function WalletPage() {
       if (!user) { router.push("/auth/login"); return; }
       setUserId(user.id);
 
-      // Charger le solde
       const { data: wallet } = await supabase.from("wallets").select("balance").eq("user_id", user.id).single();
       setBalance(wallet?.balance || 0);
 
-      // Charger les packs
       const { data: packsData } = await supabase.from("coin_packs").select("*").order("price_fcfa", { ascending: true });
       setPacks(packsData || []);
 
@@ -47,19 +45,14 @@ export default function WalletPage() {
     if (!userId) return;
     setBuying(pack.id);
 
-    // SIMULATION D'ACHAT (à remplacer par un vrai paiement Cinetpay plus tard)
+    // Simulation d'achat (à remplacer par Cinetpay plus tard)
     try {
-      // Calculer le total de coins (coins de base + bonus)
       const totalCoins = pack.coins + pack.bonus;
       const newBalance = balance + totalCoins;
-
-      // Mettre à jour le wallet
       const { error } = await supabase.from("wallets").update({ balance: newBalance }).eq("user_id", userId);
-      
       if (error) throw error;
-
       setBalance(newBalance);
-      alert(`Félicitations ! Tu as reçu ${totalCoins} coins.`);
+      alert(`Félicitations ! Tu as reçu ${totalCoins.toLocaleString()} coins.`);
     } catch (err: any) {
       alert("Erreur : " + err.message);
     } finally {
@@ -92,55 +85,70 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {/* PACKS */}
+      {/* PACKS (Style Poppo) */}
       <div className="px-6">
-        <h2 className="text-lg font-bold text-moshi-text mb-4">Recharger mes coins</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-moshi-text">Recharger mes coins</h2>
+          <div className="flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">
+            <TrendingUp size={12} /> Plus tu achètes, moins c'est cher
+          </div>
+        </div>
         
-        <div className="grid grid-cols-2 gap-3">
-          {packs.map((pack) => (
-            <div 
-              key={pack.id} 
-              className={cn(
-                "relative bg-white rounded-2xl p-4 shadow-sm border-2 flex flex-col items-center",
-                pack.is_popular ? "border-moshi-purple" : "border-transparent"
-              )}
-            >
-              {pack.is_popular && (
-                <span className="absolute -top-2.5 bg-moshi-purple text-white text-[9px] font-bold px-2 py-0.5 rounded-full">
-                  POPULAIRE
-                </span>
-              )}
-              
-              <div className="flex items-center gap-1 mb-1">
-                <Coins className="w-5 h-5 text-yellow-500" />
-                <span className="text-xl font-extrabold text-moshi-text">{pack.coins.toLocaleString()}</span>
-              </div>
-              
-              {pack.bonus > 0 && (
-                <span className="text-[10px] font-bold text-green-500 mb-1">+{pack.bonus} offerts</span>
-              )}
-              
-              <p className="text-xs text-gray-500 mb-3">{pack.price_fcfa.toLocaleString()} FCFA</p>
-              
-              <button 
-                onClick={() => handleBuy(pack)}
-                disabled={buying === pack.id}
+        <div className="space-y-3">
+          {packs.map((pack) => {
+            const totalCoins = pack.coins + pack.bonus;
+            const pricePerCoin = pack.price_fcfa / totalCoins;
+            
+            return (
+              <div 
+                key={pack.id} 
                 className={cn(
-                  "w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1",
-                  pack.is_popular 
-                    ? "moshi-gradient text-white shadow-md" 
-                    : "bg-gray-100 text-moshi-text"
+                  "relative bg-white rounded-2xl p-4 shadow-sm border-2 flex items-center justify-between",
+                  pack.is_popular ? "border-moshi-purple" : "border-transparent"
                 )}
               >
-                {buying === pack.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Acheter"}
-              </button>
-            </div>
-          ))}
+                {pack.is_popular && (
+                  <span className="absolute -top-2.5 left-4 bg-moshi-purple text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Sparkles size={10} /> MEILLEUR CHOIX
+                  </span>
+                )}
+                
+                <div className="flex items-center gap-4">
+                  <div className={cn(
+                    "w-14 h-14 rounded-2xl flex items-center justify-center",
+                    pack.is_popular ? "moshi-gradient text-white" : "bg-yellow-50 text-yellow-600"
+                  )}>
+                    <Coins size={28} />
+                  </div>
+                  <div>
+                    <p className="text-xl font-extrabold text-moshi-text">{totalCoins.toLocaleString()} <span className="text-xs font-semibold text-gray-400">coins</span></p>
+                    {pack.bonus > 0 && (
+                      <p className="text-[10px] font-bold text-green-500">+{pack.bonus.toLocaleString()} offerts</p>
+                    )}
+                    <p className="text-[10px] text-gray-400 mt-0.5">{pricePerCoin.toFixed(2)} FCFA / coin</p>
+                  </div>
+                </div>
+                
+                <button 
+                  onClick={() => handleBuy(pack)}
+                  disabled={buying === pack.id}
+                  className={cn(
+                    "px-5 py-2.5 rounded-xl text-sm font-bold transition flex items-center gap-1",
+                    pack.is_popular 
+                      ? "moshi-gradient text-white shadow-md" 
+                      : "bg-gray-100 text-moshi-text"
+                  )}
+                >
+                  {buying === pack.id ? <Loader2 className="w-4 h-4 animate-spin" /> : `${pack.price_fcfa.toLocaleString()} F`}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       <p className="text-center text-[10px] text-gray-400 mt-8 px-8">
-        Le paiement réel sera bientôt disponible via Cinetpay. En attendant, les achats sont simulés.
+        Le paiement réel sera bientôt disponible via Cinetpay. En attendant, les achats sont simulés pour tester l'expérience.
       </p>
 
     </div>
