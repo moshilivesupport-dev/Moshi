@@ -8,7 +8,7 @@ import {
   VideoTrack,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { Track, TrackReference } from "livekit-client";
+import { Track } from "livekit-client";
 import { Loader2 } from "lucide-react";
 
 interface LiveKitRoomProps {
@@ -25,7 +25,7 @@ function FullScreenVideo() {
     { onlySubscribed: false }
   );
 
-  // On filtre pour ne garder que les vraies pistes (pas les placeholders)
+  // Filtrer les vraies pistes (pas les placeholders)
   const realTracks = tracks.filter((t) => t.publication !== undefined);
   const hostTrack = realTracks[0];
 
@@ -40,7 +40,7 @@ function FullScreenVideo() {
   return (
     <div className="absolute inset-0 w-full h-full overflow-hidden bg-black">
       <VideoTrack
-        trackRef={hostTrack as TrackReference}
+        trackRef={hostTrack as any}
         className="w-full h-full object-cover"
       />
     </div>
