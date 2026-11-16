@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { ArrowLeft, ShoppingBag, Loader2, Package } from "lucide-react";
+import { ArrowLeft, ShoppingBag, Loader2, Package, Pencil, Trash2, Check, X } from "lucide-react";
 
 interface Product {
   id: string;
@@ -21,26 +21,51 @@ export default function ProductDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const supabase = createClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isOwner, setIsOwner] = useState(false);
+
+  // Mode édition
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+  const [editStock, setEditStock] = useState("");
+  const [editImage, setEditImage] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
+
       const { data } = await supabase.from("products").select("*").eq("id", id).single();
-      setProduct(data);
+      if (data) {
+        setProduct(data);
+        setIsOwner(user?.id === data.seller_id);
+        // Initialiser les champs d'édition
+        setEditTitle(data.title);
+        setEditDescription(data.description || "");
+        setEditPrice(data.price.toString());
+        setEditStock(data.stock.toString());
+        setEditImage(data.image_url);
+      }
       setLoading(false);
     };
     if (id) load();
   }, [id, supabase]);
 
   const handleBuy = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push("/auth/login"); return; }
+    if (!currentUser) { router.push("/auth/login"); return; }
     setBuying(true);
     try {
       const { error } = await supabase.from("orders").insert({
-        buyer_id: user.id,
+        buyer_id: currentUser.id,
         product_id: product?.id,
         seller_id: product?.seller_id,
         total_amount: product?.price,
@@ -50,10 +75,61 @@ export default function ProductDetailPage() {
       alert("Commande passée ! Le vendeur va te contacter.");
       router.push("/");
     } catch (err: any) {
-      alert("Erreur : " + err.message + "\n(La table 'orders' doit être créée sur Supabase).");
+      alert("Erreur : " + err.message);
     } finally {
       setBuying(false);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Supprimer ce produit définitivement ?")) return;
+    const { error } = await supabase.from("products").delete().eq("id", product?.id);
+    if (error) { alert(error.message); return; }
+    router.push("/shop");
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser) return;
+    setUploading(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const filePath = `${currentUser.id}/${Date.now()}.${fileExt}`;
+      const { error } = await supabase.storage.from("products").upload(filePath, file);
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from("products").getPublicUrl(filePath);
+      setEditImage(publicUrl);
+    } catch (err: any) {
+      alert("Erreur upload : " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("products").update({
+      title: editTitle,
+      description: editDescription,
+      price: parseFloat(editPrice),
+      stock: parseInt(editStock),
+      image_url: editImage,
+    }).eq("id", product?.id);
+
+    if (error) {
+      alert("Erreur : " + error.message);
+    } else {
+      setProduct({
+        ...product!,
+        title: editTitle,
+        description: editDescription,
+        price: parseFloat(editPrice),
+        stock: parseInt(editStock),
+        image_url: editImage,
+      });
+      setIsEditing(false);
+    }
+    setSaving(false);
   };
 
   if (loading) return <div className="min-h-[100dvh] flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-moshi-purple" /></div>;
@@ -61,37 +137,92 @@ export default function ProductDetailPage() {
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg pb-32">
-      <header className="absolute top-0 left-0 right-0 z-20 p-4">
+      <header className="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between">
         <button onClick={() => router.back()} className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow-md">
           <ArrowLeft className="w-5 h-5" />
         </button>
+        
+        {/* BOUTONS VENDEUR (Modifier / Supprimer) */}
+        {isOwner && !isEditing && (
+          <div className="flex gap-2">
+            <button onClick={() => setIsEditing(true)} className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow-md text-moshi-purple">
+              <Pencil className="w-5 h-5" />
+            </button>
+            <button onClick={handleDelete} className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow-md text-red-500">
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
+        )}
       </header>
 
+      {/* IMAGE */}
       <div className="aspect-square w-full bg-white relative">
-        {product.image_url ? (
-          <Image src={product.image_url} alt={product.title} fill className="object-cover" unoptimized priority />
+        {isEditing ? (
+          <>
+            {editImage ? (
+              <Image src={editImage} alt="Preview" fill className="object-cover" unoptimized />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-300"><Package size={64} /></div>
+            )}
+            <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-4 right-4 bg-white px-3 py-2 rounded-full text-xs font-semibold shadow-md">
+              {uploading ? "Upload..." : "Changer l'image"}
+            </button>
+            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+          </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-300"><Package size={64} /></div>
+          product.image_url ? (
+            <Image src={product.image_url} alt={product.title} fill className="object-cover" unoptimized priority />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-300"><Package size={64} /></div>
+          )
         )}
       </div>
 
+      {/* CONTENU */}
       <div className="p-6">
-        {product.category && <p className="text-xs font-bold text-moshi-purple uppercase tracking-wider mb-1">{product.category}</p>}
-        <h1 className="text-2xl font-extrabold text-moshi-text mb-2">{product.title}</h1>
-        <p className="text-3xl font-extrabold text-moshi-purple mb-4">{product.price.toLocaleString()} FCFA</p>
-        <p className="text-sm text-gray-500 mb-6">Stock disponible : {product.stock}</p>
-        {product.description && (
+        {isEditing ? (
+          <div className="space-y-3">
+            <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 outline-none text-sm font-bold" />
+            <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 outline-none text-sm resize-none" />
+            <div className="flex gap-2">
+              <input type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 outline-none text-sm" />
+              <input type="number" value={editStock} onChange={(e) => setEditStock(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 outline-none text-sm" />
+            </div>
+          </div>
+        ) : (
           <>
-            <h2 className="text-sm font-bold mb-2">Description</h2>
-            <p className="text-sm text-gray-600 whitespace-pre-line mb-6">{product.description}</p>
+            {product.category && <p className="text-xs font-bold text-moshi-purple uppercase tracking-wider mb-1">{product.category}</p>}
+            <h1 className="text-2xl font-extrabold text-moshi-text mb-2">{product.title}</h1>
+            <p className="text-3xl font-extrabold text-moshi-purple mb-4">{product.price.toLocaleString()} FCFA</p>
+            <p className="text-sm text-gray-500 mb-6">Stock disponible : {product.stock}</p>
+            {product.description && (
+              <>
+                <h2 className="text-sm font-bold mb-2">Description</h2>
+                <p className="text-sm text-gray-600 whitespace-pre-line mb-6">{product.description}</p>
+              </>
+            )}
           </>
         )}
       </div>
 
+      {/* BARRE D'ACTION EN BAS */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe">
-        <button onClick={handleBuy} disabled={buying || product.stock === 0} className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
-          {buying ? <Loader2 className="animate-spin" /> : <><ShoppingBag size={20} /> {product.stock > 0 ? "Acheter maintenant" : "Rupture de stock"}</>}
-        </button>
+        {isEditing ? (
+          <div className="flex gap-2">
+            <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold py-4 rounded-2xl flex items-center justify-center gap-2">
+              <X size={20} /> Annuler
+            </button>
+            <button onClick={handleSave} disabled={saving} className="flex-1 moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
+              {saving ? <Loader2 className="animate-spin" /> : <><Check size={20} /> Enregistrer</>}
+            </button>
+          </div>
+        ) : (
+          !isOwner && (
+            <button onClick={handleBuy} disabled={buying || product.stock === 0} className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
+              {buying ? <Loader2 className="animate-spin" /> : <><ShoppingBag size={20} /> {product.stock > 0 ? "Acheter maintenant" : "Rupture de stock"}</>}
+            </button>
+          )
+        )}
       </div>
     </div>
   );
