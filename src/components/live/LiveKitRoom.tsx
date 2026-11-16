@@ -54,8 +54,8 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
       token={token}
       serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
       connect={true}
-      video={isHost}   // L'hôte active sa caméra
-      audio={isHost}   // L'hôte active son micro
+      video={isHost}
+      audio={isHost}
       className="absolute inset-0 z-10"
       onDisconnected={() => { window.location.href = "/"; }}
       onError={(err) => setError(err.message)}
