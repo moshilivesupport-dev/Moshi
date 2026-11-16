@@ -5,11 +5,8 @@ import {
   LiveKitRoom,
   VideoConference,
   RoomAudioRenderer,
-  useTracks,
-  ParticipantTile,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { Track } from "livekit-client";
 import { Loader2 } from "lucide-react";
 
 interface LiveKitRoomProps {
@@ -38,7 +35,7 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
 
   if (error) return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-white text-center p-6 z-30">
-      <p>Erreur LiveKit : {error}</p>
+      <p className="text-sm">Erreur LiveKit : {error}</p>
     </div>
   );
 
