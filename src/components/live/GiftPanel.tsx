@@ -77,7 +77,7 @@ export default function GiftPanel({ isOpen, onClose, onSendGift }: GiftPanelProp
               </button>
             </div>
 
-            {/* Solde de coins */}
+            {/* Solde de coins (statique pour l'instant) */}
             <div className="px-4 py-3 flex items-center justify-between bg-white/5">
               <p className="text-white/70 text-xs">Ton solde</p>
               <div className="flex items-center gap-1.5 bg-yellow-500/20 px-3 py-1 rounded-full">
