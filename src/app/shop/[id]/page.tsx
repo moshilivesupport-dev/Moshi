@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { ArrowLeft, ShoppingBag, Loader2, Package, Pencil, Trash2, Check, X } from "lucide-react";
+import { getFlag } from "@/lib/utils";
 
 interface Product {
   id: string;
@@ -17,6 +18,12 @@ interface Product {
   seller_id: string;
 }
 
+interface SellerProfile {
+  username: string | null;
+  full_name: string | null;
+  country: string | null;
+}
+
 export default function ProductDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -24,6 +31,7 @@ export default function ProductDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [product, setProduct] = useState<Product | null>(null);
+  const [sellerProfile, setSellerProfile] = useState<SellerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -48,12 +56,19 @@ export default function ProductDetailPage() {
       if (data) {
         setProduct(data);
         setIsOwner(user?.id === data.seller_id);
-        // Initialiser les champs d'édition
         setEditTitle(data.title);
         setEditDescription(data.description || "");
         setEditPrice(data.price.toString());
         setEditStock(data.stock.toString());
         setEditImage(data.image_url);
+
+        // Charger le profil du vendeur (avec le pays)
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username, full_name, country")
+          .eq("id", data.seller_id)
+          .single();
+        setSellerProfile(profile);
       }
       setLoading(false);
     };
@@ -142,7 +157,6 @@ export default function ProductDetailPage() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         
-        {/* BOUTONS VENDEUR (Modifier / Supprimer) */}
         {isOwner && !isEditing && (
           <div className="flex gap-2">
             <button onClick={() => setIsEditing(true)} className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center shadow-md text-moshi-purple">
@@ -155,7 +169,6 @@ export default function ProductDetailPage() {
         )}
       </header>
 
-      {/* IMAGE */}
       <div className="aspect-square w-full bg-white relative">
         {isEditing ? (
           <>
@@ -178,7 +191,6 @@ export default function ProductDetailPage() {
         )}
       </div>
 
-      {/* CONTENU */}
       <div className="p-6">
         {isEditing ? (
           <div className="space-y-3">
@@ -192,7 +204,17 @@ export default function ProductDetailPage() {
         ) : (
           <>
             {product.category && <p className="text-xs font-bold text-moshi-purple uppercase tracking-wider mb-1">{product.category}</p>}
-            <h1 className="text-2xl font-extrabold text-moshi-text mb-2">{product.title}</h1>
+            
+            {/* TITRE + DRAPEAU VENDEUR */}
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <h1 className="text-2xl font-extrabold text-moshi-text">{product.title}</h1>
+              {sellerProfile?.country && (
+                <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                  {getFlag(sellerProfile.country)} {sellerProfile.username || sellerProfile.full_name}
+                </span>
+              )}
+            </div>
+
             <p className="text-3xl font-extrabold text-moshi-purple mb-4">{product.price.toLocaleString()} FCFA</p>
             <p className="text-sm text-gray-500 mb-6">Stock disponible : {product.stock}</p>
             {product.description && (
@@ -205,7 +227,6 @@ export default function ProductDetailPage() {
         )}
       </div>
 
-      {/* BARRE D'ACTION EN BAS */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe">
         {isEditing ? (
           <div className="flex gap-2">
