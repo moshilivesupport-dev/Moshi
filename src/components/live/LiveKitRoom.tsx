@@ -35,7 +35,11 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
 
   if (error) return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-white text-center p-6 z-30">
-      <p className="text-sm">Erreur LiveKit : {error}</p>
+      <div>
+        <p className="text-lg font-bold mb-2">Erreur LiveKit</p>
+        <p className="text-sm text-red-400">{error}</p>
+        <p className="text-xs text-white/50 mt-4">Vérifie tes clés API sur Cloudflare (Settings &gt; Environment Variables).</p>
+      </div>
     </div>
   );
 
@@ -50,10 +54,11 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
       token={token}
       serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
       connect={true}
-      video={isHost}
-      audio={isHost}
+      video={isHost}   // L'hôte active sa caméra
+      audio={isHost}   // L'hôte active son micro
       className="absolute inset-0 z-10"
       onDisconnected={() => { window.location.href = "/"; }}
+      onError={(err) => setError(err.message)}
     >
       <VideoConference />
       <RoomAudioRenderer />
