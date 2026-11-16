@@ -15,6 +15,9 @@ interface LiveKitRoomProps {
   isHost: boolean;
 }
 
+// 👇 ON AJOUTE UNE VALEUR PAR DÉFAUT POUR L'URL
+const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://moshi-shopping-cs02jcsj.livekit.cloud";
+
 export default function LiveKitRoomComponent({ roomName, participantName, isHost }: LiveKitRoomProps) {
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +55,7 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
   return (
     <LiveKitRoom
       token={token}
-      serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
+      serverUrl={LIVEKIT_URL}  {/* 👈 ON UTILISE LA CONSTANTE */}
       connect={true}
       video={isHost}
       audio={isHost}
