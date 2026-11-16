@@ -40,7 +40,8 @@ function FullScreenVideo() {
     <div className="absolute inset-0 w-full h-full overflow-hidden bg-black">
       <VideoTrack
         trackRef={hostTrack as any}
-        className="w-full h-full object-cover"
+        className="w-full h-full"
+        style={{ objectFit: "cover" }}
       />
     </div>
   );
