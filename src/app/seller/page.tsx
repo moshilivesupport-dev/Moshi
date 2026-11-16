@@ -111,11 +111,13 @@ export default function SellerDashboardPage() {
   return (
     <div className="min-h-[100dvh] bg-moshi-bg pb-32">
       
-      {/* HEADER PROPRE (sans poubelle) */}
+      {/* HEADER AVEC ACCÈS AUX COMMANDES */}
       <header className="px-4 py-4 flex items-center justify-between bg-white shadow-sm sticky top-0 z-20">
         <Link href="/" className="p-2"><ArrowLeft className="w-6 h-6" /></Link>
         <h1 className="text-lg font-bold">Ma Boutique</h1>
-        <div className="w-10" />
+        <Link href="/seller/orders" className="relative p-2">
+          <Package className="w-6 h-6 text-moshi-purple" />
+        </Link>
       </header>
 
       <div className="p-4 max-w-md mx-auto">
@@ -140,7 +142,6 @@ export default function SellerDashboardPage() {
                   <p className="text-sm font-extrabold text-moshi-purple mt-1">{p.price.toLocaleString()} FCFA</p>
                   <p className="text-[10px] text-gray-400 mt-1">Stock: {p.stock}</p>
                 </div>
-                {/* Bouton supprimer sur la carte */}
                 <button 
                   onClick={() => handleDelete(p.id)} 
                   className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 backdrop-blur-md text-white flex items-center justify-center z-10"
