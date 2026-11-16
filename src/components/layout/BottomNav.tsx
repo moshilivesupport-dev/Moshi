@@ -21,6 +21,7 @@ export default function BottomNav() {
   const router = useRouter();
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
 
+  // Cacher la barre sur /seller, /auth, et /live
   if (pathname.startsWith("/seller") || pathname.startsWith("/auth") || pathname.startsWith("/live")) {
     return null;
   }
@@ -37,7 +38,7 @@ export default function BottomNav() {
               return (
                 <button
                   key={link.href}
-                  onClick={() => setIsCreateMenuOpen(true)} // <-- Ouvre la modale
+                  onClick={() => setIsCreateMenuOpen(true)}
                   aria-label="Créer"
                   className="relative -top-3 flex flex-col items-center"
                 >
@@ -85,7 +86,6 @@ export default function BottomNav() {
         </nav>
       </div>
 
-      {/* LA MODALE */}
       <CreateMenu isOpen={isCreateMenuOpen} onClose={() => setIsCreateMenuOpen(false)} />
     </>
   );
