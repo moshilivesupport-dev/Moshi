@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { ArrowLeft, Heart, MessageCircle, Share2, Volume2, VolumeX, Eye } from "lucide-react";
+import CommentsSheet from "@/components/video/CommentsSheet";
 
 export default function VideoDetailPage() {
   const { id } = useParams();
@@ -17,16 +18,19 @@ export default function VideoDetailPage() {
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [viewCount, setViewCount] = useState(0);
+  const [commentCount, setCommentCount] = useState(0);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showComments, setShowComments] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
 
+      // 1. Charger la vidéo
       const { data: videoData } = await supabase
         .from("videos")
-        .select("id, url, caption, like_count, view_count, user_id")
+        .select("id, url, caption, like_count, comment_count, view_count, user_id")
         .eq("id", id)
         .single();
 
@@ -34,8 +38,17 @@ export default function VideoDetailPage() {
         setVideo(videoData);
         setLikeCount(videoData.like_count || 0);
         setViewCount(videoData.view_count || 0);
+        setCommentCount(videoData.comment_count || 0);
 
-        // 1. Vérifier si l'utilisateur a déjà vu cette vidéo
+        // 2. Charger le profil de l'auteur
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username, full_name, avatar_url")
+          .eq("id", videoData.user_id)
+          .single();
+        setVideo((prev: any) => ({ ...prev, profiles: profile }));
+
+        // 3. Vérifier si l'utilisateur a déjà vu cette vidéo
         if (user) {
           const { data: alreadyViewed } = await supabase
             .from("video_views")
@@ -50,18 +63,8 @@ export default function VideoDetailPage() {
             await supabase.rpc("increment_video_view", { vid_id: id });
             setViewCount((prev) => prev + 1);
           }
-        }
 
-        // 2. Charger le profil de l'auteur
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("username, full_name, avatar_url")
-          .eq("id", videoData.user_id)
-          .single();
-        setVideo((prev: any) => ({ ...prev, profiles: profile }));
-
-        // 3. Vérifier si l'utilisateur a liké
-        if (user) {
+          // 4. Vérifier si l'utilisateur a liké
           const { data: likeData } = await supabase
             .from("video_likes")
             .select("video_id")
@@ -123,11 +126,11 @@ export default function VideoDetailPage() {
           <span className="text-xs font-semibold text-white">{likeCount}</span>
         </button>
 
-        <button className="flex flex-col items-center gap-1">
+        <button onClick={() => setShowComments(true)} className="flex flex-col items-center gap-1">
           <div className="w-[46px] h-[46px] rounded-full bg-white flex items-center justify-center shadow-md">
             <MessageCircle size={22} className="text-gray-900" />
           </div>
-          <span className="text-xs font-semibold text-white">{video.comment_count || 0}</span>
+          <span className="text-xs font-semibold text-white">{commentCount}</span>
         </button>
 
         <button className="flex flex-col items-center gap-1">
@@ -146,13 +149,16 @@ export default function VideoDetailPage() {
         <p className="text-white font-bold text-base">@{authorName}</p>
         {video.caption && <p className="text-white/90 text-sm leading-snug">{video.caption}</p>}
         
-        {/* LES VUES (en bas) */}
         <div className="flex items-center gap-4 text-white/80 text-xs pt-2">
           <div className="flex items-center gap-1">
             <Eye size={14} /> {viewCount} vues
           </div>
         </div>
       </div>
+
+      {showComments && (
+        <CommentsSheet videoId={video.id} onClose={() => setShowComments(false)} />
+      )}
     </div>
   );
 }
