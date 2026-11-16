@@ -52,53 +52,48 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // --- VIDÉOS (sans tri pour éviter l'erreur 400) ---
+    // 1. Charger TOUTES les vidéos (select * pour éviter les erreurs de nom de colonne)
     const { data: videosData, error: videosError } = await supabase
       .from("videos")
-      .select("id, url, caption, title, like_count, comment_count, user_id")
+      .select("*")
       .limit(20);
 
     if (videosError) {
       console.error("Erreur chargement vidéos:", videosError);
-      console.log("Détail de l'erreur :", JSON.stringify(videosError, null, 2));
     }
-    console.log("Vidéos trouvées :", videosData);
+    console.log("Vidéos brutes Supabase :", videosData);
 
-    // --- LIVES ---
-    const { data: livesData, error: livesError } = await supabase
+    // 2. Charger les lives
+    const { data: livesData } = await supabase
       .from("lives")
-      .select("id, title, host_id")
+      .select("*")
       .eq("status", "live");
 
-    if (livesError) console.error("Erreur chargement lives:", livesError);
-    console.log("Lives trouvés :", livesData);
+    console.log("Lives bruts Supabase :", livesData);
 
-    // --- PROFILS ---
+    // 3. Charger les profils
     const allUserIds = [
-      ...(livesData || []).map(l => l.host_id),
-      ...(videosData || []).map(v => v.user_id)
+      ...(livesData || []).map((l: any) => l.host_id),
+      ...(videosData || []).map((v: any) => v.user_id)
     ];
     const uniqueUserIds = [...new Set(allUserIds)];
 
-    const { data: profilesData, error: profilesError } = await supabase
+    const { data: profilesData } = await supabase
       .from("profiles")
       .select("id, username, avatar_url, full_name, country")
       .in("id", uniqueUserIds);
-
-    if (profilesError) console.error("Erreur chargement profils:", profilesError);
-    console.log("Profils trouvés :", profilesData);
 
     const profilesMap: Record<string, any> = {};
     (profilesData || []).forEach((p) => {
       profilesMap[p.id] = p;
     });
 
-    // --- FUSION ---
+    // 4. Fusionner
     const livesItems: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
       type: "live",
       url: "",
-      caption: l.title,
+      caption: l.title || "Live",
       title: l.title,
       like_count: 0,
       comment_count: 0,
@@ -109,18 +104,22 @@ export default function HomeFeed() {
     const videosItems: FeedItem[] = (videosData || []).map((v: any) => ({
       id: v.id,
       type: "video",
-      url: v.url,
-      caption: v.caption,
-      title: v.title,
+      // On essaie plusieurs noms de colonnes possibles pour l'URL
+      url: v.url || v.video_url || v.link || v.file_url || "",
+      caption: v.caption || v.description || null,
+      title: v.title || null,
       like_count: v.like_count || 0,
       comment_count: v.comment_count || 0,
       user_id: v.user_id,
       profiles: profilesMap[v.user_id] || null,
     }));
 
-    console.log("Items finaux :", [...livesItems, ...videosItems]);
+    // Filtrer les vidéos qui n'ont pas d'URL valide
+    const validVideos = videosItems.filter(v => v.url && v.url.trim() !== "");
 
-    setItems([...livesItems, ...videosItems]);
+    console.log("Items finaux :", [...livesItems, ...validVideos]);
+
+    setItems([...livesItems, ...validVideos]);
 
     if (currentUser) {
       const { data: likesData } = await supabase.from("video_likes").select("video_id").eq("user_id", currentUser.id);
