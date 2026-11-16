@@ -3,12 +3,11 @@
 import { useEffect, useState } from "react";
 import {
   LiveKitRoom,
-  ParticipantTile,
   RoomAudioRenderer,
   useTracks,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { Track } from "livekit-client";
+import { Track, VideoTrack } from "livekit-client";
 import { Loader2 } from "lucide-react";
 
 interface LiveKitRoomProps {
@@ -19,23 +18,30 @@ interface LiveKitRoomProps {
 
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://moshi-shopping-cs02jcsj.livekit.cloud";
 
-// Composant qui affiche uniquement la vidéo, plein écran, sans contrôles
-function VideoOnly() {
+// Composant qui affiche UNIQUEMENT la vidéo de l'hôte en plein écran
+function FullScreenVideo() {
   const tracks = useTracks(
-    [{ source: Track.Source.Camera, withPlaceholder: true }],
+    [{ source: Track.Source.Camera, withPlaceholder: false }],
     { onlySubscribed: false }
   );
 
+  // On ne garde que la piste de l'hôte (le premier participant qui a une caméra)
+  const hostTrack = tracks.find(t => t.participant.identity !== "");
+
+  if (!hostTrack) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-black">
+        <Loader2 className="w-8 h-8 text-white animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="absolute inset-0 w-full h-full">
-      {tracks.map((trackRef) => (
-        <ParticipantTile
-          key={trackRef.participant.identity}
-          trackRef={trackRef}
-          className="absolute inset-0 w-full h-full [&>video]:object-cover [&>video]:w-full [&>video]:h-full"
-          disableSpeakingIndicator
-        />
-      ))}
+    <div className="absolute inset-0 w-full h-full overflow-hidden bg-black">
+      <VideoTrack
+        trackRef={hostTrack}
+        className="w-full h-full object-cover"
+      />
     </div>
   );
 }
@@ -83,7 +89,7 @@ export default function LiveKitRoomComponent({ roomName, participantName, isHost
       className="absolute inset-0 z-10"
       onDisconnected={() => { window.location.href = "/"; }}
     >
-      <VideoOnly />
+      <FullScreenVideo />
       <RoomAudioRenderer />
     </LiveKitRoom>
   );
