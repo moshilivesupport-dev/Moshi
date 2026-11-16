@@ -34,8 +34,8 @@ export async function GET(request: Request) {
   token.addGrant({
     room: roomName,
     roomJoin: true,
-    canPublish: true,    // Autorise la diffusion (hôte)
-    canSubscribe: true,  // Autorise la réception (viewers)
+    canPublish: true,
+    canSubscribe: true,
     canPublishData: true,
   });
 
