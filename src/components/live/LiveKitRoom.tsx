@@ -25,7 +25,6 @@ function FullScreenVideo() {
     { onlySubscribed: false }
   );
 
-  // Filtrer les vraies pistes (pas les placeholders)
   const realTracks = tracks.filter((t) => t.publication !== undefined);
   const hostTrack = realTracks[0];
 
