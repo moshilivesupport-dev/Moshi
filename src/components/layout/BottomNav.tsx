@@ -18,6 +18,11 @@ export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
 
+  // On cache la barre sur les pages qui n'en ont pas besoin
+  if (pathname.startsWith("/seller") || pathname.startsWith("/auth")) {
+    return null;
+  }
+
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 pb-safe">
       <nav className="mx-auto flex h-[72px] max-w-lg items-center justify-around rounded-[28px] bg-white/95 backdrop-blur-xl shadow-lg px-2">
