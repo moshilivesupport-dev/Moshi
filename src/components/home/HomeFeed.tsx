@@ -52,18 +52,21 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
+    // 1. Lives en cours
     const { data: livesData } = await supabase
       .from("lives")
       .select("id, title, host_id")
       .eq("status", "live")
       .order("created_at", { ascending: false });
 
+    // 2. Vidéos (on enlève le filtre status pour voir toutes les vidéos)
     const { data: videosData } = await supabase
       .from("videos")
       .select("id, url, caption, title, like_count, comment_count, user_id")
       .order("created_at", { ascending: false })
       .limit(20);
 
+    // 3. Profils
     const allUserIds = [
       ...(livesData || []).map(l => l.host_id),
       ...(videosData || []).map(v => v.user_id)
@@ -80,6 +83,7 @@ export default function HomeFeed() {
       profilesMap[p.id] = p;
     });
 
+    // 4. Fusion (Lives d'abord, puis vidéos)
     const livesItems: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
       type: "live",
