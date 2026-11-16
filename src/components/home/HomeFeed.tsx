@@ -52,34 +52,47 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    const { data: livesData } = await supabase
+    // --- LIVES ---
+    const { data: livesData, error: livesError } = await supabase
       .from("lives")
       .select("id, title, host_id")
       .eq("status", "live")
       .order("created_at", { ascending: false });
 
-    const { data: videosData } = await supabase
+    if (livesError) console.error("Erreur chargement lives:", livesError);
+    console.log("Lives trouvés :", livesData);
+
+    // --- VIDÉOS ---
+    const { data: videosData, error: videosError } = await supabase
       .from("videos")
       .select("id, url, caption, title, like_count, comment_count, user_id")
       .order("created_at", { ascending: false })
       .limit(20);
 
+    if (videosError) console.error("Erreur chargement vidéos:", videosError);
+    console.log("Vidéos trouvées :", videosData);
+
+    // --- PROFILS ---
     const allUserIds = [
       ...(livesData || []).map(l => l.host_id),
       ...(videosData || []).map(v => v.user_id)
     ];
     const uniqueUserIds = [...new Set(allUserIds)];
 
-    const { data: profilesData } = await supabase
+    const { data: profilesData, error: profilesError } = await supabase
       .from("profiles")
       .select("id, username, avatar_url, full_name, country")
       .in("id", uniqueUserIds);
+
+    if (profilesError) console.error("Erreur chargement profils:", profilesError);
+    console.log("Profils trouvés :", profilesData);
 
     const profilesMap: Record<string, any> = {};
     (profilesData || []).forEach((p) => {
       profilesMap[p.id] = p;
     });
 
+    // --- FUSION ---
     const livesItems: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
       type: "live",
@@ -103,6 +116,8 @@ export default function HomeFeed() {
       user_id: v.user_id,
       profiles: profilesMap[v.user_id] || null,
     }));
+
+    console.log("Items finaux :", [...livesItems, ...videosItems]);
 
     setItems([...livesItems, ...videosItems]);
 
@@ -139,7 +154,6 @@ export default function HomeFeed() {
     return <div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  // SI LE FEED EST VIDE : on affiche juste un message discret, SANS bouton "Publier la première"
   if (items.length === 0) {
     return (
       <div className="h-[100dvh] bg-black flex flex-col items-center justify-center px-6 text-center">
