@@ -13,7 +13,6 @@ interface FeedItem {
   type: "video" | "live";
   url: string;
   caption: string | null;
-  title?: string | null;
   like_count: number;
   comment_count: number;
   user_id: string;
@@ -52,26 +51,27 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // 1. Charger TOUTES les vidéos (select * pour éviter les erreurs de nom de colonne)
+    // 1. VIDÉOS (on ne demande plus 'title')
     const { data: videosData, error: videosError } = await supabase
       .from("videos")
-      .select("*")
+      .select("id, url, caption, like_count, comment_count, user_id")
       .limit(20);
 
     if (videosError) {
       console.error("Erreur chargement vidéos:", videosError);
     }
-    console.log("Vidéos brutes Supabase :", videosData);
+    console.log("Vidéos trouvées :", videosData);
 
-    // 2. Charger les lives
-    const { data: livesData } = await supabase
+    // 2. LIVES
+    const { data: livesData, error: livesError } = await supabase
       .from("lives")
-      .select("*")
+      .select("id, title, host_id")
       .eq("status", "live");
 
-    console.log("Lives bruts Supabase :", livesData);
+    if (livesError) console.error("Erreur chargement lives:", livesError);
+    console.log("Lives trouvés :", livesData);
 
-    // 3. Charger les profils
+    // 3. PROFILS
     const allUserIds = [
       ...(livesData || []).map((l: any) => l.host_id),
       ...(videosData || []).map((v: any) => v.user_id)
@@ -88,13 +88,12 @@ export default function HomeFeed() {
       profilesMap[p.id] = p;
     });
 
-    // 4. Fusionner
+    // 4. FUSION
     const livesItems: FeedItem[] = (livesData || []).map((l: any) => ({
       id: l.id,
       type: "live",
       url: "",
-      caption: l.title || "Live",
-      title: l.title,
+      caption: l.title,
       like_count: 0,
       comment_count: 0,
       user_id: l.host_id,
@@ -104,22 +103,17 @@ export default function HomeFeed() {
     const videosItems: FeedItem[] = (videosData || []).map((v: any) => ({
       id: v.id,
       type: "video",
-      // On essaie plusieurs noms de colonnes possibles pour l'URL
-      url: v.url || v.video_url || v.link || v.file_url || "",
-      caption: v.caption || v.description || null,
-      title: v.title || null,
+      url: v.url,
+      caption: v.caption,
       like_count: v.like_count || 0,
       comment_count: v.comment_count || 0,
       user_id: v.user_id,
       profiles: profilesMap[v.user_id] || null,
     }));
 
-    // Filtrer les vidéos qui n'ont pas d'URL valide
-    const validVideos = videosItems.filter(v => v.url && v.url.trim() !== "");
+    console.log("Items finaux :", [...livesItems, ...videosItems]);
 
-    console.log("Items finaux :", [...livesItems, ...validVideos]);
-
-    setItems([...livesItems, ...validVideos]);
+    setItems([...livesItems, ...videosItems]);
 
     if (currentUser) {
       const { data: likesData } = await supabase.from("video_likes").select("video_id").eq("user_id", currentUser.id);
@@ -179,7 +173,7 @@ export default function HomeFeed() {
                 <span className="bg-red-500 text-white text-sm font-bold px-4 py-1 rounded-full mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 bg-white rounded-full animate-pulse" /> LIVE
                 </span>
-                <h2 className="text-white text-2xl font-extrabold mb-2">{item.title}</h2>
+                <h2 className="text-white text-2xl font-extrabold mb-2">{item.caption}</h2>
                 <p className="text-white/80 font-semibold">par @{authorName}</p>
                 <button className="mt-6 bg-white text-black font-bold px-8 py-3 rounded-full shadow-lg">
                   Rejoindre le live
@@ -228,7 +222,7 @@ export default function HomeFeed() {
               <Link href={`/profile/${item.user_id}`} className="text-white font-bold text-base hover:underline">
                 @{authorName} {author?.country && getFlag(author.country)}
               </Link>
-              {(item.caption || item.title) && <p className="text-white/90 text-sm line-clamp-2">{item.caption || item.title}</p>}
+              {item.caption && <p className="text-white/90 text-sm line-clamp-2">{item.caption}</p>}
             </div>
           </section>
         );
