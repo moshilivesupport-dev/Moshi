@@ -11,8 +11,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Import dynamique pour éviter les erreurs SSR
 const LiveKitRoomComponent = dynamic(() => import("@/components/live/LiveKitRoom"), { ssr: false });
+
+// Types pour les cœurs animés
+interface HeartParticle {
+  id: number;
+  x: number;
+  y: number;
+  color: string;
+}
 
 export default function LiveRoomPage() {
   const { id } = useParams();
@@ -29,17 +36,35 @@ export default function LiveRoomPage() {
     { id: "2", name: "Sarah", text: "Je l'adore 😍", avatar: "https://i.pravatar.cc/150?img=2" },
   ]);
 
-  // Cœurs animés
-  const [hearts, setHearts] = useState<{ id: number; left: number }[]>([]);
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setHearts(prev => [...prev, { id: Date.now(), left: Math.random() * 80 + 10 }]);
-    }, 800);
-    return () => clearInterval(interval);
-  }, []);
-  useEffect(() => {
-    if (hearts.length > 10) setHearts(hearts.slice(-10));
-  }, [hearts]);
+  // Système de cœurs animés sur tap
+  const [hearts, setHearts] = useState<HeartParticle[]>([]);
+  const [likeCount, setLikeCount] = useState(28500);
+
+  const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Ne pas déclencher si on clique sur un bouton/input
+    const target = e.target as HTMLElement;
+    if (target.closest("button") || target.closest("input") || target.closest("a")) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const colors = ["#FF8FB1", "#9D7BEA", "#60A5FA", "#FF4B72"];
+    const newHeart: HeartParticle = {
+      id: Date.now() + Math.random(),
+      x,
+      y,
+      color: colors[Math.floor(Math.random() * colors.length)],
+    };
+
+    setHearts((prev) => [...prev, newHeart]);
+    setLikeCount((prev) => prev + 1);
+
+    // Nettoyer après animation (2s)
+    setTimeout(() => {
+      setHearts((prev) => prev.filter((h) => h.id !== newHeart.id));
+    }, 2000);
+  };
 
   useEffect(() => {
     const loadLive = async () => {
@@ -51,6 +76,7 @@ export default function LiveRoomPage() {
         setLive({ ...data, profiles: profile });
         setIsHost(user?.id === data.host_id);
         setUserName(profile?.username || profile?.full_name || "Viewer");
+        setLikeCount(data.like_count || 28500);
       }
       setLoading(false);
     };
@@ -69,21 +95,18 @@ export default function LiveRoomPage() {
   const hostName = live.profiles?.full_name || live.profiles?.username || "Hôte";
 
   return (
-    <div className="h-[100dvh] w-full bg-black relative overflow-hidden flex flex-col">
+    <div 
+      className="h-[100dvh] w-full bg-black relative overflow-hidden flex flex-col"
+      onClick={handleScreenTap} // <--- LE TAP EST ICI
+    >
       
-      {/* LE VRAI COMPOSANT LIVEKIT */}
-      <LiveKitRoomComponent 
-        roomName={`live-${live.id}`} 
-        participantName={userName} 
-        isHost={isHost} 
-      />
+      <LiveKitRoomComponent roomName={`live-${live.id}`} participantName={userName} isHost={isHost} />
 
-      {/* OVERLAY POUR L'UI */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 pointer-events-none z-20" />
 
       {/* HEADER */}
-      <header className="relative z-30 p-4 pt-safe pointer-events-auto">
-        <div className="flex items-center justify-between mb-4">
+      <header className="relative z-30 p-4 pt-safe pointer-events-none">
+        <div className="flex items-center justify-between mb-4 pointer-events-auto">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg moshi-gradient flex items-center justify-center text-white font-extrabold text-lg">M</div>
             <span className="text-white font-bold text-xl">moshi</span>
@@ -100,7 +123,7 @@ export default function LiveRoomPage() {
           )}
         </div>
 
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between pointer-events-auto">
           <div className="flex items-center gap-2">
             <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-gray-800 relative">
               {live.profiles?.avatar_url ? (
@@ -114,7 +137,7 @@ export default function LiveRoomPage() {
                 <p className="text-white text-sm font-bold">{hostName}</p>
                 <span className="w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white font-bold">✓</span>
               </div>
-              <p className="text-white/70 text-[10px]">12.8K J'aime</p>
+              <p className="text-white/70 text-[10px]">{likeCount.toLocaleString()} J'aime</p>
             </div>
             {!isHost && (
               <button className="ml-2 bg-gradient-to-r from-pink-500 to-purple-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
@@ -131,19 +154,30 @@ export default function LiveRoomPage() {
         </div>
       </header>
 
-      <div className="flex-1" />
+      <div className="flex-1 pointer-events-none" />
 
-      {/* CŒURS */}
-      <div className="absolute right-4 bottom-48 z-20 pointer-events-none w-24 h-64 overflow-hidden">
+      {/* ANIMATION DES CŒURS QUI MONTENT */}
+      <div className="absolute inset-0 z-25 pointer-events-none overflow-hidden">
         {hearts.map((h) => (
-          <div key={h.id} className="absolute text-pink-500 animate-float-up opacity-80" style={{ left: `${h.left}%`, bottom: 0 }}>
-            <Heart className="w-6 h-6 fill-pink-500" />
+          <div
+            key={h.id}
+            className="absolute"
+            style={{ left: h.x, top: h.y }}
+          >
+            <Heart 
+              className="w-8 h-8 animate-float-heart"
+              style={{ 
+                fill: h.color,
+                color: h.color,
+                filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))"
+              }}
+            />
           </div>
         ))}
       </div>
 
       {/* CHAT */}
-      <div className="relative z-20 px-4 space-y-2 mb-2 max-h-[30vh] overflow-y-auto scrollbar-hide pointer-events-auto">
+      <div className="relative z-30 px-4 space-y-2 mb-2 max-h-[30vh] overflow-y-auto scrollbar-hide pointer-events-auto">
         {messages.slice(-4).map((m) => (
           <div key={m.id} className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-full overflow-hidden bg-gray-700 shrink-0">
@@ -161,9 +195,9 @@ export default function LiveRoomPage() {
         ))}
       </div>
 
-      {/* PRODUIT ÉPINGLÉ */}
+      {/* PRODUIT */}
       {live.product && (
-        <div className="relative z-20 px-4 mb-2 pointer-events-auto">
+        <div className="relative z-30 px-4 mb-2 pointer-events-auto">
           <div className="bg-white/95 backdrop-blur-md rounded-2xl p-2 flex items-center gap-3 shadow-xl">
             <div className="w-12 h-12 rounded-xl bg-gray-100 flex-shrink-0 overflow-hidden">
               {live.product.image_url ? (
@@ -186,7 +220,7 @@ export default function LiveRoomPage() {
       )}
 
       {/* INPUT CHAT */}
-      <div className="relative z-20 px-4 mb-3 pointer-events-auto">
+      <div className="relative z-30 px-4 mb-3 pointer-events-auto">
         <div className="flex items-center gap-2">
           <div className="flex-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-3 py-2 flex items-center gap-2">
             <Smile size={18} className="text-white/60" />
@@ -206,8 +240,8 @@ export default function LiveRoomPage() {
         </div>
       </div>
 
-      {/* ACTIONS BAS */}
-      <div className="relative z-20 flex items-center justify-around px-6 pb-safe pb-4 pointer-events-auto">
+      {/* ACTIONS */}
+      <div className="relative z-30 flex items-center justify-around px-6 pb-safe pb-4 pointer-events-auto">
         <button className="flex flex-col items-center gap-1 text-white/80">
           <div className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center"><Mic size={20} /></div>
           <span className="text-[9px] font-semibold">Micro</span>
