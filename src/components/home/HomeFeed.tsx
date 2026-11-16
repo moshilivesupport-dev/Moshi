@@ -51,25 +51,17 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // 1. VIDÉOS (on ne demande plus 'title')
-    const { data: videosData, error: videosError } = await supabase
+    // 1. VIDÉOS
+    const { data: videosData } = await supabase
       .from("videos")
       .select("id, url, caption, like_count, comment_count, user_id")
       .limit(20);
 
-    if (videosError) {
-      console.error("Erreur chargement vidéos:", videosError);
-    }
-    console.log("Vidéos trouvées :", videosData);
-
     // 2. LIVES
-    const { data: livesData, error: livesError } = await supabase
+    const { data: livesData } = await supabase
       .from("lives")
       .select("id, title, host_id")
       .eq("status", "live");
-
-    if (livesError) console.error("Erreur chargement lives:", livesError);
-    console.log("Lives trouvés :", livesData);
 
     // 3. PROFILS
     const allUserIds = [
@@ -110,8 +102,6 @@ export default function HomeFeed() {
       user_id: v.user_id,
       profiles: profilesMap[v.user_id] || null,
     }));
-
-    console.log("Items finaux :", [...livesItems, ...videosItems]);
 
     setItems([...livesItems, ...videosItems]);
 
@@ -186,7 +176,9 @@ export default function HomeFeed() {
         return (
           <section key={item.id} className="moshi-video relative bg-black">
             <video src={item.url} className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted={muted} playsInline />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
+            
+            {/* DÉGRADÉ SOMBRE POUR LA LISIBILITÉ */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent pointer-events-none" />
 
             <button onClick={() => setMuted(!muted)} className="absolute top-20 right-4 z-30 moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white">
               {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
@@ -218,11 +210,11 @@ export default function HomeFeed() {
               </button>
             </div>
 
-            <div className="absolute left-4 right-20 bottom-32 z-20 space-y-2">
-              <Link href={`/profile/${item.user_id}`} className="text-white font-bold text-base hover:underline">
+            <div className="absolute left-4 right-20 bottom-28 z-20 space-y-2">
+              <Link href={`/profile/${item.user_id}`} className="text-white font-bold text-base hover:underline drop-shadow-md">
                 @{authorName} {author?.country && getFlag(author.country)}
               </Link>
-              {item.caption && <p className="text-white/90 text-sm line-clamp-2">{item.caption}</p>}
+              {item.caption && <p className="text-white/90 text-sm line-clamp-2 drop-shadow-md">{item.caption}</p>}
             </div>
           </section>
         );
