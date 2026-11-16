@@ -1,18 +1,18 @@
 "use client";
 
-import Soundboard from "@/components/live/Soundboard";
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import {
-  X, Eye, Heart, ShoppingBag, ChevronRight, Mic,
-  Camera, UserPlus, Gift, MoreHorizontal, Send, Smile, Crown, Coins
+  X, Eye, Heart, ShoppingBag, Mic, Camera, UserPlus,
+  Gift, MoreHorizontal, Send, Smile, Crown, Coins, Music
 } from "lucide-react";
 import { cn, getFlag } from "@/lib/utils";
 import GiftPanel from "@/components/live/GiftPanel";
 import GiftAnimation from "@/components/live/GiftAnimation";
+import Soundboard from "@/components/live/Soundboard";
 
 const LiveKitRoomComponent = dynamic(() => import("@/components/live/LiveKitRoom"), { ssr: false });
 
@@ -59,6 +59,7 @@ export default function LiveRoomPage() {
   
   const [walletBalance, setWalletBalance] = useState(0);
   const [isGiftPanelOpen, setIsGiftPanelOpen] = useState(false);
+  const [isSoundboardOpen, setIsSoundboardOpen] = useState(false);
   const [activeGiftAnimation, setActiveGiftAnimation] = useState<{ icon: string; name: string; senderName: string } | null>(null);
 
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -378,6 +379,10 @@ export default function LiveRoomPage() {
           <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center"><UserPlus size={18} /></div>
           <span className="text-[9px] font-semibold">Inviter</span>
         </button>
+        <button onClick={() => setIsSoundboardOpen(true)} className="flex flex-col items-center gap-1 text-white/80">
+          <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center"><Music size={18} /></div>
+          <span className="text-[9px] font-semibold">Sons</span>
+        </button>
         <button className="flex flex-col items-center gap-1 text-white/80">
           <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center"><MoreHorizontal size={18} /></div>
           <span className="text-[9px] font-semibold">Plus</span>
@@ -385,6 +390,7 @@ export default function LiveRoomPage() {
       </div>
 
       <GiftPanel isOpen={isGiftPanelOpen} onClose={() => setIsGiftPanelOpen(false)} onSendGift={handleSendGift} />
+      <Soundboard isOpen={isSoundboardOpen} onClose={() => setIsSoundboardOpen(false)} />
     </div>
   );
 }
