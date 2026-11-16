@@ -9,7 +9,7 @@ import {
   X, Eye, Heart, ShoppingBag, ChevronRight, Mic,
   Camera, UserPlus, Gift, MoreHorizontal, Send, Smile, Crown, Coins
 } from "lucide-react";
-import { getFlag } from "@/lib/utils";
+import { cn, getFlag } from "@/lib/utils"; // <--- CORRIGÉ ICI
 import GiftPanel from "@/components/live/GiftPanel";
 import GiftAnimation from "@/components/live/GiftAnimation";
 
