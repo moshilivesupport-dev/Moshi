@@ -52,25 +52,26 @@ export default function HomeFeed() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
+    // --- VIDÉOS (sans tri pour éviter l'erreur 400) ---
+    const { data: videosData, error: videosError } = await supabase
+      .from("videos")
+      .select("id, url, caption, title, like_count, comment_count, user_id")
+      .limit(20);
+
+    if (videosError) {
+      console.error("Erreur chargement vidéos:", videosError);
+      console.log("Détail de l'erreur :", JSON.stringify(videosError, null, 2));
+    }
+    console.log("Vidéos trouvées :", videosData);
+
     // --- LIVES ---
     const { data: livesData, error: livesError } = await supabase
       .from("lives")
       .select("id, title, host_id")
-      .eq("status", "live")
-      .order("created_at", { ascending: false });
+      .eq("status", "live");
 
     if (livesError) console.error("Erreur chargement lives:", livesError);
     console.log("Lives trouvés :", livesData);
-
-    // --- VIDÉOS ---
-    const { data: videosData, error: videosError } = await supabase
-      .from("videos")
-      .select("id, url, caption, title, like_count, comment_count, user_id")
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (videosError) console.error("Erreur chargement vidéos:", videosError);
-    console.log("Vidéos trouvées :", videosData);
 
     // --- PROFILS ---
     const allUserIds = [
@@ -157,7 +158,7 @@ export default function HomeFeed() {
   if (items.length === 0) {
     return (
       <div className="h-[100dvh] bg-black flex flex-col items-center justify-center px-6 text-center">
-        <p className="text-neutral-400 font-medium">Aucun contenu pour le moment</p>
+        <p className="text-neutral-400 font-medium">Aucune vidéo pour le moment</p>
       </div>
     );
   }
