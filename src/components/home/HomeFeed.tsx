@@ -1,9 +1,23 @@
+
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Heart, MessageCircle, Share2, Volume2, VolumeX, Radio } from "lucide-react";
+import {
+  Heart,
+  MessageCircle,
+  Share2,
+  Volume2,
+  VolumeX,
+  Radio,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { getFlag } from "@/lib/utils";
@@ -24,15 +38,145 @@ interface FeedItem {
   } | null;
 }
 
+interface FeedVideoProps {
+  item: FeedItem;
+  muted: boolean;
+  onToggleMute: (video: HTMLVideoElement) => void;
+  children: React.ReactNode;
+}
+
 function formatNumber(num: number): string {
-  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
-  if (num >= 1_000) return (num / 1_000).toFixed(1).replace(".0", "") + "K";
+  if (num >= 1_000_000) {
+    return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
+  }
+
+  if (num >= 1_000) {
+    return (num / 1_000).toFixed(1).replace(".0", "") + "K";
+  }
+
   return num.toString();
 }
 
+/**
+ * Lecteur individuel :
+ * - détecte si la vidéo est visible ;
+ * - lit uniquement la vidéo visible ;
+ * - met en pause les autres vidéos ;
+ * - limite le préchargement aux métadonnées.
+ */
+function FeedVideo({
+  item,
+  muted,
+  onToggleMute,
+  children,
+}: FeedVideoProps) {
+  const sectionRef = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+
+    if (!("IntersectionObserver" in window)) {
+      setIsVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        setIsVisible(
+          entry.isIntersecting && entry.intersectionRatio >= 0.65
+        );
+      },
+      {
+        threshold: [0, 0.25, 0.5, 0.65, 0.85, 1],
+      }
+    );
+
+    observer.observe(section);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.muted = muted;
+
+    if (isVisible) {
+      const playPromise = video.play();
+
+      if (playPromise !== undefined) {
+        playPromise.catch((error) => {
+          // Le navigateur peut bloquer la lecture automatique.
+          if (error?.name !== "AbortError") {
+            console.warn("Lecture vidéo impossible :", error);
+          }
+        });
+      }
+    } else {
+      video.pause();
+    }
+  }, [isVisible, muted]);
+
+  useEffect(() => {
+    return () => {
+      videoRef.current?.pause();
+    };
+  }, []);
+
+  const handleToggleMute = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Modification immédiate dans le geste de l'utilisateur.
+    onToggleMute(video);
+  };
+
+  return (
+    <section
+      ref={sectionRef}
+      className="moshi-video relative bg-black"
+    >
+      <video
+        ref={videoRef}
+        src={item.url}
+        className="absolute inset-0 h-full w-full object-cover"
+        loop
+        muted={muted}
+        playsInline
+        preload="metadata"
+      />
+
+      {/* DÉGRADÉ */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+
+      {/* SON */}
+      <button
+        type="button"
+        onClick={handleToggleMute}
+        className="absolute right-4 top-20 z-30 moshi-glass flex h-10 w-10 items-center justify-center rounded-full text-white"
+        aria-label={muted ? "Activer le son" : "Couper le son"}
+      >
+        {muted ? (
+          <VolumeX size={18} />
+        ) : (
+          <Volume2 size={18} />
+        )}
+      </button>
+
+      {children}
+    </section>
+  );
+}
+
 export default function HomeFeed() {
-  const supabase = createClient();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const supabase = useMemo(() => createClient(), []);
 
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,183 +184,364 @@ export default function HomeFeed() {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
 
+  // Utilisateur connecté
   useEffect(() => {
+    let cancelled = false;
+
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!cancelled) {
+        setCurrentUser(user ? { id: user.id } : null);
+      }
     };
-    getUser();
+
+    void getUser();
+
+    return () => {
+      cancelled = true;
+    };
   }, [supabase]);
 
+  // Chargement du fil
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
-    // 1. VIDÉOS
-    const { data: videosData } = await supabase
-      .from("videos")
-      .select("id, url, caption, like_count, comment_count, user_id")
-      .limit(20);
+    try {
+      const { data: videosData, error: videosError } = await supabase
+        .from("videos")
+        .select("id, url, caption, like_count, comment_count, user_id")
+        .limit(20);
 
-    // 2. LIVES
-    const { data: livesData } = await supabase
-      .from("lives")
-      .select("id, title, host_id")
-      .eq("status", "live");
+      if (videosError) throw videosError;
 
-    // 3. PROFILS
-    const allUserIds = [
-      ...(livesData || []).map((l: any) => l.host_id),
-      ...(videosData || []).map((v: any) => v.user_id)
-    ];
-    const uniqueUserIds = [...new Set(allUserIds)];
+      const { data: livesData, error: livesError } = await supabase
+        .from("lives")
+        .select("id, title, host_id")
+        .eq("status", "live");
 
-    const { data: profilesData } = await supabase
-      .from("profiles")
-      .select("id, username, avatar_url, full_name, country")
-      .in("id", uniqueUserIds);
+      if (livesError) throw livesError;
 
-    const profilesMap: Record<string, any> = {};
-    (profilesData || []).forEach((p) => {
-      profilesMap[p.id] = p;
-    });
+      const allUserIds = [
+        ...(livesData || []).map((live) => live.host_id),
+        ...(videosData || []).map((video) => video.user_id),
+      ];
 
-    // 4. FUSION
-    const livesItems: FeedItem[] = (livesData || []).map((l: any) => ({
-      id: l.id,
-      type: "live",
-      url: "",
-      caption: l.title,
-      like_count: 0,
-      comment_count: 0,
-      user_id: l.host_id,
-      profiles: profilesMap[l.host_id] || null,
-    }));
+      const uniqueUserIds = [...new Set(allUserIds)];
 
-    const videosItems: FeedItem[] = (videosData || []).map((v: any) => ({
-      id: v.id,
-      type: "video",
-      url: v.url,
-      caption: v.caption,
-      like_count: v.like_count || 0,
-      comment_count: v.comment_count || 0,
-      user_id: v.user_id,
-      profiles: profilesMap[v.user_id] || null,
-    }));
+      let profilesMap: Record<string, FeedItem["profiles"]> = {};
 
-    setItems([...livesItems, ...videosItems]);
+      if (uniqueUserIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from("profiles")
+          .select("id, username, avatar_url, full_name, country")
+          .in("id", uniqueUserIds);
 
-    if (currentUser) {
-      const { data: likesData } = await supabase.from("video_likes").select("video_id").eq("user_id", currentUser.id);
-      const likedMap: Record<string, boolean> = {};
-      likesData?.forEach((l) => { likedMap[l.video_id] = true; });
-      setLiked(likedMap);
+        (profilesData || []).forEach((profile) => {
+          profilesMap[profile.id] = profile;
+        });
+      }
+
+      const livesItems: FeedItem[] = (livesData || []).map((live) => ({
+        id: live.id,
+        type: "live",
+        url: "",
+        caption: live.title,
+        like_count: 0,
+        comment_count: 0,
+        user_id: live.host_id,
+        profiles: profilesMap[live.host_id] || null,
+      }));
+
+      const videosItems: FeedItem[] = (videosData || []).map((video) => ({
+        id: video.id,
+        type: "video",
+        url: video.url,
+        caption: video.caption,
+        like_count: video.like_count || 0,
+        comment_count: video.comment_count || 0,
+        user_id: video.user_id,
+        profiles: profilesMap[video.user_id] || null,
+      }));
+
+      setItems([...livesItems, ...videosItems]);
+
+      if (currentUser) {
+        const { data: likesData } = await supabase
+          .from("video_likes")
+          .select("video_id")
+          .eq("user_id", currentUser.id);
+
+        const likedMap: Record<string, boolean> = {};
+
+        likesData?.forEach((like) => {
+          likedMap[like.video_id] = true;
+        });
+
+        setLiked(likedMap);
+      }
+    } catch (error) {
+      console.error("Erreur chargement du fil :", error);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }, [supabase, currentUser]);
 
-  useEffect(() => { loadFeed(); }, [loadFeed]);
+  useEffect(() => {
+    void loadFeed();
+  }, [loadFeed]);
 
+  // Activer / désactiver le son de la vidéo concernée
+  const toggleMute = (video: HTMLVideoElement) => {
+    const nextMuted = !video.muted;
+
+    video.muted = nextMuted;
+    setMuted(nextMuted);
+  };
+
+  // J'aime
   const toggleLike = async (videoId: string) => {
     if (!currentUser) return;
-    const isCurrentlyLiked = liked[videoId];
-    setLiked((prev) => ({ ...prev, [videoId]: !isCurrentlyLiked }));
-    setItems((prev) =>
-      prev.map((v) => v.id === videoId ? { ...v, like_count: (v.like_count || 0) + (isCurrentlyLiked ? -1 : 1) } : v)
+
+    const isCurrentlyLiked = !!liked[videoId];
+
+    setLiked((previous) => ({
+      ...previous,
+      [videoId]: !isCurrentlyLiked,
+    }));
+
+    setItems((previous) =>
+      previous.map((item) =>
+        item.id === videoId
+          ? {
+              ...item,
+              like_count: Math.max(
+                0,
+                item.like_count + (isCurrentlyLiked ? -1 : 1)
+              ),
+            }
+          : item
+      )
     );
 
     try {
       if (isCurrentlyLiked) {
-        await supabase.from("video_likes").delete().eq("video_id", videoId).eq("user_id", currentUser.id);
+        const { error } = await supabase
+          .from("video_likes")
+          .delete()
+          .eq("video_id", videoId)
+          .eq("user_id", currentUser.id);
+
+        if (error) throw error;
       } else {
-        await supabase.from("video_likes").insert({ video_id: videoId, user_id: currentUser.id });
+        const { error } = await supabase
+          .from("video_likes")
+          .insert({
+            video_id: videoId,
+            user_id: currentUser.id,
+          });
+
+        if (error) throw error;
       }
-    } catch (err) { console.error(err); }
+    } catch (error) {
+      console.error("Erreur J'aime :", error);
+
+      // Annuler la modification visuelle en cas d'erreur.
+      setLiked((previous) => ({
+        ...previous,
+        [videoId]: isCurrentlyLiked,
+      }));
+
+      setItems((previous) =>
+        previous.map((item) =>
+          item.id === videoId
+            ? {
+                ...item,
+                like_count: Math.max(
+                  0,
+                  item.like_count + (isCurrentlyLiked ? 1 : -1)
+                ),
+              }
+            : item
+        )
+      );
+    }
   };
 
   if (loading) {
-    return <div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" /></div>;
+    return (
+      <div className="flex h-[100dvh] items-center justify-center bg-black">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#9D7BEA] border-t-transparent" />
+      </div>
+    );
   }
 
   if (items.length === 0) {
     return (
-      <div className="h-[100dvh] bg-black flex flex-col items-center justify-center px-6 text-center">
-        <p className="text-neutral-400 font-medium">Aucune vidéo pour le moment</p>
+      <div className="flex h-[100dvh] flex-col items-center justify-center bg-black px-6 text-center">
+        <p className="font-medium text-neutral-400">
+          Aucune vidéo pour le moment
+        </p>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className="moshi-feed">
+    <div className="moshi-feed">
       {items.map((item) => {
-        const isLiked = liked[item.id];
+        const isLiked = !!liked[item.id];
         const author = item.profiles;
-        const authorName = author?.username || author?.full_name || "user";
+        const authorName =
+          author?.username || author?.full_name || "user";
 
         if (item.type === "live") {
           return (
-            <section key={item.id} className="moshi-video relative bg-gradient-to-br from-purple-900 via-pink-900 to-black flex items-center justify-center">
-              <Link href={`/live/${item.id}`} className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
-                <div className="w-20 h-20 rounded-full bg-red-500 flex items-center justify-center mb-4 animate-pulse shadow-2xl">
+            <section
+              key={item.id}
+              className="moshi-video relative flex items-center justify-center bg-gradient-to-br from-purple-900 via-pink-900 to-black"
+            >
+              <Link
+                href={`/live/${item.id}`}
+                className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center"
+              >
+                <div className="mb-4 flex h-20 w-20 animate-pulse items-center justify-center rounded-full bg-red-500 shadow-2xl">
                   <Radio size={40} className="text-white" />
                 </div>
-                <span className="bg-red-500 text-white text-sm font-bold px-4 py-1 rounded-full mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 bg-white rounded-full animate-pulse" /> LIVE
+
+                <span className="mb-3 flex items-center gap-2 rounded-full bg-red-500 px-4 py-1 text-sm font-bold text-white">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+                  LIVE
                 </span>
-                <h2 className="text-white text-2xl font-extrabold mb-2">{item.caption}</h2>
-                <p className="text-white/80 font-semibold">par @{authorName}</p>
-                <button className="mt-6 bg-white text-black font-bold px-8 py-3 rounded-full shadow-lg">
+
+                <h2 className="mb-2 text-2xl font-extrabold text-white">
+                  {item.caption}
+                </h2>
+
+                <p className="font-semibold text-white/80">
+                  par @{authorName}
+                </p>
+
+                <span className="mt-6 rounded-full bg-white px-8 py-3 font-bold text-black shadow-lg">
                   Rejoindre le live
-                </button>
+                </span>
               </Link>
             </section>
           );
         }
 
         return (
-          <section key={item.id} className="moshi-video relative bg-black">
-            <video src={item.url} className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted={muted} playsInline />
-            
-            {/* DÉGRADÉ SOMBRE POUR LA LISIBILITÉ */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent pointer-events-none" />
-
-            <button onClick={() => setMuted(!muted)} className="absolute top-20 right-4 z-30 moshi-glass w-10 h-10 rounded-full flex items-center justify-center text-white">
-              {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-            </button>
-
-            <div className="absolute right-3 bottom-32 z-20 flex flex-col items-center gap-4">
-              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-neutral-800">
+          <FeedVideo
+            key={item.id}
+            item={item}
+            muted={muted}
+            onToggleMute={toggleMute}
+          >
+            {/* PROFIL ET ACTIONS */}
+            <div className="absolute bottom-32 right-3 z-20 flex flex-col items-center gap-4">
+              <Link
+                href={`/profile/${item.user_id}`}
+                className="h-12 w-12 overflow-hidden rounded-full border-2 border-white bg-neutral-800"
+              >
                 {author?.avatar_url ? (
-                  <Image src={author.avatar_url} alt={authorName} width={48} height={48} className="w-full h-full object-cover" unoptimized />
+                  <Image
+                    src={author.avatar_url}
+                    alt={authorName}
+                    width={48}
+                    height={48}
+                    className="h-full w-full object-cover"
+                    unoptimized
+                  />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-white font-bold">{authorName.charAt(0).toUpperCase()}</div>
+                  <div className="flex h-full items-center justify-center font-bold text-white">
+                    {authorName.charAt(0).toUpperCase()}
+                  </div>
                 )}
-              </div>
-
-              <button onClick={() => toggleLike(item.id)} className="flex flex-col items-center gap-1">
-                <motion.div whileTap={{ scale: 0.8 }} className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center">
-                  <Heart size={24} className={isLiked ? "fill-[#FF8FB1] text-[#FF8FB1]" : "text-white"} />
-                </motion.div>
-                <span className="text-xs font-semibold text-white">{formatNumber(item.like_count + (isLiked ? 1 : 0))}</span>
-              </button>
-
-              <button className="flex flex-col items-center gap-1">
-                <div className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center"><MessageCircle size={24} className="text-white" /></div>
-                <span className="text-xs font-semibold text-white">{formatNumber(item.comment_count)}</span>
-              </button>
-
-              <button className="flex flex-col items-center gap-1">
-                <div className="moshi-glass w-12 h-12 rounded-full flex items-center justify-center"><Share2 size={22} className="text-white" /></div>
-              </button>
-            </div>
-
-            <div className="absolute left-4 right-20 bottom-28 z-20 space-y-2">
-              <Link href={`/profile/${item.user_id}`} className="text-white font-bold text-base hover:underline drop-shadow-md">
-                @{authorName} {author?.country && getFlag(author.country)}
               </Link>
-              {item.caption && <p className="text-white/90 text-sm line-clamp-2 drop-shadow-md">{item.caption}</p>}
+
+              <button
+                type="button"
+                onClick={() => void toggleLike(item.id)}
+                className="flex flex-col items-center gap-1"
+              >
+                <motion.div
+                  whileTap={{ scale: 0.8 }}
+                  className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full"
+                >
+                  <Heart
+                    size={24}
+                    className={
+                      isLiked
+                        ? "fill-[#FF8FB1] text-[#FF8FB1]"
+                        : "text-white"
+                    }
+                  />
+                </motion.div>
+
+                <span className="text-xs font-semibold text-white">
+                  {formatNumber(item.like_count)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="flex flex-col items-center gap-1"
+              >
+                <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
+                  <MessageCircle size={24} className="text-white" />
+                </div>
+
+                <span className="text-xs font-semibold text-white">
+                  {formatNumber(item.comment_count)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="flex flex-col items-center gap-1"
+                onClick={async () => {
+                  const url = `${window.location.origin}/videos/${item.id}`;
+
+                  try {
+                    if (navigator.share) {
+                      await navigator.share({
+                        title: "Vidéo Moshi",
+                        url,
+                      });
+                    } else {
+                      await navigator.clipboard.writeText(url);
+                    }
+                  } catch (error) {
+                    if ((error as Error).name !== "AbortError") {
+                      console.error("Erreur partage :", error);
+                    }
+                  }
+                }}
+              >
+                <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
+                  <Share2 size={22} className="text-white" />
+                </div>
+              </button>
             </div>
-          </section>
+
+            {/* DESCRIPTION */}
+            <div className="absolute bottom-28 left-4 right-20 z-20 space-y-2">
+              <Link
+                href={`/profile/${item.user_id}`}
+                className="text-base font-bold text-white drop-shadow-md hover:underline"
+              >
+                @{authorName}{" "}
+                {author?.country && getFlag(author.country)}
+              </Link>
+
+              {item.caption && (
+                <p className="line-clamp-2 text-sm text-white/90 drop-shadow-md">
+                  {item.caption}
+                </p>
+              )}
+            </div>
+          </FeedVideo>
         );
       })}
     </div>
