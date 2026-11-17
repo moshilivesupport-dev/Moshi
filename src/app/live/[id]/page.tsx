@@ -60,7 +60,8 @@ interface HeartParticle {
   id: number;
   x: number;
   y: number;
-  color: string;
+  colorStart: string;
+  colorEnd: string;
 }
 
 interface ChatMessage {
@@ -135,7 +136,7 @@ export default function LiveRoomPage() {
   }, []);
 
   // --------------------------------------------------
-  // HEARTS
+  // HEARTS MOSHI
   // --------------------------------------------------
 
   const handleScreenTap = (e: MouseEvent<HTMLDivElement>) => {
@@ -155,18 +156,25 @@ export default function LiveRoomPage() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const colors = [
-      "#FF8FB1",
-      "#9D7BEA",
-      "#60A5FA",
-      "#FF4B72",
+    // Dégradés rose, magenta et violet de Moshi
+    const heartGradients = [
+      { start: "#FF39B8", end: "#B026FF" },
+      { start: "#FF58D0", end: "#8B35FF" },
+      { start: "#F725A5", end: "#6D28D9" },
+      { start: "#FF72C6", end: "#A855F7" },
     ];
+
+    const gradient =
+      heartGradients[
+        Math.floor(Math.random() * heartGradients.length)
+      ];
 
     const newHeart: HeartParticle = {
       id: Date.now() + Math.random(),
       x,
       y,
-      color: colors[Math.floor(Math.random() * colors.length)],
+      colorStart: gradient.start,
+      colorEnd: gradient.end,
     };
 
     setHearts((previous) => [...previous, newHeart]);
@@ -176,7 +184,7 @@ export default function LiveRoomPage() {
       setHearts((previous) =>
         previous.filter((heart) => heart.id !== newHeart.id)
       );
-    }, 2000);
+    }, 2200);
   };
 
   // --------------------------------------------------
@@ -841,28 +849,68 @@ export default function LiveRoomPage() {
       {/* EMPTY CENTER AREA */}
       <div className="flex-1 pointer-events-none" />
 
-      {/* HEART PARTICLES */}
+      {/* HEART PARTICLES MOSHI */}
       <div className="absolute inset-0 z-[25] pointer-events-none overflow-hidden">
-        {hearts.map((heart) => (
-          <div
-            key={heart.id}
-            className="absolute"
-            style={{
-              left: heart.x,
-              top: heart.y,
-            }}
-          >
-            <Heart
-              className="w-8 h-8 animate-float-heart"
+        {hearts.map((heart) => {
+          const gradientId = `moshi-heart-${String(heart.id).replace(
+            /[^a-zA-Z0-9]/g,
+            ""
+          )}`;
+
+          return (
+            <div
+              key={heart.id}
+              className="absolute"
               style={{
-                fill: heart.color,
-                color: heart.color,
-                filter:
-                  "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
+                left: heart.x,
+                top: heart.y,
+                transform: "translate(-50%, -50%)",
               }}
-            />
-          </div>
-        ))}
+            >
+              <svg
+                width="36"
+                height="36"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                style={{
+                  filter: `
+                    drop-shadow(0 0 5px ${heart.colorStart}CC)
+                    drop-shadow(0 0 12px ${heart.colorEnd}99)
+                  `,
+                }}
+                className="animate-float-heart"
+              >
+                <defs>
+                  <linearGradient
+                    id={gradientId}
+                    x1="0%"
+                    y1="0%"
+                    x2="100%"
+                    y2="100%"
+                  >
+                    <stop
+                      offset="0%"
+                      stopColor={heart.colorStart}
+                    />
+                    <stop
+                      offset="100%"
+                      stopColor={heart.colorEnd}
+                    />
+                  </linearGradient>
+                </defs>
+
+                <path
+                  d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"
+                  fill={`url(#${gradientId})`}
+                  stroke={`url(#${gradientId})`}
+                  strokeWidth="1"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          );
+        })}
       </div>
 
       {/* CHAT MESSAGES */}
