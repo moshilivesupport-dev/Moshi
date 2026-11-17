@@ -1,8 +1,9 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Coins } from "lucide-react";
+import { X, Coins, Plus, Minus, Gift as GiftIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -18,34 +19,75 @@ interface GiftPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onSendGift: (gift: Gift) => void;
+  balance: number;
 }
 
-export default function GiftPanel({ isOpen, onClose, onSendGift }: GiftPanelProps) {
-  const supabase = createClient();
+const CATEGORIES = [
+  { id: "standard", label: "Standard" },
+  { id: "premium", label: "Premium" },
+  { id: "exclusif", label: "Exclusif" },
+];
+
+export default function GiftPanel({
+  isOpen,
+  onClose,
+  onSendGift,
+  balance,
+}: GiftPanelProps) {
   const [gifts, setGifts] = useState<Gift[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState<string>("standard");
+  const [loading, setLoading] = useState(false);
+  const [category, setCategory] = useState("standard");
   const [selectedGift, setSelectedGift] = useState<Gift | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     if (!isOpen) return;
-    const loadGifts = async () => {
+
+    let cancelled = false;
+
+    async function loadGifts() {
       setLoading(true);
-      const { data } = await supabase.from("gifts").select("*").order("price", { ascending: true });
-      setGifts(data || []);
-      setLoading(false);
-    };
+
+      const { data, error } = await supabase
+        .from("gifts")
+        .select("id, name, icon, price, category")
+        .order("price", { ascending: true });
+
+      if (!cancelled) {
+        if (error) {
+          console.error("Erreur chargement cadeaux:", error.message);
+        } else {
+          setGifts((data || []) as Gift[]);
+        }
+        setLoading(false);
+      }
+    }
+
     loadGifts();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, supabase]);
 
-  const filteredGifts = gifts.filter(g => g.category === selectedCategory);
+  const filteredGifts = gifts.filter(
+    (gift) => gift.category === category
+  );
+
+  const totalPrice = selectedGift
+    ? selectedGift.price * quantity
+    : 0;
+
+  const canAfford = totalPrice <= balance;
 
   const handleSend = () => {
-    if (!selectedGift) return;
+    if (!selectedGift || !canAfford) return;
+
     for (let i = 0; i < quantity; i++) {
       onSendGift(selectedGift);
     }
+
     setSelectedGift(null);
     setQuantity(1);
     onClose();
@@ -60,45 +102,60 @@ export default function GiftPanel({ isOpen, onClose, onSendGift }: GiftPanelProp
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
+            className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm"
           />
+
           <motion.div
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed bottom-0 left-0 right-0 z-[70] bg-[#1a0b2e] rounded-t-[32px] max-h-[80dvh] flex flex-col overflow-hidden"
+            transition={{ type: "spring", damping: 28, stiffness: 230 }}
+            className="fixed bottom-0 left-0 right-0 z-[70] flex max-h-[82dvh] flex-col overflow-hidden rounded-t-[30px] border border-white/10 bg-[#160D25] pb-safe"
           >
-            {/* Header */}
-            <div className="p-4 flex items-center justify-between border-b border-white/10">
-              <h2 className="text-white font-bold text-lg">Envoyer un cadeau</h2>
-              <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
-                <X size={18} />
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-extrabold text-white">
+                  Cadeaux Moshi
+                </h2>
+                <p className="text-xs text-white/45">
+                  Fais plaisir à ton créateur préféré
+                </p>
+              </div>
+
+              <button
+                onClick={onClose}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white"
+              >
+                <X size={19} />
               </button>
             </div>
 
-            {/* Solde de coins (statique pour l'instant) */}
-            <div className="px-4 py-3 flex items-center justify-between bg-white/5">
-              <p className="text-white/70 text-xs">Ton solde</p>
-              <div className="flex items-center gap-1.5 bg-yellow-500/20 px-3 py-1 rounded-full">
-                <Coins size={14} className="text-yellow-400" />
-                <span className="text-yellow-400 font-bold text-sm">1,250</span>
+            <div className="flex items-center justify-between bg-white/[0.04] px-5 py-3">
+              <span className="text-sm text-white/60">
+                Ton portefeuille
+              </span>
+
+              <div className="flex items-center gap-2 rounded-full bg-yellow-400/10 px-3 py-1.5">
+                <Coins size={15} className="text-yellow-400" />
+                <span className="font-bold text-yellow-400">
+                  {balance.toLocaleString("fr-FR")} coins
+                </span>
               </div>
             </div>
 
-            {/* Catégories */}
-            <div className="flex gap-2 px-4 py-3 border-b border-white/10">
-              {[
-                { id: "standard", label: "Standard" },
-                { id: "premium", label: "Premium" },
-                { id: "exclusif", label: "Exclusif" },
-              ].map((cat) => (
+            <div className="flex gap-2 overflow-x-auto border-b border-white/10 px-4 py-3">
+              {CATEGORIES.map((cat) => (
                 <button
                   key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
+                  onClick={() => {
+                    setCategory(cat.id);
+                    setSelectedGift(null);
+                  }}
                   className={cn(
-                    "px-4 py-1.5 rounded-full text-xs font-bold transition-colors",
-                    selectedCategory === cat.id ? "moshi-gradient text-white" : "bg-white/10 text-white/60"
+                    "shrink-0 rounded-full px-5 py-2 text-xs font-bold transition",
+                    category === cat.id
+                      ? "moshi-gradient text-white shadow-lg"
+                      : "bg-white/10 text-white/60"
                   )}
                 >
                   {cat.label}
@@ -106,59 +163,99 @@ export default function GiftPanel({ isOpen, onClose, onSendGift }: GiftPanelProp
               ))}
             </div>
 
-            {/* Grille de cadeaux */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="min-h-[180px] flex-1 overflow-y-auto p-4">
               {loading ? (
-                <div className="flex justify-center py-10">
-                  <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="flex justify-center py-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                </div>
+              ) : filteredGifts.length === 0 ? (
+                <div className="flex flex-col items-center py-12 text-center">
+                  <GiftIcon size={35} className="mb-3 text-white/30" />
+                  <p className="text-sm text-white/60">
+                    Aucun cadeau dans cette catégorie.
+                  </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-4 gap-2">
                   {filteredGifts.map((gift) => (
                     <button
                       key={gift.id}
-                      onClick={() => setSelectedGift(gift)}
+                      onClick={() => {
+                        setSelectedGift(gift);
+                        setQuantity(1);
+                      }}
                       className={cn(
-                        "flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all",
+                        "flex min-w-0 flex-col items-center gap-1 rounded-2xl border p-2 transition",
                         selectedGift?.id === gift.id
-                          ? "border-moshi-pink bg-white/10"
-                          : "border-transparent bg-white/5 hover:bg-white/10"
+                          ? "border-pink-400 bg-pink-500/15"
+                          : "border-white/5 bg-white/[0.04]"
                       )}
                     >
                       <span className="text-3xl">{gift.icon}</span>
-                      <span className="text-white/80 text-[10px] font-medium truncate w-full text-center">{gift.name}</span>
-                      <div className="flex items-center gap-0.5">
-                        <Coins size={10} className="text-yellow-400" />
-                        <span className="text-yellow-400 text-[10px] font-bold">{gift.price}</span>
-                      </div>
+                      <span className="w-full truncate text-center text-[10px] font-semibold text-white/90">
+                        {gift.name}
+                      </span>
+                      <span className="text-[10px] font-bold text-yellow-400">
+                        {gift.price.toLocaleString("fr-FR")}
+                      </span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Barre d'envoi (si un cadeau est sélectionné) */}
             {selectedGift && (
-              <div className="p-4 border-t border-white/10 bg-black/40">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-3xl">{selectedGift.icon}</span>
+              <div className="border-t border-white/10 bg-[#10091B] p-4">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-4xl">
+                      {selectedGift.icon}
+                    </span>
                     <div>
-                      <p className="text-white text-sm font-bold">{selectedGift.name}</p>
-                      <p className="text-yellow-400 text-xs font-bold">{selectedGift.price} coins</p>
+                      <p className="font-bold text-white">
+                        {selectedGift.name}
+                      </p>
+                      <p className="text-xs text-yellow-400">
+                        {selectedGift.price} coins / unité
+                      </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/10 rounded-full px-2 py-1">
-                    <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="text-white font-bold px-2">−</button>
-                    <span className="text-white font-bold w-6 text-center">{quantity}</span>
-                    <button onClick={() => setQuantity(quantity + 1)} className="text-white font-bold px-2">+</button>
+
+                  <div className="flex items-center gap-3 rounded-full bg-white/10 px-2 py-1">
+                    <button
+                      onClick={() =>
+                        setQuantity((q) => Math.max(1, q - 1))
+                      }
+                      className="text-white"
+                    >
+                      <Minus size={16} />
+                    </button>
+
+                    <span className="w-5 text-center font-bold text-white">
+                      {quantity}
+                    </span>
+
+                    <button
+                      onClick={() => setQuantity((q) => q + 1)}
+                      className="text-white"
+                    >
+                      <Plus size={16} />
+                    </button>
                   </div>
                 </div>
+
+                {!canAfford && (
+                  <p className="mb-2 text-xs text-red-400">
+                    Solde insuffisant pour ce cadeau.
+                  </p>
+                )}
+
                 <button
                   onClick={handleSend}
-                  className="w-full moshi-gradient text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition flex items-center justify-center gap-2"
+                  disabled={!canAfford}
+                  className="moshi-gradient w-full rounded-xl py-3.5 font-extrabold text-white shadow-lg transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  Envoyer {quantity > 1 && `(${quantity * selectedGift.price} coins)`}
+                  Envoyer · {totalPrice.toLocaleString("fr-FR")} coins
                 </button>
               </div>
             )}
