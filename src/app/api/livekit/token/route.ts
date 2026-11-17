@@ -3,43 +3,19 @@ import { NextResponse } from "next/server";
 import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { createClient } from "@/lib/supabase/server";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const room = searchParams.get("room");
+    const name = searchParams.get("name");
 
-    const roomName = searchParams.get("room")?.trim();
-    const participantName = searchParams
-      .get("name")
-      ?.trim()
-      .slice(0, 50);
-
-    // 1. Vérifier les paramètres
-    if (
-      !roomName ||
-      !participantName ||
-      !roomName.startsWith("live-") ||
-      participantName.length === 0
-    ) {
+    if (!room || !room.startsWith("live-") || !name) {
       return NextResponse.json(
-        { error: "Paramètres de connexion invalides." },
+        { error: "Paramètres invalides." },
         { status: 400 }
       );
     }
 
-    // 2. Récupérer l'identifiant du live
-    const liveId = roomName.slice("live-".length);
-
-    if (!liveId) {
-      return NextResponse.json(
-        { error: "Identifiant du live invalide." },
-        { status: 400 }
-      );
-    }
-
-    // 3. Vérifier l'utilisateur connecté
     const supabase = await createClient();
 
     const {
@@ -49,102 +25,113 @@ export async function GET(request: Request) {
 
     if (authError || !user) {
       return NextResponse.json(
-        { error: "Tu dois être connecté pour rejoindre ce live." },
+        { error: "Authentification requise." },
         { status: 401 }
       );
     }
 
-    // 4. Vérifier que le live existe
+    const liveId = room.replace(/^live-/, "");
+
     const { data: live, error: liveError } = await supabase
       .from("lives")
       .select("id, host_id, status")
       .eq("id", liveId)
       .maybeSingle();
 
-    if (liveError) {
-      console.error("Erreur vérification live :", liveError);
-
+    if (liveError || !live || live.status !== "live") {
       return NextResponse.json(
-        { error: "Impossible de vérifier ce live." },
-        { status: 500 }
-      );
-    }
-
-    if (!live || live.status !== "live") {
-      return NextResponse.json(
-        { error: "Ce live n'existe plus ou est terminé." },
+        { error: "Ce live n'est pas disponible." },
         { status: 404 }
       );
     }
 
-    // 5. Déterminer si l'utilisateur est l'hôte
-    const isHost = user.id === live.host_id;
+    const isHost = live.host_id === user.id;
 
-    // 6. Vérifier la configuration LiveKit
+    // Vérifier si l'utilisateur a accepté une invitation à ce live.
+    let isAcceptedGuest = false;
+
+    if (!isHost) {
+      const { data: invitation, error: invitationError } = await supabase
+        .from("live_invitations")
+        .select("id")
+        .eq("live_id", live.id)
+        .eq("invitee_id", user.id)
+        .eq("status", "accepted")
+        .maybeSingle();
+
+      if (invitationError) {
+        return NextResponse.json(
+          { error: "Impossible de vérifier votre invitation." },
+          { status: 500 }
+        );
+      }
+
+      isAcceptedGuest = !!invitation;
+    }
+
+    const canPublish = isHost || isAcceptedGuest;
+
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
+    const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
 
-    if (!apiKey || !apiSecret || !serverUrl) {
-      console.error("Configuration LiveKit incomplète.");
-
+    if (!apiKey || !apiSecret || !livekitUrl) {
       return NextResponse.json(
-        { error: "Configuration LiveKit manquante sur le serveur." },
+        { error: "Configuration LiveKit manquante." },
         { status: 500 }
       );
     }
 
-    // 7. Créer le jeton d'accès
     const token = new AccessToken(apiKey, apiSecret, {
       identity: user.id,
-      name: participantName,
+      name,
       ttl: "2h",
     });
 
     token.addGrant({
-      room: roomName,
+      room,
       roomJoin: true,
-      canPublish: isHost,
+      canPublish,
       canSubscribe: true,
       canPublishData: true,
-
-      ...(isHost
+      ...(canPublish
         ? {
-            canPublishSources: [
-              TrackSource.CAMERA,
-              TrackSource.MICROPHONE,
-              TrackSource.SCREEN_SHARE,
-              TrackSource.SCREEN_SHARE_AUDIO,
-            ],
+            canPublishSources: isHost
+              ? [
+                  TrackSource.CAMERA,
+                  TrackSource.MICROPHONE,
+                  TrackSource.SCREEN_SHARE,
+                ]
+              : [
+                  TrackSource.CAMERA,
+                  TrackSource.MICROPHONE,
+                ],
           }
         : {}),
     });
 
-    // 8. Générer le JWT
     const jwt = await token.toJwt();
 
-    // 9. Retourner le jeton sans cache
     return NextResponse.json(
       {
         token: jwt,
-        roomName,
+        roomName: room,
         isHost,
+        isGuest: isAcceptedGuest,
+        canPublish,
+        livekitUrl,
       },
       {
-        status: 200,
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate",
-          Pragma: "no-cache",
         },
       }
     );
   } catch (error) {
-    console.error("Erreur API LiveKit :", error);
+    console.error("LiveKit token error:", error);
 
     return NextResponse.json(
-      {
-        error: "Une erreur est survenue lors de la connexion au live.",
-      },
+      { error: "Impossible de générer le token LiveKit." },
       { status: 500 }
     );
   }
