@@ -16,6 +16,8 @@ import {
   MoreVertical,
   Trash2,
   Video,
+  BadgeCheck,
+  ShieldCheck,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -28,6 +30,7 @@ interface ProfileData {
   role: string | null;
   first_name: string | null;
   last_name: string | null;
+  is_verified: boolean;
 }
 
 interface VideoData {
@@ -178,6 +181,7 @@ export default function ProfileView({
     : "";
 
   const isVendeur = profile.role === "vendeur";
+  const isVerified = profile.is_verified === true;
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg text-moshi-text pb-24">
@@ -224,9 +228,12 @@ export default function ProfileView({
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h1 className="text-2xl font-bold">{name}</h1>
 
-            <span className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-[10px] text-white font-bold">
-              ✓
-            </span>
+            {isVerified && (
+              <BadgeCheck
+                className="w-5 h-5 text-blue-500 fill-blue-500"
+                aria-label="Compte certifié"
+              />
+            )}
 
             {isVendeur && (
               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-[#FF8FB1] to-[#9D7BEA] text-white">
@@ -292,15 +299,25 @@ export default function ProfileView({
         </p>
       )}
 
-      {/* MODIFIER PROFIL */}
+      {/* ACTIONS PROFIL */}
       {isOwnProfile && (
-        <div className="px-4 mb-4">
+        <div className="px-4 mb-4 space-y-2">
           <Link
             href="/profile/edit"
             className="flex items-center justify-center bg-white rounded-full py-2.5 text-sm font-semibold shadow-sm text-gray-800"
           >
             Modifier le profil
           </Link>
+
+          {!isVerified && (
+            <Link
+              href="/verification/request"
+              className="flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 shadow-sm"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Demander la certification
+            </Link>
+          )}
         </div>
       )}
 
