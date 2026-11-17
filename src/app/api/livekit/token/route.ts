@@ -121,6 +121,16 @@ export async function GET(request: Request) {
         canPublish,
         livekitUrl,
       },
+    return NextResponse.json(
+      {
+        token: jwt,
+        roomName: room,
+        isHost,
+        isGuest: isAcceptedGuest,
+        canPublish,
+        livekitUrl,
+        hostId: live.host_id,
+      },
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate",
