@@ -1,6 +1,7 @@
 
 "use client";
 
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface GiftAnimationProps {
@@ -8,7 +9,7 @@ interface GiftAnimationProps {
     icon: string;
     name: string;
     senderName: string;
-    category?: string;
+    eventId?: string;
   } | null;
   onComplete?: () => void;
 }
@@ -17,115 +18,125 @@ export default function GiftAnimation({
   gift,
   onComplete,
 }: GiftAnimationProps) {
-  const category = gift?.category || "standard";
+  useEffect(() => {
+    if (!gift) return;
 
-  const settings = {
-    standard: { duration: 4, scale: 1.3 },
-    premium: { duration: 7, scale: 1.7 },
-    exclusif: { duration: 12, scale: 2 },
-  };
+    const timer = window.setTimeout(() => {
+      onComplete?.();
+    }, 6500);
 
-  const config =
-    settings[category as keyof typeof settings] || settings.standard;
+    return () => window.clearTimeout(timer);
+  }, [gift?.eventId, onComplete]);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {gift && (
         <motion.div
-          key={`${gift.name}-${gift.senderName}-${category}`}
+          key={gift.eventId || `${gift.name}-${gift.senderName}`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.4 }}
-          onAnimationComplete={() => {}}
-          className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none overflow-hidden"
+          transition={{ duration: 0.5 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden pointer-events-none"
         >
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.78 }}
+            animate={{ opacity: 0.72 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-            className="absolute inset-0 bg-black"
+            transition={{ duration: 0.5 }}
+            className="absolute inset-0 bg-[#10051F]"
           />
 
-          {/* Lumière Moshi */}
           <motion.div
-            animate={{ rotate: 360, scale: [0.9, 1.2, 0.9] }}
+            animate={{ rotate: 360 }}
             transition={{
-              rotate: { duration: 8, repeat: Infinity, ease: "linear" },
-              scale: { duration: 3, repeat: Infinity },
+              duration: 12,
+              repeat: Infinity,
+              ease: "linear",
             }}
-            className="absolute w-[300px] h-[300px] rounded-full bg-gradient-to-r from-pink-500/40 via-purple-500/40 to-blue-500/40 blur-[70px]"
+            className="absolute h-[340px] w-[340px] rounded-full bg-gradient-to-r from-pink-500/30 via-purple-500/40 to-blue-500/30 blur-[60px]"
           />
 
-          {/* Particules */}
-          {Array.from({ length: 16 }).map((_, i) => {
-            const angle = (i * 360) / 16;
-            const distance = 130 + (i % 3) * 45;
-
-            return (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{
-                  opacity: [0, 1, 0],
-                  scale: [0, 1.5, 0],
-                  x: Math.cos((angle * Math.PI) / 180) * distance,
-                  y: Math.sin((angle * Math.PI) / 180) * distance,
-                }}
-                transition={{
-                  duration: 2.5,
-                  delay: 0.3,
-                  repeat: Infinity,
-                  repeatDelay: 1,
-                }}
-                className="absolute text-2xl"
-              >
-                {i % 2 === 0 ? "✨" : "💫"}
-              </motion.div>
-            );
-          })}
-
-          {/* Cadeau */}
           <div className="relative flex flex-col items-center">
             <motion.div
-              initial={{ scale: 0, rotate: -180 }}
+              initial={{ scale: 0, rotate: -30 }}
               animate={{
-                scale: [0, config.scale, config.scale * 0.9, config.scale],
-                rotate: [0, 15, -15, 0],
-                y: [40, -20, 0, -10, 0],
+                scale: [0, 1.35, 1, 1.08, 1],
+                rotate: [ -30, 15, -8, 0 ],
+                y: [50, -15, 0, -8, 0],
               }}
               transition={{
-                duration: 2,
+                duration: 1.5,
                 ease: "easeOut",
               }}
-              className="text-[110px] sm:text-[140px] drop-shadow-[0_0_35px_rgba(255,105,180,0.8)]"
+              className="relative z-10 text-[125px] leading-none drop-shadow-[0_0_35px_rgba(255,120,200,0.9)]"
             >
               {gift.icon}
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 30, scale: 0.8 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: 0.7, duration: 0.7 }}
-              className="mt-8 text-center"
+              className="mt-8 rounded-3xl border border-white/20 bg-black/40 px-8 py-5 text-center backdrop-blur-xl"
             >
-              <p className="text-white text-lg font-bold">
-                <span className="text-pink-400">
+              <p className="text-sm font-semibold text-white/70">
+                <span className="text-pink-300">
                   {gift.senderName}
                 </span>{" "}
-                a envoyé
+                a envoyé un cadeau
               </p>
 
-              <p className="text-yellow-400 text-3xl font-black mt-2 drop-shadow-lg">
+              <h2 className="mt-2 text-3xl font-black text-white drop-shadow-lg">
                 {gift.name}
-              </p>
+              </h2>
 
-              <div className="mt-3 mx-auto w-fit px-5 py-1.5 rounded-full border border-pink-400/40 bg-pink-500/20">
-                <span className="text-white text-[10px] font-bold tracking-[3px]">
-                  MOSHI LIVE
-                </span>
-              </div>
+              <p className="mt-2 text-xs font-bold tracking-[0.3em] text-pink-300">
+                MOSHI LIVE
+              </p>
+            </motion.div>
+
+            {[...Array(12)].map((_, i) => {
+              const angle = (i * 30 * Math.PI) / 180;
+
+              return (
+                <motion.div
+                  key={i}
+                  initial={{
+                    scale: 0,
+                    opacity: 1,
+                    x: 0,
+                    y: 0,
+                  }}
+                  animate={{
+                    scale: [0, 1.3, 0],
+                    opacity: [1, 1, 0],
+                    x: Math.cos(angle) * 190,
+                    y: Math.sin(angle) * 190,
+                  }}
+                  transition={{
+                    duration: 2,
+                    delay: 0.4,
+                    ease: "easeOut",
+                  }}
+                  className="absolute text-2xl"
+                >
+                  {i % 2 === 0 ? "✨" : "💖"}
+                </motion.div>
+              );
+            })}
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 0.5, 1] }}
+              transition={{
+                duration: 2,
+                repeat: 2,
+                delay: 1,
+              }}
+              className="mt-5 text-sm font-bold text-yellow-300"
+            >
+              ✨ Merci pour ce cadeau !
             </motion.div>
           </div>
         </motion.div>
