@@ -1,9 +1,16 @@
+
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Home, MessageCircle, Plus, ShoppingBag, User } from "lucide-react";
+import { usePathname } from "next/navigation";
+import {
+  Home,
+  MessageCircle,
+  Plus,
+  ShoppingBag,
+  User,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import CreateMenu from "./CreateMenu";
@@ -18,26 +25,42 @@ const links = [
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const router = useRouter();
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
 
-  // Cacher la barre sur /seller, /auth, et /live
-  if (pathname.startsWith("/seller") || pathname.startsWith("/auth") || pathname.startsWith("/live")) {
+  const hiddenRoutes = [
+    "/seller",
+    "/auth",
+    "/live",
+  ];
+
+  const shouldHideNavigation = hiddenRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+
+  if (shouldHideNavigation) {
     return null;
   }
 
   return (
     <>
       <div className="fixed bottom-4 left-4 right-4 z-50 pb-safe">
-        <nav className="mx-auto flex h-[72px] max-w-lg items-center justify-around rounded-[28px] bg-white/95 backdrop-blur-xl shadow-lg px-2">
+        <nav
+          aria-label="Navigation principale"
+          className="mx-auto flex h-[72px] max-w-lg items-center justify-around rounded-[28px] bg-white/95 px-2 shadow-lg backdrop-blur-xl"
+        >
           {links.map((link) => {
             const Icon = link.icon;
-            const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+
+            const isActive =
+              link.href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(link.href);
 
             if (link.central) {
               return (
                 <button
                   key={link.href}
+                  type="button"
                   onClick={() => setIsCreateMenuOpen(true)}
                   aria-label="Créer"
                   className="relative -top-3 flex flex-col items-center"
@@ -46,7 +69,10 @@ export default function BottomNav() {
                     whileTap={{ scale: 0.9 }}
                     className="flex h-[60px] w-[60px] items-center justify-center rounded-2xl moshi-gradient shadow-lg shadow-purple-200/50"
                   >
-                    <Plus className="h-8 w-8 text-white" strokeWidth={2.5} />
+                    <Plus
+                      className="h-8 w-8 text-white"
+                      strokeWidth={2.5}
+                    />
                   </motion.div>
                 </button>
               );
@@ -66,12 +92,14 @@ export default function BottomNav() {
                     )}
                     strokeWidth={isActive ? 2.5 : 2}
                   />
+
                   {link.badge && (
-                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#FF4B72] text-[9px] font-bold text-white">
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#FF4B72] text-[9px] font-bold text-white">
                       {link.badge}
                     </span>
                   )}
                 </div>
+
                 <span
                   className={cn(
                     "text-[10px] font-semibold transition-colors",
@@ -86,7 +114,10 @@ export default function BottomNav() {
         </nav>
       </div>
 
-      <CreateMenu isOpen={isCreateMenuOpen} onClose={() => setIsCreateMenuOpen(false)} />
+      <CreateMenu
+        isOpen={isCreateMenuOpen}
+        onClose={() => setIsCreateMenuOpen(false)}
+      />
     </>
   );
 }
