@@ -1,23 +1,27 @@
 
 import { NextResponse } from "next/server";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
 
     const roomName = searchParams.get("room")?.trim();
-    const participantName =
-      searchParams.get("name")?.trim().slice(0, 50);
+    const participantName = searchParams
+      .get("name")
+      ?.trim()
+      .slice(0, 50);
 
-    // Vérification des paramètres
+    // 1. Vérifier les paramètres
     if (
       !roomName ||
       !participantName ||
-      !roomName.startsWith("live-")
+      !roomName.startsWith("live-") ||
+      participantName.length === 0
     ) {
       return NextResponse.json(
         { error: "Paramètres de connexion invalides." },
@@ -25,7 +29,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Récupération de l'identifiant du live
+    // 2. Récupérer l'identifiant du live
     const liveId = roomName.slice("live-".length);
 
     if (!liveId) {
@@ -35,7 +39,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Vérification de l'utilisateur connecté
+    // 3. Vérifier l'utilisateur connecté
     const supabase = await createClient();
 
     const {
@@ -50,7 +54,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Vérification de l'existence du live
+    // 4. Vérifier que le live existe
     const { data: live, error: liveError } = await supabase
       .from("lives")
       .select("id, host_id, status")
@@ -66,17 +70,17 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!live || live.status === "ended") {
+    if (!live || live.status !== "live") {
       return NextResponse.json(
         { error: "Ce live n'existe plus ou est terminé." },
         { status: 404 }
       );
     }
 
-    // Seul l'hôte peut publier sa caméra et son micro
+    // 5. Déterminer si l'utilisateur est l'hôte
     const isHost = user.id === live.host_id;
 
-    // Configuration LiveKit
+    // 6. Vérifier la configuration LiveKit
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
@@ -90,7 +94,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Création du jeton
+    // 7. Créer le jeton d'accès
     const token = new AccessToken(apiKey, apiSecret, {
       identity: user.id,
       name: participantName,
@@ -100,17 +104,26 @@ export async function GET(request: Request) {
     token.addGrant({
       room: roomName,
       roomJoin: true,
-
-      // Hôte : caméra et micro autorisés.
-      // Spectateur : réception uniquement.
       canPublish: isHost,
-
       canSubscribe: true,
       canPublishData: true,
+
+      ...(isHost
+        ? {
+            canPublishSources: [
+              TrackSource.CAMERA,
+              TrackSource.MICROPHONE,
+              TrackSource.SCREEN_SHARE,
+              TrackSource.SCREEN_SHARE_AUDIO,
+            ],
+          }
+        : {}),
     });
 
+    // 8. Générer le JWT
     const jwt = await token.toJwt();
 
+    // 9. Retourner le jeton sans cache
     return NextResponse.json(
       {
         token: jwt,
@@ -118,8 +131,10 @@ export async function GET(request: Request) {
         isHost,
       },
       {
+        status: 200,
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
         },
       }
     );
@@ -127,7 +142,9 @@ export async function GET(request: Request) {
     console.error("Erreur API LiveKit :", error);
 
     return NextResponse.json(
-      { error: "Une erreur est survenue lors de la connexion au live." },
+      {
+        error: "Une erreur est survenue lors de la connexion au live.",
+      },
       { status: 500 }
     );
   }
