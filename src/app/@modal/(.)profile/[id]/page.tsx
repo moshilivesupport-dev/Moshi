@@ -1,0 +1,44 @@
+
+import { notFound } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import ProfileView from "@/components/profile/ProfileView";
+
+export const dynamic = "force-dynamic";
+
+interface PageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function InterceptedProfilePage({
+  params,
+}: PageProps) {
+  const { id } = await params;
+  const supabase = await createClient();
+
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select(
+      "id, username, full_name, avatar_url, bio, role, first_name, last_name"
+    )
+    .eq("id", id)
+    .single();
+
+  if (error || !profile) {
+    notFound();
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const isOwnProfile = user?.id === profile.id;
+
+  return (
+    <div className="fixed inset-0 z-[200] overflow-y-auto bg-moshi-bg">
+      <ProfileView
+        profile={profile}
+        isOwnProfile={isOwnProfile}
+      />
+    </div>
+  );
+}
