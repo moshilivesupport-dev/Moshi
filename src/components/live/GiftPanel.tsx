@@ -18,7 +18,7 @@ interface Gift {
 interface GiftPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onSendGift: (gift: Gift) => void;
+  onSendGift: (gift: Gift, quantity?: number) => void | Promise<void>;
   balance: number;
 }
 
@@ -81,12 +81,15 @@ export default function GiftPanel({
 
   const canAfford = totalPrice <= balance;
 
-  const handleSend = () => {
-    if (!selectedGift || !canAfford) return;
+  const handleSend = async () => {
+  if (!selectedGift || !canAfford) return;
 
-    for (let i = 0; i < quantity; i++) {
-      onSendGift(selectedGift);
-    }
+  await onSendGift(selectedGift, quantity);
+
+    setSelectedGift(null);
+    setQuantity(1);
+    onClose();
+  };
 
     setSelectedGift(null);
     setQuantity(1);
