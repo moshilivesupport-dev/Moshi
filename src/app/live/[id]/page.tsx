@@ -986,6 +986,7 @@ export default function LiveRoomPage() {
         isOpen={isGiftPanelOpen}
         onClose={() => setIsGiftPanelOpen(false)}
         onSendGift={handleSendGift}
+        balance={walletBalance}
       />
 
       {/* SOUNDBOARD */}
