@@ -46,8 +46,6 @@ export async function GET(request: Request) {
     }
 
     const isHost = live.host_id === user.id;
-
-    // Vérifier si l'utilisateur a accepté une invitation à ce live.
     let isAcceptedGuest = false;
 
     if (!isHost) {
@@ -112,15 +110,6 @@ export async function GET(request: Request) {
 
     const jwt = await token.toJwt();
 
-    return NextResponse.json(
-      {
-        token: jwt,
-        roomName: room,
-        isHost,
-        isGuest: isAcceptedGuest,
-        canPublish,
-        livekitUrl,
-      },
     return NextResponse.json(
       {
         token: jwt,
