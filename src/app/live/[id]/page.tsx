@@ -42,7 +42,14 @@ import Soundboard from "@/components/live/Soundboard";
 
 const LiveKitRoomComponent = dynamic(
   () => import("@/components/live/LiveKitRoom"),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="absolute inset-0 bg-black flex items-center justify-center">
+        <div className="h-10 w-10 rounded-full border-4 border-white/30 border-t-white animate-spin" />
+      </div>
+    ),
+  }
 );
 
 // --------------------------------------------------
@@ -65,7 +72,7 @@ interface ChatMessage {
   isJoin?: boolean;
 }
 
-interface Gift {
+interface GiftItem {
   id: string;
   name: string;
   icon: string;
@@ -85,10 +92,10 @@ interface GiftAnimationItem {
 // --------------------------------------------------
 
 export default function LiveRoomPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
   const router = useRouter();
 
-  const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const id = params.id;
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -96,12 +103,9 @@ export default function LiveRoomPage() {
   const chatChannelRef = useRef<RealtimeChannel | null>(null);
   const giftChannelRef = useRef<RealtimeChannel | null>(null);
 
-  // --------------------------------------------------
-  // STATES
-  // --------------------------------------------------
-
   const [live, setLive] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [liveErrorMessage, setLiveErrorMessage] = useState("");
 
   const [isHost, setIsHost] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -122,7 +126,6 @@ export default function LiveRoomPage() {
   const [isGiftPanelOpen, setIsGiftPanelOpen] = useState(false);
   const [isSoundboardOpen, setIsSoundboardOpen] = useState(false);
 
-  // File d'attente des animations de cadeaux
   const [giftQueue, setGiftQueue] = useState<GiftAnimationItem[]>([]);
 
   const activeGiftAnimation = giftQueue[0] ?? null;
@@ -141,7 +144,8 @@ export default function LiveRoomPage() {
     if (
       target.closest("button") ||
       target.closest("input") ||
-      target.closest("a")
+      target.closest("a") ||
+      target.closest("[data-no-heart]")
     ) {
       return;
     }
@@ -180,14 +184,20 @@ export default function LiveRoomPage() {
   // --------------------------------------------------
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setLiveErrorMessage("Identifiant du live manquant.");
+      setLoading(false);
+      return;
+    }
 
     let cancelled = false;
 
     const loadLive = async () => {
-      try {
-        setLoading(true);
+      setLoading(true);
+      setLiveErrorMessage("");
 
+      try {
+        // Utilisateur connecté
         const {
           data: { user },
           error: authError,
@@ -198,94 +208,122 @@ export default function LiveRoomPage() {
 
         setCurrentUser(user);
 
-        // USER PROFILE AND WALLET
-        if (user) {
-          const { data: userProfile } = await supabase
+        // Chargement du live
+        const { data: liveData, error: liveError } = await supabase
+          .from("lives")
+          .select("*, product:products(*)")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (liveError) throw liveError;
+
+        if (!liveData) {
+          throw new Error("Aucun live trouvé avec cet identifiant.");
+        }
+
+        if (liveData.status === "ended") {
+          router.replace("/");
+          return;
+        }
+
+        if (cancelled) return;
+
+        // Profil de l'hôte
+        const { data: hostProfile, error: hostProfileError } =
+          await supabase
             .from("profiles")
-            .select("username, full_name, avatar_url")
-            .eq("id", user.id)
-            .single();
+            .select("username, full_name, avatar_url, country")
+            .eq("id", liveData.host_id)
+            .maybeSingle();
+
+        if (hostProfileError) {
+          console.error(
+            "Erreur profil hôte :",
+            hostProfileError.message
+          );
+        }
+
+        if (cancelled) return;
+
+        setLive({
+          ...liveData,
+          profiles: hostProfile,
+        });
+
+        setIsHost(user?.id === liveData.host_id);
+        setLikeCount(Number(liveData.like_count || 0));
+
+        // Profil du spectateur
+        if (user) {
+          const { data: userProfile, error: userProfileError } =
+            await supabase
+              .from("profiles")
+              .select("username, full_name, avatar_url")
+              .eq("id", user.id)
+              .maybeSingle();
+
+          if (userProfileError) {
+            console.error(
+              "Erreur profil utilisateur :",
+              userProfileError.message
+            );
+          }
 
           if (cancelled) return;
 
-          const name =
+          setUserName(
             userProfile?.username ||
-            userProfile?.full_name ||
-            "Viewer";
+              userProfile?.full_name ||
+              "Viewer"
+          );
 
-          setUserName(name);
           setUserAvatar(userProfile?.avatar_url || null);
 
+          // Portefeuille existant
           const { data: wallet, error: walletError } = await supabase
             .from("wallets")
             .select("balance")
             .eq("user_id", user.id)
             .maybeSingle();
 
-          if (cancelled) return;
-
-          if (walletError) throw walletError;
-
-          if (wallet) {
-            setWalletBalance(Number(wallet.balance) || 0);
+          if (walletError) {
+            console.error(
+              "Erreur portefeuille :",
+              walletError.message
+            );
+            setWalletBalance(0);
           } else {
-            const { error: createWalletError } = await supabase
-              .from("wallets")
-              .insert({
-                user_id: user.id,
-                balance: 1000,
-              });
-
-            if (createWalletError) throw createWalletError;
-
-            setWalletBalance(1000);
+            setWalletBalance(Number(wallet?.balance || 0));
           }
+        } else {
+          setUserName("Viewer");
+          setUserAvatar(null);
+          setWalletBalance(0);
         }
-
-        // LIVE
-        const { data: liveData, error: liveError } = await supabase
-          .from("lives")
-          .select("*, product:products(*)")
-          .eq("id", id)
-          .single();
-
-        if (liveError) throw liveError;
-        if (cancelled) return;
-
-        if (!liveData || liveData.status === "ended") {
-          router.push("/");
-          return;
-        }
-
-        // HOST PROFILE
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("username, full_name, avatar_url, country")
-          .eq("id", liveData.host_id)
-          .single();
 
         if (cancelled) return;
 
-        setLive({
-          ...liveData,
-          profiles: profile,
-        });
-
-        setIsHost(user?.id === liveData.host_id);
-        setLikeCount(liveData.like_count || 0);
-
-        // TOP DONORS
-        const { data: giftsData } = await supabase
+        // Top donateurs
+        const { data: giftsData, error: giftsError } = await supabase
           .from("live_gifts")
           .select("sender_id, total_price")
           .eq("live_id", id);
 
+        if (giftsError) {
+          console.error(
+            "Erreur chargement des cadeaux :",
+            giftsError.message
+          );
+        }
+
         if (cancelled) return;
 
-        if (giftsData && giftsData.length > 0) {
+        if (giftsData?.length) {
           const donorTotals: Record<string, number> = {};
 
           giftsData.forEach((giftRow) => {
+            if (!giftRow.sender_id) return;
+
             donorTotals[giftRow.sender_id] =
               (donorTotals[giftRow.sender_id] || 0) +
               Number(giftRow.total_price || 0);
@@ -297,18 +335,32 @@ export default function LiveRoomPage() {
             .map(([donorId]) => donorId);
 
           if (topIds.length > 0) {
-            const { data: donors } = await supabase
-              .from("profiles")
-              .select("id, username, avatar_url, full_name")
-              .in("id", topIds);
+            const { data: donors, error: donorsError } =
+              await supabase
+                .from("profiles")
+                .select("id, username, avatar_url, full_name")
+                .in("id", topIds);
 
-            if (!cancelled) {
+            if (donorsError) {
+              console.error(
+                "Erreur classement donateurs :",
+                donorsError.message
+              );
+            } else if (!cancelled) {
               setTopDonors(donors || []);
             }
           }
         }
       } catch (error) {
         console.error("Erreur chargement du live :", error);
+
+        if (!cancelled) {
+          setLiveErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "Une erreur inconnue est survenue."
+          );
+        }
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -316,7 +368,7 @@ export default function LiveRoomPage() {
       }
     };
 
-    loadLive();
+    void loadLive();
 
     return () => {
       cancelled = true;
@@ -356,16 +408,16 @@ export default function LiveRoomPage() {
           ...previous,
           {
             id: `${Date.now()}-${Math.random()}`,
-            name: payload.name || "Viewer",
+            name: payload?.name || "Viewer",
             text: "a rejoint le live",
-            avatar: payload.avatar || null,
+            avatar: payload?.avatar || null,
             isJoin: true,
           },
         ]);
       })
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          channel.send({
+          void channel.send({
             type: "broadcast",
             event: "join",
             payload: {
@@ -380,7 +432,7 @@ export default function LiveRoomPage() {
 
     return () => {
       chatChannelRef.current = null;
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
   }, [id, supabase, userName, userAvatar]);
 
@@ -412,7 +464,7 @@ export default function LiveRoomPage() {
 
     return () => {
       giftChannelRef.current = null;
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
   }, [id, supabase]);
 
@@ -457,7 +509,7 @@ export default function LiveRoomPage() {
   // --------------------------------------------------
 
   const handleSendGift = async (
-    gift: Gift,
+    gift: GiftItem,
     quantity = 1
   ) => {
     if (!currentUser || !live) {
@@ -467,10 +519,17 @@ export default function LiveRoomPage() {
 
     const safeQuantity = Math.max(
       1,
-      Math.floor(Number(quantity) || 1)
+      Math.min(999, Math.floor(Number(quantity) || 1))
     );
 
-    const totalPrice = gift.price * safeQuantity;
+    const unitPrice = Number(gift.price);
+
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      alert("Prix du cadeau invalide.");
+      return;
+    }
+
+    const totalPrice = unitPrice * safeQuantity;
 
     if (walletBalance < totalPrice) {
       alert("Solde insuffisant ! Recharge ton portefeuille.");
@@ -478,7 +537,7 @@ export default function LiveRoomPage() {
     }
 
     try {
-      // ENREGISTREMENT DU CADEAU
+      // Enregistrement du cadeau
       const { error: giftError } = await supabase
         .from("live_gifts")
         .insert({
@@ -492,7 +551,7 @@ export default function LiveRoomPage() {
 
       if (giftError) throw giftError;
 
-      // MISE À JOUR DU PORTEFEUILLE
+      // Mise à jour du portefeuille
       const newBalance = walletBalance - totalPrice;
 
       const { error: walletError } = await supabase
@@ -502,11 +561,15 @@ export default function LiveRoomPage() {
         })
         .eq("user_id", currentUser.id);
 
-      if (walletError) throw walletError;
+      if (walletError) {
+        throw new Error(
+          "Le cadeau a été enregistré, mais le portefeuille n'a pas pu être mis à jour. Contacte l'administrateur."
+        );
+      }
 
       setWalletBalance(newBalance);
 
-      // ANIMATION DU CADEAU
+      // Animation du cadeau
       const animation: GiftAnimationItem = {
         id: `${Date.now()}-${Math.random()}`,
         icon: gift.icon,
@@ -516,10 +579,7 @@ export default function LiveRoomPage() {
       };
 
       // Animation chez l'expéditeur
-      setGiftQueue((previous) => [
-        ...previous,
-        animation,
-      ]);
+      setGiftQueue((previous) => [...previous, animation]);
 
       // Animation chez les autres participants
       await giftChannelRef.current?.send({
@@ -528,7 +588,7 @@ export default function LiveRoomPage() {
         payload: animation,
       });
 
-      // MESSAGE CADEAU DANS LE CHAT
+      // Message cadeau dans le chat
       const giftMessage: ChatMessage = {
         id: animation.id,
         name: userName,
@@ -539,10 +599,7 @@ export default function LiveRoomPage() {
         isGift: true,
       };
 
-      setMessages((previous) => [
-        ...previous,
-        giftMessage,
-      ]);
+      setMessages((previous) => [...previous, giftMessage]);
 
       await chatChannelRef.current?.send({
         type: "broadcast",
@@ -553,8 +610,7 @@ export default function LiveRoomPage() {
       console.error("Erreur envoi cadeau :", error);
 
       alert(
-        error?.message ||
-          "Impossible d'envoyer le cadeau."
+        error?.message || "Impossible d'envoyer le cadeau."
       );
     }
   };
@@ -565,6 +621,12 @@ export default function LiveRoomPage() {
 
   const handleEndLive = async () => {
     if (!live || !isHost) return;
+
+    const confirmed = window.confirm(
+      "Veux-tu vraiment terminer ce live ?"
+    );
+
+    if (!confirmed) return;
 
     const { error } = await supabase
       .from("lives")
@@ -579,7 +641,7 @@ export default function LiveRoomPage() {
       return;
     }
 
-    router.push("/");
+    router.replace("/");
   };
 
   // --------------------------------------------------
@@ -589,15 +651,28 @@ export default function LiveRoomPage() {
   if (loading) {
     return (
       <div className="min-h-[100dvh] bg-black flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-moshi-purple border-t-transparent rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!live) {
     return (
-      <div className="min-h-[100dvh] bg-black flex items-center justify-center text-white">
-        Live introuvable
+      <div className="min-h-[100dvh] bg-black flex flex-col items-center justify-center px-6 text-center">
+        <p className="text-white text-lg font-bold mb-3">
+          Impossible d'ouvrir ce live
+        </p>
+
+        <p className="text-red-400 text-sm break-words">
+          {liveErrorMessage || "Aucune information disponible."}
+        </p>
+
+        <button
+          onClick={() => router.replace("/")}
+          className="mt-6 rounded-full bg-white/10 px-6 py-3 text-white"
+        >
+          Retour à l'accueil
+        </button>
       </div>
     );
   }
@@ -703,7 +778,7 @@ export default function LiveRoomPage() {
               </div>
 
               <p className="text-white/70 text-[10px]">
-                {likeCount.toLocaleString()} J'aime
+                {likeCount.toLocaleString("fr-FR")} J'aime
               </p>
             </div>
 
@@ -846,7 +921,7 @@ export default function LiveRoomPage() {
               {live.product.image_url ? (
                 <Image
                   src={live.product.image_url}
-                  alt={live.product.title}
+                  alt={live.product.title || "Produit"}
                   width={48}
                   height={48}
                   className="w-full h-full object-cover"
@@ -867,7 +942,7 @@ export default function LiveRoomPage() {
               </p>
 
               <p className="text-sm font-extrabold text-moshi-purple">
-                {Number(live.product.price || 0).toLocaleString()} FCFA
+                {Number(live.product.price || 0).toLocaleString("fr-FR")} FCFA
               </p>
             </div>
 
@@ -918,7 +993,7 @@ export default function LiveRoomPage() {
               <Coins size={8} className="text-yellow-400" />
 
               <span className="text-yellow-400 text-[9px] font-bold">
-                {walletBalance.toLocaleString()}
+                {walletBalance.toLocaleString("fr-FR")}
               </span>
             </div>
           </button>
