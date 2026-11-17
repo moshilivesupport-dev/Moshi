@@ -9,6 +9,7 @@ import {
   useTracks,
   useLocalParticipant,
 } from "@livekit/components-react";
+import type { TrackReference } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import {
   Loader2,
@@ -168,8 +169,10 @@ function LiveVideoLayout({
     }
   );
 
+  // On conserve uniquement les vraies pistes vidéo.
   const visibleTracks = cameraTracks.filter(
-    (track) => !!track.publication?.track
+    (track): track is TrackReference =>
+      track.publication?.track !== undefined
   );
 
   const sortedTracks = [...visibleTracks].sort((a, b) => {
@@ -189,6 +192,7 @@ function LiveVideoLayout({
   const [cameraEnabled, setCameraEnabled] = useState(
     localParticipant.isCameraEnabled
   );
+
   const [microphoneEnabled, setMicrophoneEnabled] = useState(
     localParticipant.isMicrophoneEnabled
   );
@@ -201,17 +205,25 @@ function LiveVideoLayout({
   async function toggleCamera() {
     if (!canPublish) return;
 
-    const nextValue = !localParticipant.isCameraEnabled;
-    await localParticipant.setCameraEnabled(nextValue);
-    setCameraEnabled(nextValue);
+    try {
+      const nextValue = !localParticipant.isCameraEnabled;
+      await localParticipant.setCameraEnabled(nextValue);
+      setCameraEnabled(nextValue);
+    } catch (error) {
+      console.error("Erreur caméra :", error);
+    }
   }
 
   async function toggleMicrophone() {
     if (!canPublish) return;
 
-    const nextValue = !localParticipant.isMicrophoneEnabled;
-    await localParticipant.setMicrophoneEnabled(nextValue);
-    setMicrophoneEnabled(nextValue);
+    try {
+      const nextValue = !localParticipant.isMicrophoneEnabled;
+      await localParticipant.setMicrophoneEnabled(nextValue);
+      setMicrophoneEnabled(nextValue);
+    } catch (error) {
+      console.error("Erreur microphone :", error);
+    }
   }
 
   return (
@@ -267,9 +279,7 @@ function LiveVideoLayout({
               onClick={toggleMicrophone}
               className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800"
               aria-label={
-                microphoneEnabled
-                  ? "Couper le micro"
-                  : "Activer le micro"
+                microphoneEnabled ? "Couper le micro" : "Activer le micro"
               }
             >
               {microphoneEnabled ? (
@@ -284,9 +294,7 @@ function LiveVideoLayout({
               onClick={toggleCamera}
               className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800"
               aria-label={
-                cameraEnabled
-                  ? "Couper la caméra"
-                  : "Activer la caméra"
+                cameraEnabled ? "Couper la caméra" : "Activer la caméra"
               }
             >
               {cameraEnabled ? (
