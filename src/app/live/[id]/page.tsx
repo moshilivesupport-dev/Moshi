@@ -12,6 +12,7 @@ import type { MouseEvent } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 
 import { createClient } from "@/lib/supabase/client";
@@ -30,7 +31,6 @@ import {
   Send,
   Smile,
   Crown,
-  Coins,
   Music,
   Share2,
   X,
@@ -687,37 +687,49 @@ export default function LiveRoomPage() {
 
         {/* PROFIL + TOP DONATEURS + STATISTIQUES */}
         <div className="pointer-events-auto mt-3 grid grid-cols-[1.25fr_1fr_auto] items-center gap-2">
-          <div className="flex min-w-0 items-center gap-2 rounded-full bg-black/35 p-1.5 backdrop-blur-md">
-            <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border-2 border-white/80 bg-zinc-800">
-              {live.profiles?.avatar_url ? (
-                <Image
-                  src={live.profiles.avatar_url}
-                  alt={hostName}
-                  fill
-                  className="object-cover"
-                  unoptimized
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center font-bold">
-                  {hostName.charAt(0)}
-                </div>
-              )}
-            </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1">
-                <p className="truncate text-xs font-bold">{hostName}</p>
-                {live.profiles?.is_verified && (
-                  <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold">
-                    ✓
-                  </span>
+          {/* PROFIL DE L'HÔTE */}
+          <div className="flex min-w-0 items-center gap-2 rounded-full bg-black/35 p-1.5 backdrop-blur-md">
+
+            {/* PHOTO ET NOM CLIQUABLES */}
+            <Link
+              href={`/profile/${live.host_id}?returnToLive=${live.id}`}
+              className="flex min-w-0 flex-1 items-center gap-2"
+              aria-label={`Voir le profil de ${hostName}`}
+            >
+              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border-2 border-white/80 bg-zinc-800">
+                {live.profiles?.avatar_url ? (
+                  <Image
+                    src={live.profiles.avatar_url}
+                    alt={hostName}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center font-bold">
+                    {hostName.charAt(0)}
+                  </div>
                 )}
               </div>
-              <p className="truncate text-[10px] text-white/75">
-                {likeCount.toLocaleString("fr-FR")} J'aime
-              </p>
-            </div>
 
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1">
+                  <p className="truncate text-xs font-bold">{hostName}</p>
+                  {live.profiles?.is_verified && (
+                    <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold">
+                      ✓
+                    </span>
+                  )}
+                </div>
+
+                <p className="truncate text-[10px] text-white/75">
+                  {likeCount.toLocaleString("fr-FR")} J'aime
+                </p>
+              </div>
+            </Link>
+
+            {/* BOUTON SUIVRE */}
             {!isHost && (
               <button
                 onClick={handleFollow}
@@ -729,10 +741,12 @@ export default function LiveRoomPage() {
             )}
           </div>
 
+          {/* TOP DONATEURS */}
           <div className="flex min-w-0 flex-col items-center">
             <p className="mb-1 whitespace-nowrap text-[9px] font-semibold text-white">
               👑 Top donateurs
             </p>
+
             <div className="flex -space-x-2">
               {topDonors.slice(0, 3).map((donor, index) => (
                 <div
@@ -752,6 +766,7 @@ export default function LiveRoomPage() {
                       {donor.username?.charAt(0) || "?"}
                     </div>
                   )}
+
                   {index === 0 && (
                     <Crown
                       size={12}
@@ -763,11 +778,13 @@ export default function LiveRoomPage() {
             </div>
           </div>
 
+          {/* STATISTIQUES */}
           <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-black/35 px-2.5 py-2 backdrop-blur-md">
             <div className="flex items-center gap-1.5 text-xs font-bold">
               <Eye size={14} />
               {Number(live.viewer_count || 1).toLocaleString("fr-FR")}
             </div>
+
             <div className="flex items-center gap-1.5 text-xs font-bold">
               <Heart size={14} className="fill-pink-500 text-pink-500" />
               {likeCount.toLocaleString("fr-FR")}
