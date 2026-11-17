@@ -1,3 +1,4 @@
+
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ProfileView from "@/components/profile/ProfileView";
@@ -12,10 +13,11 @@ export default async function ProfilePage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // On récupère TOUTES les infos du profil, y compris le rôle
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, username, full_name, avatar_url, bio, role, first_name, last_name")
+    .select(
+      "id, username, full_name, avatar_url, bio, role, first_name, last_name, is_verified"
+    )
     .eq("id", id)
     .single();
 
@@ -23,8 +25,16 @@ export default async function ProfilePage({ params }: PageProps) {
     notFound();
   }
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const isOwnProfile = user?.id === profile.id;
 
-  return <ProfileView profile={profile} isOwnProfile={isOwnProfile} />;
+  return (
+    <ProfileView
+      profile={profile}
+      isOwnProfile={isOwnProfile}
+    />
+  );
 }
