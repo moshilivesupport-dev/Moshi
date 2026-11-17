@@ -1,10 +1,18 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Volume2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+
+interface Sound {
+  id: string;
+  name: string;
+  emoji: string;
+  file: string;
+  category: string;
+}
 
 interface SoundboardProps {
   isOpen: boolean;
@@ -12,13 +20,49 @@ interface SoundboardProps {
   liveId: string;
 }
 
-const SOUNDS = [
-  { id: "applause", name: "Applaudissements", emoji: "👏", file: "/sounds/applause.mp3" },
-  { id: "laugh", name: "Rires", emoji: "😂", file: "/sounds/laugh.mp3" },
-  { id: "trumpet", name: "Trompettes", emoji: "🎺", file: "/sounds/trumpet.mp3" },
-  { id: "victory", name: "Victoire", emoji: "🏆", file: "/sounds/victory.mp3" },
-  { id: "magic", name: "Magie", emoji: "✨", file: "/sounds/magic.mp3" },
-  { id: "suspense", name: "Suspense", emoji: "🎵", file: "/sounds/suspense.mp3" },
+const SOUNDS: Sound[] = [
+  {
+    id: "applause",
+    name: "Applaudissements",
+    emoji: "👏",
+    file: "/sounds/applause.mp3",
+    category: "Ambiance",
+  },
+  {
+    id: "victory",
+    name: "Victoire",
+    emoji: "🏆",
+    file: "/sounds/victory.mp3",
+    category: "Ambiance",
+  },
+  {
+    id: "laugh",
+    name: "Rires",
+    emoji: "😂",
+    file: "/sounds/laugh.mp3",
+    category: "Ambiance",
+  },
+  {
+    id: "suspense",
+    name: "Suspense",
+    emoji: "🎭",
+    file: "/sounds/suspense.mp3",
+    category: "Ambiance",
+  },
+  {
+    id: "magic",
+    name: "Magie",
+    emoji: "✨",
+    file: "/sounds/magic.mp3",
+    category: "Ambiance",
+  },
+  {
+    id: "trumpet",
+    name: "Trompettes",
+    emoji: "🎺",
+    file: "/sounds/trumpet.mp3",
+    category: "Ambiance",
+  },
 ];
 
 export default function Soundboard({
@@ -26,82 +70,80 @@ export default function Soundboard({
   onClose,
   liveId,
 }: SoundboardProps) {
-  const supabase = createClient();
+  const supabaseRef = useRef(createClient());
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const channelRef = useRef<any>(null);
-  const [connected, setConnected] = useState(false);
-  const [playing, setPlaying] = useState<string | null>(null);
+  const unlockedRef = useRef(false);
 
   const playSound = async (soundId: string) => {
     const sound = SOUNDS.find((s) => s.id === soundId);
     if (!sound) return;
 
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
     }
 
-    const audio = new Audio(sound.file);
-    audio.volume = 0.75;
-    audioRef.current = audio;
-    setPlaying(soundId);
-
-    audio.onended = () => setPlaying(null);
-    audio.onerror = () => setPlaying(null);
+    const audio = audioRef.current;
 
     try {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = sound.file;
+      audio.volume = 0.75;
       await audio.play();
+      unlockedRef.current = true;
     } catch (error) {
-      console.error("Impossible de jouer le son :", error);
-      setPlaying(null);
+      console.error("Impossible de jouer le son:", error);
     }
   };
 
   useEffect(() => {
     if (!liveId) return;
 
-    const channel = supabase.channel(`live-sounds-${liveId}`, {
-      config: { broadcast: { self: false } },
-    });
+    const channel = supabaseRef.current
+      .channel(`live-sounds-${liveId}`, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
+      .on("broadcast", { event: "play_sound" }, (payload) => {
+        const soundId = payload.payload?.soundId;
 
-    channelRef.current = channel;
-
-    channel
-      .on("broadcast", { event: "play_sound" }, ({ payload }) => {
-        if (payload?.soundId) {
-          void playSound(payload.soundId);
+        if (typeof soundId === "string") {
+          void playSound(soundId);
         }
       })
-      .subscribe((status) => {
-        setConnected(status === "SUBSCRIBED");
-      });
+      .subscribe();
 
     return () => {
-      setConnected(false);
-      channelRef.current = null;
-      supabase.removeChannel(channel);
+      void supabaseRef.current.removeChannel(channel);
+    };
+  }, [liveId]);
+
+  const handleSound = async (sound: Sound) => {
+    // Lecture locale immédiate.
+    await playSound(sound.id);
+
+    // Diffusion aux autres participants.
+    const channel = supabaseRef.current.channel(
+      `live-sounds-${liveId}`
+    );
+
+    await channel.send({
+      type: "broadcast",
+      event: "play_sound",
+      payload: {
+        soundId: sound.id,
+        sentAt: Date.now(),
+      },
+    });
+  };
+
+  useEffect(() => {
+    return () => {
       audioRef.current?.pause();
       audioRef.current = null;
     };
-  }, [liveId, supabase]);
-
-  const broadcastSound = async (soundId: string) => {
-    if (!connected || !channelRef.current) return;
-
-    // Lecture immédiate sur l'appareil de l'expéditeur.
-    void playSound(soundId);
-
-    // Diffusion à tous les autres participants.
-    const { error } = await channelRef.current.send({
-      type: "broadcast",
-      event: "play_sound",
-      payload: { soundId },
-    });
-
-    if (error) {
-      console.error("Erreur de diffusion sonore :", error);
-    }
-  };
+  }, []);
 
   return (
     <AnimatePresence>
@@ -112,58 +154,70 @@ export default function Soundboard({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60]"
+            className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm"
           />
 
           <motion.div
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 26, stiffness: 220 }}
-            className="fixed bottom-0 left-0 right-0 z-[70] bg-[#100d1b] rounded-t-[30px] max-h-[65dvh] flex flex-col overflow-hidden border-t border-white/10"
+            transition={{
+              type: "spring",
+              damping: 26,
+              stiffness: 220,
+            }}
+            className="fixed bottom-0 left-0 right-0 z-[70] max-h-[65dvh] overflow-hidden rounded-t-[30px] border border-white/10 bg-[#160D25] pb-safe"
           >
-            <div className="p-5 flex items-center justify-between border-b border-white/10">
-              <div>
-                <div className="flex items-center gap-2 text-white font-bold">
-                  <Volume2 size={21} className="text-pink-400" />
-                  Soundboard Moshi
+            <div className="flex items-center justify-between border-b border-white/10 p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20">
+                  <Volume2 className="text-purple-300" />
                 </div>
-                <p className="text-white/50 text-xs mt-1">
-                  {connected ? "Connecté au live" : "Connexion au live..."}
-                </p>
+
+                <div>
+                  <h2 className="font-bold text-white">
+                    Soundboard Moshi
+                  </h2>
+                  <p className="text-[10px] text-white/50">
+                    Sons partagés avec les participants
+                  </p>
+                </div>
               </div>
 
               <button
                 onClick={onClose}
-                className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="p-4 grid grid-cols-3 gap-3 overflow-y-auto">
-              {SOUNDS.map((sound) => (
-                <button
-                  key={sound.id}
-                  disabled={!connected}
-                  onClick={() => broadcastSound(sound.id)}
-                  className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition active:scale-95 disabled:opacity-40 ${
-                    playing === sound.id
-                      ? "bg-pink-500/20 border-pink-400"
-                      : "bg-white/5 border-white/10"
-                  }`}
-                >
-                  <span className="text-4xl">{sound.emoji}</span>
-                  <span className="text-white text-[10px] font-semibold text-center">
-                    {sound.name}
-                  </span>
-                  {playing === sound.id && (
-                    <span className="text-pink-400 text-[9px] font-bold">
-                      EN COURS
+            <div className="overflow-y-auto p-4">
+              <p className="mb-3 text-xs font-bold uppercase tracking-wider text-white/40">
+                Ambiance
+              </p>
+
+              <div className="grid grid-cols-3 gap-3">
+                {SOUNDS.map((sound) => (
+                  <button
+                    key={sound.id}
+                    onClick={() => handleSound(sound)}
+                    className="flex min-h-[105px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] p-3 transition active:scale-95 active:bg-purple-500/20"
+                  >
+                    <span className="text-3xl">
+                      {sound.emoji}
                     </span>
-                  )}
-                </button>
-              ))}
+
+                    <span className="text-center text-[10px] font-semibold text-white">
+                      {sound.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <p className="mt-4 text-center text-[10px] text-white/35">
+                Les sons sont diffusés aux participants du live.
+              </p>
             </div>
           </motion.div>
         </>
