@@ -92,7 +92,7 @@ export default function LiveKitRoomComponent({
       }
     }
 
-    getToken();
+    void getToken();
 
     return () => controller.abort();
   }, [roomName, participantName]);
@@ -124,7 +124,7 @@ export default function LiveKitRoomComponent({
       key={`${tokenData.roomName}-${tokenData.token}`}
       serverUrl={tokenData.livekitUrl}
       token={tokenData.token}
-      connect={true}
+      connect
       video={tokenData.canPublish}
       audio={tokenData.canPublish}
       options={{
@@ -169,10 +169,10 @@ function LiveVideoLayout({
     }
   );
 
-  // On conserve uniquement les vraies pistes vidéo.
+  // Le test publication !== undefined élimine les pistes placeholder.
   const visibleTracks = cameraTracks.filter(
     (track): track is TrackReference =>
-      track.publication?.track !== undefined
+      track.publication !== undefined
   );
 
   const sortedTracks = [...visibleTracks].sort((a, b) => {
