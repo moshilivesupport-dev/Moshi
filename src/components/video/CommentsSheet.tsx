@@ -1,21 +1,28 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import Image from "next/image";
 import { X, Send, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+
+interface CommentProfile {
+  username: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+}
 
 interface Comment {
   id: string;
   content: string;
   created_at: string;
   user_id: string;
-  profiles: {
-    username: string | null;
-    full_name: string | null;
-    avatar_url: string | null;
-  } | null;
+  profiles: CommentProfile | null;
 }
 
 interface CommentsSheetProps {
@@ -33,114 +40,248 @@ export default function CommentsSheet({
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
-  const [userProfile, setUserProfile] = useState<Comment["profiles"]>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(
+    null
+  );
+  const [userProfile, setUserProfile] = useState<CommentProfile | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [authReady, setAuthReady] = useState(false);
 
   const loadComments = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-    setCurrentUser(user ? { id: user.id } : null);
+      if (authError) throw authError;
 
-    if (user) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("username, full_name, avatar_url")
-        .eq("id", user.id)
-        .maybeSingle();
+      setCurrentUser(user ? { id: user.id } : null);
+      setAuthReady(true);
 
-      setUserProfile(profile ?? null);
-    }
+      let ownProfile: CommentProfile | null = null;
 
-    const { data, error } = await supabase
-      .from("video_comments")
-      .select("id, content, created_at, user_id")
-      .eq("video_id", videoId)
-      .order("created_at", { ascending: true });
+      if (user) {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("username, full_name, avatar_url")
+          .eq("id", user.id)
+          .maybeSingle();
 
-    if (error) {
-      setErrorMessage("Impossible de charger les commentaires.");
-      setLoading(false);
-      return;
-    }
+        if (profileError) throw profileError;
 
-    const rows = data ?? [];
-    const userIds = [...new Set(rows.map((comment) => comment.user_id))];
-    const profilesMap: Record<string, Comment["profiles"]> = {};
-
-    if (userIds.length > 0) {
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, username, full_name, avatar_url")
-        .in("id", userIds);
-
-      for (const profile of profiles ?? []) {
-        profilesMap[profile.id] = profile;
+        ownProfile = profile ?? null;
       }
+
+      setUserProfile(ownProfile);
+
+      const { data, error } = await supabase
+        .from("video_comments")
+        .select("id, content, created_at, user_id")
+        .eq("video_id", videoId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+
+      const rows = data ?? [];
+      const userIds = [...new Set(rows.map((item) => item.user_id))];
+
+      const profilesMap: Record<string, CommentProfile> = {};
+
+      if (userIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, username, full_name, avatar_url")
+          .in("id", userIds);
+
+        if (profilesError) throw profilesError;
+
+        for (const profile of profiles ?? []) {
+          profilesMap[profile.id] = {
+            username: profile.username,
+            full_name: profile.full_name,
+            avatar_url: profile.avatar_url,
+          };
+        }
+      }
+
+      setComments(
+        rows.map((item) => ({
+          ...item,
+          profiles: profilesMap[item.user_id] ?? null,
+        }))
+      );
+    } catch (error) {
+      console.error("Erreur chargement commentaires :", error);
+      setErrorMessage("Impossible de charger les commentaires.");
+      setAuthReady(true);
+    } finally {
+      setLoading(false);
     }
-
-    setComments(
-      rows.map((comment) => ({
-        ...comment,
-        profiles: profilesMap[comment.user_id] ?? null,
-      }))
-    );
-
-    setLoading(false);
   }, [supabase, videoId]);
 
   useEffect(() => {
     void loadComments();
   }, [loadComments]);
 
+  // Synchronisation des nouveaux commentaires en temps réel.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`video-comments-${videoId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "video_comments",
+          filter: `video_id=eq.${videoId}`,
+        },
+        async (payload) => {
+          const row = payload.new as {
+            id: string;
+            content: string;
+            created_at: string;
+            user_id: string;
+            video_id: string;
+          };
+
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("username, full_name, avatar_url")
+            .eq("id", row.user_id)
+            .maybeSingle();
+
+          const newItem: Comment = {
+            id: row.id,
+            content: row.content,
+            created_at: row.created_at,
+            user_id: row.user_id,
+            profiles: profile ?? null,
+          };
+
+          setComments((previous) => {
+            if (previous.some((item) => item.id === newItem.id)) {
+              return previous;
+            }
+
+            return [...previous, newItem].sort(
+              (a, b) =>
+                new Date(a.created_at).getTime() -
+                new Date(b.created_at).getTime()
+            );
+          });
+
+          if (row.user_id !== currentUser?.id) {
+            onCommentAdded?.(videoId);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "video_comments",
+          filter: `video_id=eq.${videoId}`,
+        },
+        (payload) => {
+          const deleted = payload.old as { id?: string };
+
+          if (deleted.id) {
+            setComments((previous) =>
+              previous.filter((item) => item.id !== deleted.id)
+            );
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.warn("Synchronisation des commentaires indisponible.");
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, videoId, currentUser?.id, onCommentAdded]);
+
   const handleSend = async () => {
     const content = newComment.trim();
 
-    if (!content || !currentUser || sending || content.length > 500) {
+    if (
+      !content ||
+      !currentUser ||
+      sending ||
+      content.length > 500
+    ) {
       return;
     }
 
     setSending(true);
     setErrorMessage("");
 
-    const { data, error } = await supabase
-      .from("video_comments")
-      .insert({
-        video_id: videoId,
-        user_id: currentUser.id,
-        content,
-      })
-      .select("id, content, created_at, user_id")
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("video_comments")
+        .insert({
+          video_id: videoId,
+          user_id: currentUser.id,
+          content,
+        })
+        .select("id, content, created_at, user_id")
+        .single();
 
-    if (error || !data) {
-      setErrorMessage(
-        error?.message ?? "Impossible d'envoyer le commentaire."
-      );
-      setSending(false);
-      return;
-    }
+      if (error) throw error;
 
-    setComments((previous) => [
-      ...previous,
-      {
+      const newItem: Comment = {
         ...data,
         profiles: userProfile,
-      },
-    ]);
+      };
 
-    setNewComment("");
-    setSending(false);
+      setComments((previous) => {
+        if (previous.some((item) => item.id === newItem.id)) {
+          return previous;
+        }
 
-    // Met à jour immédiatement le compteur du fil.
-    onCommentAdded?.(videoId);
+        return [...previous, newItem];
+      });
+
+      setNewComment("");
+
+      // Le compteur local est incrémenté une seule fois.
+      onCommentAdded?.(videoId);
+    } catch (error) {
+      console.error("Erreur envoi commentaire :", error);
+      setErrorMessage(
+        "Impossible d'envoyer le commentaire. Réessaie."
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const formatDate = (date: string) => {
+    const value = new Date(date);
+    const now = Date.now();
+    const difference = Math.max(0, now - value.getTime());
+
+    const minutes = Math.floor(difference / 60000);
+    const hours = Math.floor(difference / 3600000);
+    const days = Math.floor(difference / 86400000);
+
+    if (minutes < 1) return "À l'instant";
+    if (minutes < 60) return `${minutes} min`;
+    if (hours < 24) return `${hours} h`;
+    if (days < 7) return `${days} j`;
+
+    return value.toLocaleDateString("fr-FR");
   };
 
   return (
@@ -152,12 +293,19 @@ export default function CommentsSheet({
         className="fixed inset-0 z-40 bg-black/60"
       />
 
-      <section className="fixed bottom-0 left-0 right-0 z-50 flex h-[75dvh] flex-col rounded-t-3xl bg-white">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Commentaires"
+        className="fixed bottom-0 left-0 right-0 z-50 flex h-[75dvh] flex-col rounded-t-3xl bg-white"
+      >
         <header className="flex items-center justify-between border-b border-gray-100 p-4">
           <div className="w-10" />
+
           <h2 className="font-bold text-moshi-text">
             {comments.length} commentaires
           </h2>
+
           <button
             type="button"
             onClick={onClose}
@@ -173,10 +321,6 @@ export default function CommentsSheet({
             <div className="flex justify-center py-10">
               <Loader2 className="animate-spin text-moshi-purple" />
             </div>
-          ) : errorMessage ? (
-            <p className="py-8 text-center text-sm text-red-500">
-              {errorMessage}
-            </p>
           ) : comments.length === 0 ? (
             <p className="py-10 text-center text-sm text-gray-400">
               Sois le premier à commenter !
@@ -208,10 +352,17 @@ export default function CommentsSheet({
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-gray-500">
-                      @{name}
-                    </p>
-                    <p className="mt-0.5 break-words text-sm leading-snug text-moshi-text">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-bold text-gray-600">
+                        @{name}
+                      </p>
+
+                      <span className="text-[10px] text-gray-400">
+                        {formatDate(comment.created_at)}
+                      </span>
+                    </div>
+
+                    <p className="mt-1 break-words text-sm leading-snug text-moshi-text">
                       {comment.content}
                     </p>
                   </div>
@@ -222,29 +373,39 @@ export default function CommentsSheet({
         </div>
 
         <footer className="border-t border-gray-100 bg-white p-3 pb-safe">
-          {!currentUser ? (
+          {errorMessage && (
+            <p className="mb-2 text-center text-xs text-red-500">
+              {errorMessage}
+            </p>
+          )}
+
+          {!authReady ? (
+            <div className="flex justify-center py-2">
+              <Loader2 className="animate-spin text-moshi-purple" size={18} />
+            </div>
+          ) : !currentUser ? (
             <p className="text-center text-sm text-gray-500">
               Connecte-toi pour commenter.
             </p>
           ) : (
             <>
-              {errorMessage && (
-                <p className="mb-2 text-xs text-red-500">
-                  {errorMessage}
-                </p>
-              )}
-
               <div className="flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2">
                 <input
                   type="text"
                   maxLength={500}
                   placeholder="Ajouter un commentaire..."
                   value={newComment}
-                  onChange={(event) => setNewComment(event.target.value)}
+                  disabled={sending}
+                  onChange={(event) =>
+                    setNewComment(event.target.value)
+                  }
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") void handleSend();
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleSend();
+                    }
                   }}
-                  className="flex-1 bg-transparent text-sm outline-none"
+                  className="flex-1 bg-transparent text-sm outline-none disabled:opacity-50"
                 />
 
                 <button
@@ -255,7 +416,10 @@ export default function CommentsSheet({
                   className="p-1 text-moshi-purple disabled:opacity-40"
                 >
                   {sending ? (
-                    <Loader2 size={20} className="animate-spin" />
+                    <Loader2
+                      size={20}
+                      className="animate-spin"
+                    />
                   ) : (
                     <Send size={20} />
                   )}
