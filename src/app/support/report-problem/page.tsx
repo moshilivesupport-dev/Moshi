@@ -62,6 +62,7 @@ const COUNTRIES = [
   { code: "AE", flag: "🇦🇪", name: "Émirats Arabes Unis" },
   { code: "SA", flag: "🇸🇦", name: "Arabie Saoudite" },
   { code: "ZA", flag: "🇿🇦", name: "Afrique du Sud" },
+  { code: "OTHER", flag: "🌍", name: "Autre" },
 ];
 
 const CATEGORIES = [
@@ -120,7 +121,7 @@ export default function ReportProblemPage() {
         .eq("id", user.id)
         .single();
 
-      setCurrentCountry(profile?.country || "");
+      setCurrentCountry(profile?.country || "Non renseigné");
 
       const { data: ticketData, error } = await supabase
         .from("support_tickets")
@@ -150,19 +151,24 @@ export default function ReportProblemPage() {
       return;
     }
 
-    if (isCountryRequest) {
-      if (!COUNTRIES.some((item) => item.code === requestedCountry)) {
-        alert("Sélectionne un pays valide.");
-        return;
-      }
+    if (isCountryRequest && !requestedCountry) {
+      alert("Sélectionne le pays que tu souhaites demander.");
+      return;
+    }
 
-      if (requestedCountry === currentCountry) {
-        alert("Le pays demandé est déjà celui de ton compte.");
-        return;
-      }
+    if (
+      isCountryRequest &&
+      requestedCountry === currentCountry
+    ) {
+      alert("Ce pays est déjà associé à ton compte.");
+      return;
     }
 
     setSending(true);
+
+    const selectedCountry = COUNTRIES.find(
+      (country) => country.name === requestedCountry
+    );
 
     const subject = isCountryRequest
       ? "Demande de changement de pays"
@@ -170,7 +176,7 @@ export default function ReportProblemPage() {
         "Autre problème";
 
     const fullDescription = isCountryRequest
-      ? `Pays actuel : ${currentCountry || "Non renseigné"}\nPays demandé : ${requestedCountry}\n\nMotif de la demande :\n${description.trim()}`
+      ? `Pays actuel : ${currentCountry}\nPays demandé : ${selectedCountry?.name || requestedCountry}\n\nMotif de la demande :\n${description.trim()}`
       : description.trim();
 
     const { error } = await supabase.from("support_tickets").insert({
@@ -222,9 +228,6 @@ export default function ReportProblemPage() {
     return "bg-orange-100 text-orange-700";
   };
 
-  const inputClass =
-    "w-full mt-2 px-4 py-3 rounded-xl bg-white border border-gray-200 outline-none focus:border-moshi-purple text-sm";
-
   if (loading) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-moshi-bg">
@@ -233,10 +236,8 @@ export default function ReportProblemPage() {
     );
   }
 
-  const currentCountryName =
-    COUNTRIES.find((item) => item.code === currentCountry)?.name ||
-    currentCountry ||
-    "Non renseigné";
+  const inputClass =
+    "w-full mt-2 px-4 py-3 rounded-xl bg-white border border-gray-200 outline-none focus:border-moshi-purple text-sm";
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg pb-10">
@@ -313,8 +314,8 @@ export default function ReportProblemPage() {
                   </div>
 
                   <p className="text-xs text-gray-600 mt-2">
-                    Le changement sera effectué uniquement après validation
-                    par l’administration Moshi.
+                    Le changement sera effectué uniquement après
+                    validation par l’administration Moshi.
                   </p>
                 </div>
 
@@ -324,7 +325,7 @@ export default function ReportProblemPage() {
                   </label>
 
                   <input
-                    value={currentCountryName}
+                    value={currentCountry}
                     readOnly
                     className={`${inputClass} bg-gray-100 text-gray-500`}
                   />
@@ -341,13 +342,16 @@ export default function ReportProblemPage() {
                     className={inputClass}
                     required
                   >
-                    <option value="">Sélectionne ton pays</option>
+                    <option value="">Sélectionne un pays</option>
 
                     {COUNTRIES.filter(
-                      (item) => item.code !== currentCountry
-                    ).map((item) => (
-                      <option key={item.code} value={item.code}>
-                        {item.flag} {item.name}
+                      (country) => country.code !== "OTHER"
+                    ).map((country) => (
+                      <option
+                        key={country.code}
+                        value={country.name}
+                      >
+                        {country.flag} {country.name}
                       </option>
                     ))}
                   </select>
@@ -407,7 +411,6 @@ export default function ReportProblemPage() {
             <h2 className="font-bold text-lg text-moshi-text">
               Mes signalements
             </h2>
-
             <p className="text-xs text-gray-500">
               Consulte ici l’avancement de tes demandes.
             </p>
@@ -432,9 +435,7 @@ export default function ReportProblemPage() {
                   </h3>
 
                   <span
-                    className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${getStatusStyle(
-                      ticket.status
-                    )}`}
+                    className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${getStatusStyle(ticket.status)}`}
                   >
                     {STATUS_LABELS[ticket.status] || ticket.status}
                   </span>
