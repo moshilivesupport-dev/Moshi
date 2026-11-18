@@ -11,7 +11,7 @@ import {
   Globe,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -25,20 +25,59 @@ type Ticket = {
   created_at: string;
 };
 
+const COUNTRIES = [
+  { code: "TG", flag: "🇹🇬", name: "Togo" },
+  { code: "BJ", flag: "🇧🇯", name: "Bénin" },
+  { code: "CI", flag: "🇨🇮", name: "Côte d'Ivoire" },
+  { code: "SN", flag: "🇸🇳", name: "Sénégal" },
+  { code: "BF", flag: "🇧🇫", name: "Burkina Faso" },
+  { code: "ML", flag: "🇲🇱", name: "Mali" },
+  { code: "NE", flag: "🇳🇪", name: "Niger" },
+  { code: "GH", flag: "🇬🇭", name: "Ghana" },
+  { code: "NG", flag: "🇳🇬", name: "Nigeria" },
+  { code: "CM", flag: "🇨🇲", name: "Cameroun" },
+  { code: "GA", flag: "🇬🇦", name: "Gabon" },
+  { code: "CD", flag: "🇨🇩", name: "RD Congo" },
+  { code: "CG", flag: "🇨🇬", name: "Congo" },
+  { code: "TD", flag: "🇹🇩", name: "Tchad" },
+  { code: "CF", flag: "🇨🇫", name: "Centrafrique" },
+  { code: "MA", flag: "🇲🇦", name: "Maroc" },
+  { code: "DZ", flag: "🇩🇿", name: "Algérie" },
+  { code: "TN", flag: "🇹🇳", name: "Tunisie" },
+  { code: "EG", flag: "🇪🇬", name: "Égypte" },
+  { code: "FR", flag: "🇫🇷", name: "France" },
+  { code: "BE", flag: "🇧🇪", name: "Belgique" },
+  { code: "CH", flag: "🇨🇭", name: "Suisse" },
+  { code: "CA", flag: "🇨🇦", name: "Canada" },
+  { code: "US", flag: "🇺🇸", name: "États-Unis" },
+  { code: "UK", flag: "🇬🇧", name: "Royaume-Uni" },
+  { code: "DE", flag: "🇩🇪", name: "Allemagne" },
+  { code: "IT", flag: "🇮🇹", name: "Italie" },
+  { code: "ES", flag: "🇪🇸", name: "Espagne" },
+  { code: "PT", flag: "🇵🇹", name: "Portugal" },
+  { code: "BR", flag: "🇧🇷", name: "Brésil" },
+  { code: "CN", flag: "🇨🇳", name: "Chine" },
+  { code: "JP", flag: "🇯🇵", name: "Japon" },
+  { code: "IN", flag: "🇮🇳", name: "Inde" },
+  { code: "AE", flag: "🇦🇪", name: "Émirats Arabes Unis" },
+  { code: "SA", flag: "🇸🇦", name: "Arabie Saoudite" },
+  { code: "ZA", flag: "🇿🇦", name: "Afrique du Sud" },
+];
+
 const CATEGORIES = [
   { value: "account", label: "Compte et profil" },
   { value: "payment", label: "Paiement" },
   { value: "purchase", label: "Achat et commande" },
   { value: "live", label: "Problème pendant un live" },
   { value: "user_behavior", label: "Comportement d’un utilisateur" },
-  { value: "other", label: "Autre problème" }
+  { value: "other", label: "Autre problème" },
 ];
 
 const STATUS_LABELS: Record<string, string> = {
   open: "En attente",
   in_progress: "En cours de traitement",
   resolved: "Résolu",
-  closed: "Fermé"
+  closed: "Fermé",
 };
 
 export default function ReportProblemPage() {
@@ -60,7 +99,9 @@ export default function ReportProblemPage() {
 
   useEffect(() => {
     const loadPage = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       if (!user) {
         router.push("/auth/login");
@@ -79,11 +120,13 @@ export default function ReportProblemPage() {
         .eq("id", user.id)
         .single();
 
-      setCurrentCountry(profile?.country || "Non renseigné");
+      setCurrentCountry(profile?.country || "");
 
       const { data: ticketData, error } = await supabase
         .from("support_tickets")
-        .select("id, category, subject, description, status, admin_response, created_at")
+        .select(
+          "id, category, subject, description, status, admin_response, created_at"
+        )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -107,30 +150,36 @@ export default function ReportProblemPage() {
       return;
     }
 
-    if (isCountryRequest && !requestedCountry.trim()) {
-      alert("Indique le pays que tu souhaites demander.");
-      return;
+    if (isCountryRequest) {
+      if (!COUNTRIES.some((item) => item.code === requestedCountry)) {
+        alert("Sélectionne un pays valide.");
+        return;
+      }
+
+      if (requestedCountry === currentCountry) {
+        alert("Le pays demandé est déjà celui de ton compte.");
+        return;
+      }
     }
 
     setSending(true);
 
     const subject = isCountryRequest
       ? "Demande de changement de pays"
-      : CATEGORIES.find((item) => item.value === category)?.label || "Autre problème";
+      : CATEGORIES.find((item) => item.value === category)?.label ||
+        "Autre problème";
 
     const fullDescription = isCountryRequest
-      ? `Pays actuel : ${currentCountry}\nPays demandé : ${requestedCountry.trim()}\n\nMotif de la demande :\n${description.trim()}`
+      ? `Pays actuel : ${currentCountry || "Non renseigné"}\nPays demandé : ${requestedCountry}\n\nMotif de la demande :\n${description.trim()}`
       : description.trim();
 
-    const { error } = await supabase
-      .from("support_tickets")
-      .insert({
-        user_id: userId,
-        category: isCountryRequest ? "account" : category,
-        subject,
-        description: fullDescription,
-        status: "open"
-      });
+    const { error } = await supabase.from("support_tickets").insert({
+      user_id: userId,
+      category: isCountryRequest ? "account" : category,
+      subject,
+      description: fullDescription,
+      status: "open",
+    });
 
     if (error) {
       alert("Impossible d'envoyer la demande : " + error.message);
@@ -138,13 +187,18 @@ export default function ReportProblemPage() {
       return;
     }
 
-    setSuccessMessage("Ta demande a bien été envoyée à l’équipe Moshi.");
+    setSuccessMessage(
+      "Ta demande a bien été envoyée à l’équipe Moshi."
+    );
+
     setDescription("");
     setRequestedCountry("");
 
     const { data: ticketData } = await supabase
       .from("support_tickets")
-      .select("id, category, subject, description, status, admin_response, created_at")
+      .select(
+        "id, category, subject, description, status, admin_response, created_at"
+      )
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -168,6 +222,9 @@ export default function ReportProblemPage() {
     return "bg-orange-100 text-orange-700";
   };
 
+  const inputClass =
+    "w-full mt-2 px-4 py-3 rounded-xl bg-white border border-gray-200 outline-none focus:border-moshi-purple text-sm";
+
   if (loading) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-moshi-bg">
@@ -176,8 +233,10 @@ export default function ReportProblemPage() {
     );
   }
 
-  const inputClass =
-    "w-full mt-2 px-4 py-3 rounded-xl bg-white border border-gray-200 outline-none focus:border-moshi-purple text-sm";
+  const currentCountryName =
+    COUNTRIES.find((item) => item.code === currentCountry)?.name ||
+    currentCountry ||
+    "Non renseigné";
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg pb-10">
@@ -185,6 +244,7 @@ export default function ReportProblemPage() {
         <button onClick={() => router.back()} className="p-1">
           <ArrowLeft className="w-6 h-6 text-moshi-text" />
         </button>
+
         <h1 className="text-lg font-bold text-moshi-text">
           Signaler un problème
         </h1>
@@ -210,6 +270,7 @@ export default function ReportProblemPage() {
             <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
               <MessageCircle className="w-5 h-5 text-moshi-purple" />
             </div>
+
             <div>
               <h2 className="font-bold text-moshi-text">
                 Comment pouvons-nous t’aider ?
@@ -226,6 +287,7 @@ export default function ReportProblemPage() {
                 <label className="text-sm font-bold text-gray-700">
                   Catégorie du problème
                 </label>
+
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
@@ -249,6 +311,7 @@ export default function ReportProblemPage() {
                       Demande de changement de pays
                     </p>
                   </div>
+
                   <p className="text-xs text-gray-600 mt-2">
                     Le changement sera effectué uniquement après validation
                     par l’administration Moshi.
@@ -259,8 +322,9 @@ export default function ReportProblemPage() {
                   <label className="text-sm font-bold text-gray-700">
                     Pays actuel
                   </label>
+
                   <input
-                    value={currentCountry}
+                    value={currentCountryName}
                     readOnly
                     className={`${inputClass} bg-gray-100 text-gray-500`}
                   />
@@ -270,22 +334,34 @@ export default function ReportProblemPage() {
                   <label className="text-sm font-bold text-gray-700">
                     Pays souhaité
                   </label>
-                  <input
-                    type="text"
+
+                  <select
                     value={requestedCountry}
                     onChange={(e) => setRequestedCountry(e.target.value)}
-                    placeholder="Exemple : Bénin"
                     className={inputClass}
                     required
-                  />
+                  >
+                    <option value="">Sélectionne ton pays</option>
+
+                    {COUNTRIES.filter(
+                      (item) => item.code !== currentCountry
+                    ).map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.flag} {item.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             )}
 
             <div>
               <label className="text-sm font-bold text-gray-700">
-                {isCountryRequest ? "Pourquoi souhaites-tu changer de pays ?" : "Décris ton problème"}
+                {isCountryRequest
+                  ? "Pourquoi souhaites-tu changer de pays ?"
+                  : "Décris ton problème"}
               </label>
+
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -300,6 +376,7 @@ export default function ReportProblemPage() {
                 }
                 className={`${inputClass} resize-none`}
               />
+
               <p className="text-xs text-gray-400 text-right mt-1">
                 {description.length}/2000
               </p>
@@ -330,6 +407,7 @@ export default function ReportProblemPage() {
             <h2 className="font-bold text-lg text-moshi-text">
               Mes signalements
             </h2>
+
             <p className="text-xs text-gray-500">
               Consulte ici l’avancement de tes demandes.
             </p>
@@ -352,8 +430,11 @@ export default function ReportProblemPage() {
                   <h3 className="font-bold text-sm text-moshi-text">
                     {ticket.subject}
                   </h3>
+
                   <span
-                    className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${getStatusStyle(ticket.status)}`}
+                    className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${getStatusStyle(
+                      ticket.status
+                    )}`}
                   >
                     {STATUS_LABELS[ticket.status] || ticket.status}
                   </span>
@@ -368,6 +449,7 @@ export default function ReportProblemPage() {
                     <p className="text-xs font-bold text-moshi-purple mb-1">
                       Réponse de Moshi
                     </p>
+
                     <p className="text-sm text-gray-700 whitespace-pre-line">
                       {ticket.admin_response}
                     </p>
