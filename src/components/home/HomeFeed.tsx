@@ -39,31 +39,25 @@ interface FeedItem {
   } | null;
 }
 
-interface FeedVideoProps {
-  item: FeedItem;
-  muted: boolean;
-  onToggleMute: (video: HTMLVideoElement) => void;
-  children: React.ReactNode;
-}
-
-function formatNumber(num: number): string {
+function formatNumber(num: number) {
   if (num >= 1_000_000) {
     return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
   }
-
   if (num >= 1_000) {
     return (num / 1_000).toFixed(1).replace(".0", "") + "K";
   }
-
-  return num.toString();
+  return String(num);
 }
 
 function FeedVideo({
   item,
   muted,
   onToggleMute,
-  children,
-}: FeedVideoProps) {
+}: {
+  item: FeedItem;
+  muted: boolean;
+  onToggleMute: (video: HTMLVideoElement) => void;
+}) {
   const sectionRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -72,25 +66,18 @@ function FeedVideo({
     const section = sectionRef.current;
     if (!section) return;
 
-    if (!("IntersectionObserver" in window)) {
-      setIsVisible(true);
-      return;
-    }
-
     const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
+      ([entry]) => {
         setIsVisible(
-          entry.isIntersecting && entry.intersectionRatio >= 0.65
+          entry.isIntersecting && entry.intersectionRatio >= 0.6
         );
       },
       {
-        threshold: [0, 0.25, 0.5, 0.65, 0.85, 1],
+        threshold: [0, 0.25, 0.5, 0.6, 0.75, 1],
       }
     );
 
     observer.observe(section);
-
     return () => observer.disconnect();
   }, []);
 
@@ -100,19 +87,25 @@ function FeedVideo({
 
     video.muted = muted;
 
-    if (isVisible) {
-      const playPromise = video.play();
-
-      if (playPromise !== undefined) {
-        playPromise.catch((error) => {
-          if (error?.name !== "AbortError") {
-            console.warn("Lecture vidéo impossible :", error);
-          }
-        });
-      }
-    } else {
+    if (!isVisible) {
       video.pause();
+      return;
     }
+
+    const play = async () => {
+      try {
+        await video.play();
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.name !== "AbortError"
+        ) {
+          console.warn("Lecture vidéo impossible :", error);
+        }
+      }
+    };
+
+    void play();
   }, [isVisible, muted]);
 
   useEffect(() => {
@@ -120,16 +113,11 @@ function FeedVideo({
     return () => video?.pause();
   }, []);
 
-  const handleToggleMute = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    onToggleMute(video);
-  };
-
   return (
     <section
       ref={sectionRef}
-      className="moshi-video relative bg-black"
+      className="moshi-video relative w-full overflow-hidden bg-black"
+      style={{ height: "100%", minHeight: "100%" }}
     >
       <video
         ref={videoRef}
@@ -138,21 +126,31 @@ function FeedVideo({
         loop
         muted={muted}
         playsInline
-        preload="metadata"
+        webkit-playsinline="true"
+        preload="auto"
+        onError={(event) => {
+          console.warn(
+            "Erreur de chargement vidéo :",
+            event.currentTarget.error
+          );
+        }}
       />
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
 
       <button
         type="button"
-        onClick={handleToggleMute}
-        className="absolute right-4 top-20 z-30 moshi-glass flex h-10 w-10 items-center justify-center rounded-full text-white"
+        onClick={() => {
+          const video = videoRef.current;
+          if (video) onToggleMute(video);
+        }}
+        className="absolute right-4 top-5 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-lg"
         aria-label={muted ? "Activer le son" : "Couper le son"}
       >
-        {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+        {muted ? <VolumeX size={19} /> : <Volume2 size={19} />}
       </button>
 
-      {children}
+      <div className="pointer-events-none absolute inset-0 z-10" />
     </section>
   );
 }
@@ -173,9 +171,7 @@ export default function HomeFeed() {
     let cancelled = false;
 
     const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
 
       if (!cancelled) {
         setCurrentUser(user ? { id: user.id } : null);
@@ -195,7 +191,9 @@ export default function HomeFeed() {
     try {
       const { data: videosData, error: videosError } = await supabase
         .from("videos")
-        .select("id, url, caption, like_count, comment_count, user_id, created_at")
+        .select(
+          "id, url, caption, like_count, comment_count, user_id, created_at"
+        )
         .eq("status", "published")
         .order("created_at", { ascending: false })
         .limit(30);
@@ -209,39 +207,28 @@ export default function HomeFeed() {
 
       if (livesError) throw livesError;
 
-      const allUserIds = [
+      const userIds = [
         ...(livesData || []).map((live) => live.host_id),
         ...(videosData || []).map((video) => video.user_id),
       ];
 
-      const uniqueUserIds = [...new Set(allUserIds)];
+      const uniqueIds = [...new Set(userIds)];
       const profilesMap: Record<string, FeedItem["profiles"]> = {};
 
-      if (uniqueUserIds.length > 0) {
-        const { data: profilesData, error: profilesError } = await supabase
+      if (uniqueIds.length > 0) {
+        const { data: profiles, error } = await supabase
           .from("profiles")
           .select("id, username, avatar_url, full_name, country")
-          .in("id", uniqueUserIds);
+          .in("id", uniqueIds);
 
-        if (profilesError) throw profilesError;
+        if (error) throw error;
 
-        (profilesData || []).forEach((profile) => {
+        (profiles || []).forEach((profile) => {
           profilesMap[profile.id] = profile;
         });
       }
 
-      const livesItems: FeedItem[] = (livesData || []).map((live) => ({
-        id: live.id,
-        type: "live",
-        url: "",
-        caption: live.title,
-        like_count: 0,
-        comment_count: 0,
-        user_id: live.host_id,
-        profiles: profilesMap[live.host_id] || null,
-      }));
-
-      const videosItems: FeedItem[] = (videosData || []).map((video) => ({
+      const videos: FeedItem[] = (videosData || []).map((video) => ({
         id: video.id,
         type: "video",
         url: video.url,
@@ -252,23 +239,32 @@ export default function HomeFeed() {
         profiles: profilesMap[video.user_id] || null,
       }));
 
-      setItems([...livesItems, ...videosItems]);
+      const lives: FeedItem[] = (livesData || []).map((live) => ({
+        id: live.id,
+        type: "live",
+        url: "",
+        caption: live.title,
+        like_count: 0,
+        comment_count: 0,
+        user_id: live.host_id,
+        profiles: profilesMap[live.host_id] || null,
+      }));
+
+      setItems([...lives, ...videos]);
 
       if (currentUser) {
-        const { data: likesData, error: likesError } = await supabase
+        const { data: likes, error } = await supabase
           .from("video_likes")
           .select("video_id")
           .eq("user_id", currentUser.id);
 
-        if (likesError) throw likesError;
+        if (error) throw error;
 
-        const likedMap: Record<string, boolean> = {};
-
-        (likesData || []).forEach((like) => {
-          likedMap[like.video_id] = true;
+        const map: Record<string, boolean> = {};
+        (likes || []).forEach((like) => {
+          map[like.video_id] = true;
         });
-
-        setLiked(likedMap);
+        setLiked(map);
       } else {
         setLiked({});
       }
@@ -284,15 +280,15 @@ export default function HomeFeed() {
   }, [loadFeed]);
 
   const toggleMute = (video: HTMLVideoElement) => {
-    const nextMuted = !video.muted;
-    video.muted = nextMuted;
-    setMuted(nextMuted);
+    const next = !video.muted;
+    video.muted = next;
+    setMuted(next);
   };
 
   const toggleLike = async (videoId: string) => {
     if (!currentUser || pendingLikes[videoId]) return;
 
-    const isCurrentlyLiked = !!liked[videoId];
+    const wasLiked = !!liked[videoId];
 
     setPendingLikes((previous) => ({
       ...previous,
@@ -301,7 +297,7 @@ export default function HomeFeed() {
 
     setLiked((previous) => ({
       ...previous,
-      [videoId]: !isCurrentlyLiked,
+      [videoId]: !wasLiked,
     }));
 
     setItems((previous) =>
@@ -311,7 +307,7 @@ export default function HomeFeed() {
               ...item,
               like_count: Math.max(
                 0,
-                item.like_count + (isCurrentlyLiked ? -1 : 1)
+                item.like_count + (wasLiked ? -1 : 1)
               ),
             }
           : item
@@ -319,7 +315,7 @@ export default function HomeFeed() {
     );
 
     try {
-      if (isCurrentlyLiked) {
+      if (wasLiked) {
         const { error } = await supabase
           .from("video_likes")
           .delete()
@@ -342,7 +338,7 @@ export default function HomeFeed() {
 
       setLiked((previous) => ({
         ...previous,
-        [videoId]: isCurrentlyLiked,
+        [videoId]: wasLiked,
       }));
 
       setItems((previous) =>
@@ -352,7 +348,7 @@ export default function HomeFeed() {
                 ...item,
                 like_count: Math.max(
                   0,
-                  item.like_count + (isCurrentlyLiked ? 1 : -1)
+                  item.like_count + (wasLiked ? 1 : -1)
                 ),
               }
             : item
@@ -366,7 +362,6 @@ export default function HomeFeed() {
     }
   };
 
-  // Actualisation immédiate du compteur après publication.
   const handleCommentAdded = (videoId: string) => {
     setItems((previous) =>
       previous.map((item) =>
@@ -382,7 +377,7 @@ export default function HomeFeed() {
 
   if (loading) {
     return (
-      <div className="flex h-[100dvh] items-center justify-center bg-black">
+      <div className="flex h-[calc(100dvh-88px)] items-center justify-center bg-black">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#9D7BEA] border-t-transparent" />
       </div>
     );
@@ -390,7 +385,7 @@ export default function HomeFeed() {
 
   if (items.length === 0) {
     return (
-      <div className="flex h-[100dvh] flex-col items-center justify-center bg-black px-6 text-center">
+      <div className="flex h-[calc(100dvh-88px)] flex-col items-center justify-center bg-black px-6 text-center">
         <p className="font-medium text-neutral-400">
           Aucune vidéo pour le moment
         </p>
@@ -399,7 +394,16 @@ export default function HomeFeed() {
   }
 
   return (
-    <div className="moshi-feed">
+    <div
+      className="moshi-feed fixed left-0 right-0 top-0 z-0 bg-black"
+      style={{
+        height: "calc(100dvh - 88px)",
+        scrollSnapType: "y mandatory",
+        overflowY: "auto",
+        overscrollBehaviorY: "contain",
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
       {items.map((item) => {
         const isLiked = !!liked[item.id];
         const author = item.profiles;
@@ -410,7 +414,8 @@ export default function HomeFeed() {
           return (
             <section
               key={item.id}
-              className="moshi-video relative flex items-center justify-center bg-gradient-to-br from-purple-900 via-pink-900 to-black"
+              className="moshi-video relative flex w-full items-center justify-center overflow-hidden bg-gradient-to-br from-purple-900 via-pink-900 to-black"
+              style={{ height: "100%", minHeight: "100%" }}
             >
               <Link
                 href={`/live/${item.id}`}
@@ -448,7 +453,7 @@ export default function HomeFeed() {
             muted={muted}
             onToggleMute={toggleMute}
           >
-            <div className="absolute bottom-32 right-3 z-20 flex flex-col items-center gap-4">
+            <div className="absolute bottom-5 right-3 z-20 flex flex-col items-center gap-4">
               <Link
                 href={`/profile/${item.user_id}`}
                 className="h-12 w-12 overflow-hidden rounded-full border-2 border-white bg-neutral-800"
@@ -489,7 +494,6 @@ export default function HomeFeed() {
                     }
                   />
                 </motion.div>
-
                 <span className="text-xs font-semibold text-white">
                   {formatNumber(item.like_count)}
                 </span>
@@ -504,7 +508,6 @@ export default function HomeFeed() {
                 <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
                   <MessageCircle size={24} className="text-white" />
                 </div>
-
                 <span className="text-xs font-semibold text-white">
                   {formatNumber(item.comment_count)}
                 </span>
@@ -526,7 +529,10 @@ export default function HomeFeed() {
                       await navigator.clipboard.writeText(url);
                     }
                   } catch (error) {
-                    if ((error as Error).name !== "AbortError") {
+                    if (
+                      error instanceof Error &&
+                      error.name !== "AbortError"
+                    ) {
                       console.error("Erreur partage :", error);
                     }
                   }
@@ -539,7 +545,7 @@ export default function HomeFeed() {
               </button>
             </div>
 
-            <div className="absolute bottom-28 left-4 right-20 z-20 space-y-2">
+            <div className="absolute bottom-5 left-4 right-20 z-20 space-y-2">
               <Link
                 href={`/profile/${item.user_id}`}
                 className="text-base font-bold text-white drop-shadow-md hover:underline"
