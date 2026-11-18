@@ -13,11 +13,35 @@ type CountryRequest = {
 };
 
 function extractField(description: string, field: string) {
-  const line = description
-    .split("\n")
-    .find((item) => item.toLowerCase().startsWith(field.toLowerCase()));
+  const lines = description.split("\n");
 
-  return line ? line.split(":").slice(1).join(":").trim() : "Non renseigné";
+  const index = lines.findIndex((line) =>
+    line.toLowerCase().startsWith(field.toLowerCase())
+  );
+
+  if (index === -1) return "Non renseigné";
+
+  const firstLine = lines[index].split(":").slice(1).join(":").trim();
+  const followingLines = lines.slice(index + 1);
+  const extraLines: string[] = [];
+
+  for (const line of followingLines) {
+    const normalized = line.toLowerCase();
+
+    if (
+      normalized.startsWith("pays actuel") ||
+      normalized.startsWith("pays demandé") ||
+      normalized.startsWith("motif de la demande")
+    ) {
+      break;
+    }
+
+    extraLines.push(line);
+  }
+
+  const result = [firstLine, ...extraLines].join("\n").trim();
+
+  return result || "Non renseigné";
 }
 
 function statusLabel(status: string) {
@@ -138,9 +162,11 @@ export default function CountryChangeAdminPage() {
             <p className="text-sm font-semibold uppercase tracking-widest text-cyan-400">
               MOSHI ADMIN
             </p>
+
             <h1 className="mt-2 text-2xl font-bold sm:text-3xl">
               Changements de pays
             </h1>
+
             <p className="mt-2 text-sm text-slate-400">
               Examine et traite les demandes des utilisateurs.
             </p>
@@ -262,7 +288,9 @@ export default function CountryChangeAdminPage() {
                   </div>
 
                   <div className="mt-4">
-                    <p className="text-xs text-slate-400">Identifiant utilisateur</p>
+                    <p className="text-xs text-slate-400">
+                      Identifiant utilisateur
+                    </p>
                     <p className="mt-1 break-all text-sm text-slate-300">
                       {item.user_id}
                     </p>
