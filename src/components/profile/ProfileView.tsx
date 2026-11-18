@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -27,8 +26,8 @@ interface VideoData {
   view_count: number;
   like_count: number;
   caption: string | null;
-  status?: string | null;
-  user_id?: string;
+  status: string | null;
+  user_id: string | null;
 }
 
 type ProfileTab = "videos" | "private" | "saved" | "liked";
