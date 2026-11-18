@@ -104,7 +104,6 @@ export default function VideoDetailPage() {
 
       if (!videoData) {
         setVideo(null);
-        setLoading(false);
         return;
       }
 
@@ -129,7 +128,7 @@ export default function VideoDetailPage() {
       setCommentCount(videoData.comment_count ?? 0);
 
       if (user) {
-        const [likeResult, saveResult, viewResult] = await Promise.all([
+        const [likeResult, saveResult] = await Promise.all([
           supabase
             .from("video_likes")
             .select("video_id")
@@ -143,38 +142,48 @@ export default function VideoDetailPage() {
             .eq("video_id", videoId)
             .eq("user_id", user.id)
             .maybeSingle(),
-
-          supabase
-            .from("video_views")
-            .select("id")
-            .eq("video_id", videoId)
-            .eq("viewer_id", user.id)
-            .maybeSingle(),
         ]);
+
+        if (likeResult.error) {
+          console.warn("Vérification du J'aime impossible :", likeResult.error.message);
+        }
+
+        if (saveResult.error) {
+          console.warn("Vérification de l'enregistrement impossible :", saveResult.error.message);
+        }
 
         setIsLiked(!!likeResult.data);
         setIsSaved(!!saveResult.data);
 
-        if (
-          videoData.status === "published" &&
-          !viewResult.data &&
-          !viewResult.error
-        ) {
-          const { error: insertError } = await supabase
-            .from("video_views")
-            .insert({
-              video_id: videoId,
-              viewer_id: user.id,
-            });
+        // Une seule opération atomique : la fonction SQL insère la vue
+        // uniquement si elle n'existe pas et incrémente le compteur.
+        if (videoData.status === "published") {
+          const { error: rpcError } = await supabase.rpc(
+            "increment_video_view",
+            { vid_id: videoId }
+          );
 
-          if (!insertError) {
-            const { error: rpcError } = await supabase.rpc(
-              "increment_video_view",
-              { vid_id: videoId }
-            );
+          if (rpcError) {
+            console.warn("Comptabilisation de la vue impossible :", rpcError.message);
+          } else {
+            // On relit le compteur réel pour éviter une valeur locale
+            // incorrecte si la vue existait déjà ou si plusieurs vues arrivent.
+            const { data: updatedVideo, error: countError } = await supabase
+              .from("videos")
+              .select("view_count")
+              .eq("id", videoId)
+              .maybeSingle();
 
-            if (!rpcError) {
-              setViewCount((count) => count + 1);
+            if (!countError && updatedVideo) {
+              setViewCount(updatedVideo.view_count ?? 0);
+              setVideo((current) =>
+                current
+                  ? {
+                      ...current,
+                      view_count: updatedVideo.view_count ?? 0,
+                    }
+                  : current
+              );
             }
           }
         }
