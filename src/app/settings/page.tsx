@@ -20,7 +20,7 @@ import { createClient } from "@/lib/supabase/client";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState("");
@@ -40,7 +40,7 @@ export default function SettingsPage() {
 
       if (logoutError) throw logoutError;
 
-      router.replace("/login");
+      router.replace("/auth/login");
       router.refresh();
     } catch (err) {
       console.error("Erreur de déconnexion :", err);
@@ -81,14 +81,12 @@ export default function SettingsPage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
                 <UserRound className="h-5 w-5" />
               </div>
-
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-gray-900">Modifier mon profil</p>
                 <p className="mt-1 text-xs text-gray-500">
                   Photo, nom, identifiant et biographie
                 </p>
               </div>
-
               <ChevronRight className="h-5 w-5 text-gray-400" />
             </Link>
 
@@ -101,7 +99,6 @@ export default function SettingsPage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                 <ShieldCheck className="h-5 w-5" />
               </div>
-
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-gray-900">
                   Certification du compte
@@ -110,7 +107,6 @@ export default function SettingsPage() {
                   Demander ou suivre la certification
                 </p>
               </div>
-
               <ChevronRight className="h-5 w-5 text-gray-400" />
             </Link>
           </div>
@@ -129,7 +125,6 @@ export default function SettingsPage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
                 <MessageCircle className="h-5 w-5" />
               </div>
-
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-gray-900">
                   Signaler un problème
@@ -138,7 +133,6 @@ export default function SettingsPage() {
                   Contacter l’équipe Moshi et suivre tes demandes
                 </p>
               </div>
-
               <ChevronRight className="h-5 w-5 text-gray-400" />
             </Link>
           </div>
@@ -157,14 +151,12 @@ export default function SettingsPage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-pink-50 text-pink-600">
                 <Wallet className="h-5 w-5" />
               </div>
-
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-gray-900">Mon portefeuille</p>
                 <p className="mt-1 text-xs text-gray-500">
                   Consulter mon portefeuille Moshi
                 </p>
               </div>
-
               <ChevronRight className="h-5 w-5 text-gray-400" />
             </Link>
           </div>
@@ -189,7 +181,6 @@ export default function SettingsPage() {
                   <LogOut className="h-5 w-5" />
                 )}
               </div>
-
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-red-600">
                   {loggingOut ? "Déconnexion..." : "Se déconnecter"}
@@ -198,7 +189,6 @@ export default function SettingsPage() {
                   Fermer ta session Moshi sur cet appareil
                 </p>
               </div>
-
               {!loggingOut && (
                 <ChevronRight className="h-5 w-5 text-gray-400" />
               )}
