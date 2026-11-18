@@ -156,7 +156,7 @@ export default function LiveRoomPage() {
       { start: "#FF39B8", end: "#B026FF" },
       { start: "#FF58D0", end: "#8B35FF" },
       { start: "#F725A5", end: "#6D28D9" },
-      { start: "#FF72C6", end: "#A855F7" },
+      { start: "#FF72C6", end: "#A855FF" },
     ];
 
     const gradient = gradients[Math.floor(Math.random() * gradients.length)];
@@ -1106,6 +1106,7 @@ export default function LiveRoomPage() {
         isOpen={isSoundboardOpen}
         onClose={() => setIsSoundboardOpen(false)}
         liveId={live.id}
+        canUseSoundboard={isHost}
       />
     </main>
   );
