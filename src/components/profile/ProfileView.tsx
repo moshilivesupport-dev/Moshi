@@ -18,6 +18,7 @@ import {
   Video,
   BadgeCheck,
   ShieldCheck,
+  Settings,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -185,7 +186,6 @@ export default function ProfileView({
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg text-moshi-text pb-24">
-
       {/* HEADER */}
       <header className="px-4 pt-6 pb-2 flex items-center justify-between">
         <Link
@@ -204,12 +204,24 @@ export default function ProfileView({
 
         <div className="flex gap-2">
           {isOwnProfile && (
-            <Link
-              href="/wallet"
-              className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"
-            >
-              <Wallet className="w-5 h-5 text-moshi-purple" />
-            </Link>
+            <>
+              <Link
+                href="/settings"
+                aria-label="Paramètres"
+                title="Paramètres"
+                className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"
+              >
+                <Settings className="w-5 h-5 text-moshi-purple" />
+              </Link>
+
+              <Link
+                href="/wallet"
+                aria-label="Mon portefeuille"
+                className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"
+              >
+                <Wallet className="w-5 h-5 text-moshi-purple" />
+              </Link>
+            </>
           )}
 
           <button
