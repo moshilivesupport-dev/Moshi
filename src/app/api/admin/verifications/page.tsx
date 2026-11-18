@@ -13,6 +13,8 @@ import {
   ExternalLink,
   Clock,
   AlertCircle,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 type VerificationRequest = {
@@ -33,6 +35,9 @@ export default function AdminVerificationsPage() {
   const [requests, setRequests] = useState<VerificationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState("");
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -47,17 +52,13 @@ export default function AdminVerificationsPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          result.error || "Impossible de charger les demandes."
-        );
+        throw new Error(result.error || "Impossible de charger les demandes.");
       }
 
       setRequests(result.requests || []);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Une erreur est survenue."
+        err instanceof Error ? err.message : "Une erreur est survenue."
       );
     } finally {
       setLoading(false);
@@ -67,6 +68,51 @@ export default function AdminVerificationsPage() {
   useEffect(() => {
     loadRequests();
   }, [loadRequests]);
+
+  const reviewRequest = async (
+    requestId: string,
+    decision: "approved" | "rejected"
+  ) => {
+    const confirmation =
+      decision === "approved"
+        ? "Confirmer l'approbation de cette certification ?"
+        : "Confirmer le refus de cette demande ?";
+
+    if (!window.confirm(confirmation)) return;
+
+    setProcessingId(requestId);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/admin/verifications/review", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId,
+          decision,
+          adminNote: notes[requestId] || null,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Impossible de traiter la demande.");
+      }
+
+      setMessage(result.message || "Demande traitée.");
+      await loadRequests();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Une erreur est survenue."
+      );
+    } finally {
+      setProcessingId(null);
+    }
+  };
 
   const pendingCount = requests.filter(
     (request) => request.status === "pending"
@@ -105,29 +151,26 @@ export default function AdminVerificationsPage() {
         </header>
 
         <section className="mb-6 rounded-2xl border border-white/10 bg-[#111722] p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">
-                Demandes en attente
-              </p>
-              <p className="mt-1 text-3xl font-bold">
-                {pendingCount}
-              </p>
-            </div>
-
+          <p className="text-sm text-gray-400">Demandes en attente</p>
+          <div className="mt-1 flex items-center justify-between">
+            <p className="text-3xl font-bold">{pendingCount}</p>
             <div className="rounded-xl bg-yellow-500/10 p-3 text-yellow-400">
               <Clock size={25} />
             </div>
           </div>
         </section>
 
+        {message && (
+          <div className="mb-5 flex items-center gap-2 rounded-xl border border-green-500/20 bg-green-500/10 p-4 text-sm text-green-300">
+            <CheckCircle2 size={19} />
+            {message}
+          </div>
+        )}
+
         {error && (
-          <div className="mb-6 flex gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
-            <AlertCircle size={20} className="shrink-0" />
-            <div>
-              <p className="font-semibold">Erreur</p>
-              <p className="mt-1">{error}</p>
-            </div>
+          <div className="mb-5 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
+            <AlertCircle size={19} />
+            {error}
           </div>
         )}
 
@@ -220,6 +263,53 @@ export default function AdminVerificationsPage() {
                     />
                   )}
                 </div>
+
+                {request.status === "pending" && (
+                  <div className="mt-6 border-t border-white/10 pt-5">
+                    <label className="mb-2 block text-sm font-medium text-gray-300">
+                      Note administrative (facultative)
+                    </label>
+
+                    <textarea
+                      value={notes[request.id] || ""}
+                      onChange={(event) =>
+                        setNotes((previous) => ({
+                          ...previous,
+                          [request.id]: event.target.value,
+                        }))
+                      }
+                      maxLength={1000}
+                      placeholder="Ajouter une remarque..."
+                      className="min-h-24 w-full rounded-xl border border-white/10 bg-[#080b12] p-3 text-sm text-white outline-none focus:border-blue-500"
+                    />
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        onClick={() =>
+                          reviewRequest(request.id, "approved")
+                        }
+                        disabled={processingId === request.id}
+                        className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-3 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={18} />
+                        {processingId === request.id
+                          ? "Traitement..."
+                          : "Approuver"}
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          reviewRequest(request.id, "rejected")
+                        }
+                        disabled={processingId === request.id}
+                        className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+                      >
+                        <XCircle size={18} />
+                        Refuser
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {request.admin_note && (
                   <p className="mt-4 rounded-xl bg-white/5 p-3 text-sm text-gray-300">
