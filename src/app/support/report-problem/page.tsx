@@ -62,7 +62,6 @@ const COUNTRIES = [
   { code: "AE", flag: "🇦🇪", name: "Émirats Arabes Unis" },
   { code: "SA", flag: "🇸🇦", name: "Arabie Saoudite" },
   { code: "ZA", flag: "🇿🇦", name: "Afrique du Sud" },
-  { code: "OTHER", flag: "🌍", name: "Autre" },
 ];
 
 const CATEGORIES = [
@@ -80,6 +79,16 @@ const STATUS_LABELS: Record<string, string> = {
   resolved: "Résolu",
   closed: "Fermé",
 };
+
+function getCountryLabel(value: string) {
+  const country = COUNTRIES.find(
+    (item) => item.code === value || item.name === value
+  );
+
+  return country
+    ? `${country.flag} ${country.name}`
+    : value || "Non renseigné";
+}
 
 export default function ReportProblemPage() {
   const router = useRouter();
@@ -121,7 +130,7 @@ export default function ReportProblemPage() {
         .eq("id", user.id)
         .single();
 
-      setCurrentCountry(profile?.country || "Non renseigné");
+      setCurrentCountry(profile?.country || "");
 
       const { data: ticketData, error } = await supabase
         .from("support_tickets")
@@ -167,8 +176,14 @@ export default function ReportProblemPage() {
     setSending(true);
 
     const selectedCountry = COUNTRIES.find(
-      (country) => country.name === requestedCountry
+      (country) => country.code === requestedCountry
     );
+
+    if (isCountryRequest && !selectedCountry) {
+      alert("Le pays sélectionné est invalide.");
+      setSending(false);
+      return;
+    }
 
     const subject = isCountryRequest
       ? "Demande de changement de pays"
@@ -176,7 +191,7 @@ export default function ReportProblemPage() {
         "Autre problème";
 
     const fullDescription = isCountryRequest
-      ? `Pays actuel : ${currentCountry}\nPays demandé : ${selectedCountry?.name || requestedCountry}\n\nMotif de la demande :\n${description.trim()}`
+      ? `Pays actuel : ${currentCountry}\nPays demandé : ${selectedCountry!.code}\n\nMotif de la demande :\n${description.trim()}`
       : description.trim();
 
     const { error } = await supabase.from("support_tickets").insert({
@@ -325,7 +340,7 @@ export default function ReportProblemPage() {
                   </label>
 
                   <input
-                    value={currentCountry}
+                    value={getCountryLabel(currentCountry)}
                     readOnly
                     className={`${inputClass} bg-gray-100 text-gray-500`}
                   />
@@ -344,12 +359,10 @@ export default function ReportProblemPage() {
                   >
                     <option value="">Sélectionne un pays</option>
 
-                    {COUNTRIES.filter(
-                      (country) => country.code !== "OTHER"
-                    ).map((country) => (
+                    {COUNTRIES.map((country) => (
                       <option
                         key={country.code}
-                        value={country.name}
+                        value={country.code}
                       >
                         {country.flag} {country.name}
                       </option>
