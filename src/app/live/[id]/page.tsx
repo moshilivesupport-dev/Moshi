@@ -1097,7 +1097,7 @@ export default function LiveRoomPage() {
       <GiftPanel
         isOpen={isGiftPanelOpen}
         onClose={() => setIsGiftPanelOpen(false)}
-        onSendGift={handleSendGift}
+        onSendGift={(gift, quantity) => handleSendGift(gift as unknown as GiftItem, quantity)}
         balance={walletBalance}
       />
 
