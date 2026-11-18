@@ -5,14 +5,14 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { Camera, ArrowLeft, Loader2, Globe, Link as LinkIcon } from "lucide-react";
-
-const COUNTRIES = [
-  "Togo", "Bénin", "Ghana", "Côte d’Ivoire", "Burkina Faso",
-  "Mali", "Niger", "Sénégal", "Guinée", "Nigeria",
-  "Cameroun", "Gabon", "Congo", "République démocratique du Congo",
-  "France", "Belgique", "Canada", "États-Unis", "Autre"
-];
+import {
+  Camera,
+  ArrowLeft,
+  Loader2,
+  Globe,
+  Link as LinkIcon,
+  ChevronRight
+} from "lucide-react";
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -155,7 +155,6 @@ export default function EditProfilePage() {
       username: username.trim().toLowerCase().replace(/\s/g, ""),
       full_name: fullName.trim(),
       bio: bio.slice(0, 150),
-      country,
       link_url: normalizeUrl(linkUrl),
       instagram_url: normalizeUrl(instagramUrl),
       tiktok_url: normalizeUrl(tiktokUrl),
@@ -299,19 +298,32 @@ export default function EditProfilePage() {
           </div>
 
           <div>
-            <label className={labelClass}>Pays</label>
+            <label className={labelClass}>Pays actuel</label>
             <div className="relative">
               <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <select
+              <input
+                type="text"
                 value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                className={`${inputClass} pl-11`}
-              >
-                {COUNTRIES.map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
+                readOnly
+                className={`${inputClass} pl-11 bg-gray-100 text-gray-500 cursor-not-allowed`}
+              />
             </div>
+
+            <button
+              type="button"
+              onClick={() => router.push("/support/report-problem?type=country")}
+              className="w-full mt-3 p-4 rounded-xl bg-white border border-gray-200 flex items-center justify-between text-left"
+            >
+              <div>
+                <p className="text-sm font-bold text-moshi-purple">
+                  Demander un changement de pays
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Une demande sera examinée par l’équipe Moshi.
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            </button>
           </div>
 
           <div>
