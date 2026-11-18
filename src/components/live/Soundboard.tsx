@@ -125,7 +125,7 @@ export default function Soundboard({
     await playSoundLocally(soundId);
 
     // Diffusion aux autres participants.
-    const { error } = await channelRef.current.send({
+    const status = await channelRef.current.send({
       type: "broadcast",
       event: "play-sound",
       payload: {
@@ -133,8 +133,8 @@ export default function Soundboard({
       },
     });
 
-    if (error) {
-      console.error("Erreur de diffusion du son :", error);
+    if (status !== "ok") {
+      console.error("Erreur de diffusion du son :", status);
     }
   };
 
