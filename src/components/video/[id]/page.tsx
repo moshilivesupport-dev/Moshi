@@ -1,13 +1,24 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
+import {
+  ArrowLeft,
+  Heart,
+  MessageCircle,
+  Share2,
+  Volume2,
+  VolumeX,
+  Eye,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { ArrowLeft, Heart, MessageCircle, Share2, Volume2, VolumeX, Eye } from "lucide-react";
+import CommentsSheet from "@/components/video/CommentsSheet";
 
 export default function VideoDetailPage() {
   const { id } = useParams();
+  const videoId = Array.isArray(id) ? id[0] : id;
   const router = useRouter();
   const supabase = createClient();
 
@@ -17,140 +28,299 @@ export default function VideoDetailPage() {
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [viewCount, setViewCount] = useState(0);
+  const [commentCount, setCommentCount] = useState(0);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showComments, setShowComments] = useState(false);
+
+  const loadCommentCount = useCallback(async () => {
+    if (!videoId) return;
+
+    const { count, error } = await supabase
+      .from("video_comments")
+      .select("id", { count: "exact", head: true })
+      .eq("video_id", videoId);
+
+    if (!error && count !== null) {
+      setCommentCount(count);
+    }
+  }, [supabase, videoId]);
 
   useEffect(() => {
+    let active = true;
+
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!active) return;
       setCurrentUser(user);
 
-      // 1. Charger la vidéo
-      const { data: videoData } = await supabase
+      const { data: videoData, error } = await supabase
         .from("videos")
         .select("id, url, caption, like_count, comment_count, view_count, user_id")
-        .eq("id", id)
+        .eq("id", videoId)
         .single();
 
-      if (videoData) {
-        setVideo(videoData);
-        setLikeCount(videoData.like_count || 0);
-        setViewCount(videoData.view_count || 0);
+      if (error || !videoData) {
+        if (active) setLoading(false);
+        return;
+      }
 
-        // 2. Charger le profil de l'auteur
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("username, full_name, avatar_url")
-          .eq("id", videoData.user_id)
-          .single();
-        setVideo((prev: any) => ({ ...prev, profiles: profile }));
+      if (!active) return;
 
-        // 3. Vérifier si l'utilisateur a déjà vu cette vidéo
-        if (user) {
-          const { data: alreadyViewed } = await supabase
+      setVideo(videoData);
+      setLikeCount(videoData.like_count || 0);
+      setViewCount(videoData.view_count || 0);
+      setCommentCount(videoData.comment_count || 0);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("username, full_name, avatar_url")
+        .eq("id", videoData.user_id)
+        .maybeSingle();
+
+      if (!active) return;
+
+      setVideo((previous: any) => ({
+        ...previous,
+        profiles: profile,
+      }));
+
+      if (user) {
+        const { data: likeData } = await supabase
+          .from("video_likes")
+          .select("video_id")
+          .eq("video_id", videoId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (active) setIsLiked(!!likeData);
+
+        const { data: alreadyViewed } = await supabase
+          .from("video_views")
+          .select("id")
+          .eq("video_id", videoId)
+          .eq("viewer_id", user.id)
+          .maybeSingle();
+
+        if (!alreadyViewed) {
+          const { error: viewError } = await supabase
             .from("video_views")
-            .select("id")
-            .eq("video_id", id)
-            .eq("viewer_id", user.id)
-            .maybeSingle();
+            .insert({
+              video_id: videoId,
+              viewer_id: user.id,
+            });
 
-          // Si pas encore vu, on enregistre et on incrémente
-          if (!alreadyViewed) {
-            await supabase.from("video_views").insert({ video_id: id, viewer_id: user.id });
-            await supabase.rpc("increment_video_view", { vid_id: id });
-            setViewCount((prev) => prev + 1);
+          if (!viewError) {
+            await supabase.rpc("increment_video_view", {
+              vid_id: videoId,
+            });
+
+            if (active) setViewCount((previous) => previous + 1);
           }
-
-          // 4. Vérifier si l'utilisateur a liké
-          const { data: likeData } = await supabase
-            .from("video_likes")
-            .select("video_id")
-            .eq("video_id", id)
-            .eq("user_id", user.id)
-            .maybeSingle();
-          if (likeData) setIsLiked(true);
         }
       }
-      setLoading(false);
+
+      if (active) setLoading(false);
     };
-    if (id) load();
-  }, [id, supabase]);
+
+    if (videoId) void load();
+
+    return () => {
+      active = false;
+    };
+  }, [videoId, supabase]);
 
   const toggleLike = async () => {
     if (!currentUser || !video) return;
-    const newIsLiked = !isLiked;
-    setIsLiked(newIsLiked);
-    setLikeCount(likeCount + (newIsLiked ? 1 : -1));
 
-    if (newIsLiked) {
-      await supabase.from("video_likes").insert({ video_id: video.id, user_id: currentUser.id });
-    } else {
-      await supabase.from("video_likes").delete().eq("video_id", video.id).eq("user_id", currentUser.id);
+    const previousLiked = isLiked;
+    const previousCount = likeCount;
+    const nextLiked = !previousLiked;
+
+    setIsLiked(nextLiked);
+    setLikeCount(Math.max(0, previousCount + (nextLiked ? 1 : -1)));
+
+    const result = nextLiked
+      ? await supabase.from("video_likes").insert({
+          video_id: video.id,
+          user_id: currentUser.id,
+        })
+      : await supabase
+          .from("video_likes")
+          .delete()
+          .eq("video_id", video.id)
+          .eq("user_id", currentUser.id);
+
+    if (result.error) {
+      setIsLiked(previousLiked);
+      setLikeCount(previousCount);
     }
   };
 
-  if (loading) return <div className="min-h-[100dvh] bg-black flex items-center justify-center"><div className="w-10 h-10 border-4 border-moshi-purple border-t-transparent rounded-full animate-spin" /></div>;
-  if (!video) return <div className="min-h-[100dvh] bg-black flex items-center justify-center text-white">Vidéo introuvable</div>;
+  const handleShare = async () => {
+    const url = window.location.href;
 
-  const authorName = video.profiles?.username || video.profiles?.full_name || "user";
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Regarde cette vidéo sur Moshi",
+          url,
+        });
+      } else {
+        await navigator.clipboard.writeText(url);
+        alert("Lien copié !");
+      }
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") {
+        alert("Impossible de partager cette vidéo.");
+      }
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-black">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-moshi-purple border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!video) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-black text-white">
+        Vidéo introuvable
+      </div>
+    );
+  }
+
+  const authorName =
+    video.profiles?.username || video.profiles?.full_name || "user";
 
   return (
-    <div className="h-[100dvh] w-full bg-black relative overflow-hidden">
-      
-      <header className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
-        <button onClick={() => router.back()} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white pointer-events-auto">
-          <ArrowLeft className="w-5 h-5" />
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-black">
+      <header className="pointer-events-none absolute left-0 right-0 top-0 z-30 bg-gradient-to-b from-black/60 to-transparent p-4">
+        <button
+          onClick={() => router.back()}
+          aria-label="Retour"
+          className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md"
+        >
+          <ArrowLeft className="h-5 w-5" />
         </button>
       </header>
 
-      <video src={video.url} className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted={muted} playsInline />
+      <video
+        src={video.url}
+        className="absolute inset-0 h-full w-full object-cover"
+        autoPlay
+        loop
+        muted={muted}
+        playsInline
+      />
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
 
-      <div className="absolute right-3 bottom-24 z-20 flex flex-col items-center gap-5">
-        <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-neutral-800 mb-2">
+      <div className="absolute bottom-24 right-3 z-20 flex flex-col items-center gap-5">
+        <div className="mb-2 h-12 w-12 overflow-hidden rounded-full border-2 border-white bg-neutral-800">
           {video.profiles?.avatar_url ? (
-            <Image src={video.profiles.avatar_url} alt={authorName} width={48} height={48} className="w-full h-full object-cover" unoptimized />
+            <Image
+              src={video.profiles.avatar_url}
+              alt={authorName}
+              width={48}
+              height={48}
+              className="h-full w-full object-cover"
+              unoptimized
+            />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-white font-bold">{authorName.charAt(0).toUpperCase()}</div>
+            <div className="flex h-full w-full items-center justify-center font-bold text-white">
+              {authorName.charAt(0).toUpperCase()}
+            </div>
           )}
         </div>
 
-        <button onClick={toggleLike} className="flex flex-col items-center gap-1">
-          <div className="w-[46px] h-[46px] rounded-full bg-white flex items-center justify-center shadow-md">
-            <Heart size={22} className={isLiked ? "fill-[#FF8FB1] text-[#FF8FB1]" : "text-gray-900"} />
+        <button
+          onClick={toggleLike}
+          aria-label="J'aime"
+          className="flex flex-col items-center gap-1"
+        >
+          <div className="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-white shadow-md">
+            <Heart
+              size={22}
+              className={
+                isLiked
+                  ? "fill-[#FF8FB1] text-[#FF8FB1]"
+                  : "text-gray-900"
+              }
+            />
           </div>
-          <span className="text-xs font-semibold text-white">{likeCount}</span>
+          <span className="text-xs font-semibold text-white">
+            {likeCount}
+          </span>
         </button>
 
-        <button className="flex flex-col items-center gap-1">
-          <div className="w-[46px] h-[46px] rounded-full bg-white flex items-center justify-center shadow-md">
+        <button
+          onClick={() => {
+            setShowComments(true);
+            void loadCommentCount();
+          }}
+          aria-label="Voir les commentaires"
+          className="flex flex-col items-center gap-1"
+        >
+          <div className="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-white shadow-md">
             <MessageCircle size={22} className="text-gray-900" />
           </div>
-          <span className="text-xs font-semibold text-white">{video.comment_count || 0}</span>
+          <span className="text-xs font-semibold text-white">
+            {commentCount}
+          </span>
         </button>
 
-        <button className="flex flex-col items-center gap-1">
-          <div className="w-[46px] h-[46px] rounded-full bg-white flex items-center justify-center shadow-md">
+        <button
+          onClick={() => void handleShare()}
+          aria-label="Partager la vidéo"
+          className="flex flex-col items-center gap-1"
+        >
+          <div className="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-white shadow-md">
             <Share2 size={22} className="text-gray-900" />
           </div>
-          <span className="text-xs font-semibold text-white">Partager</span>
+          <span className="text-xs font-semibold text-white">
+            Partager
+          </span>
         </button>
       </div>
 
-      <button onClick={() => setMuted(!muted)} className="absolute bottom-24 left-4 z-30 w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white">
+      <button
+        onClick={() => setMuted((previous) => !previous)}
+        aria-label={muted ? "Activer le son" : "Couper le son"}
+        className="absolute bottom-24 left-4 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md"
+      >
         {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
       </button>
 
-      <div className="absolute left-4 right-20 bottom-10 z-20 space-y-2">
-        <p className="text-white font-bold text-base">@{authorName}</p>
-        {video.caption && <p className="text-white/90 text-sm leading-snug">{video.caption}</p>}
-        
-        <div className="flex items-center gap-4 text-white/80 text-xs pt-2">
-          <div className="flex items-center gap-1">
-            <Eye size={14} /> {viewCount} vues
-          </div>
+      <div className="absolute bottom-10 left-4 right-20 z-20 space-y-2">
+        <p className="text-base font-bold text-white">@{authorName}</p>
+
+        {video.caption && (
+          <p className="text-sm leading-snug text-white/90">
+            {video.caption}
+          </p>
+        )}
+
+        <div className="flex items-center gap-1 pt-2 text-xs text-white/80">
+          <Eye size={14} />
+          {viewCount} vues
         </div>
       </div>
+
+      {showComments && (
+        <CommentsSheet
+          videoId={video.id}
+          onClose={() => {
+            setShowComments(false);
+            void loadCommentCount();
+          }}
+        />
+      )}
     </div>
   );
 }
