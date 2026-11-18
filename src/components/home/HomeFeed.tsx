@@ -21,6 +21,7 @@ import {
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { getFlag } from "@/lib/utils";
+import CommentsSheet from "@/components/video/CommentsSheet";
 
 interface FeedItem {
   id: string;
