@@ -4,47 +4,37 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft,
-  Bell,
-  Check,
-  CheckCheck,
-  Heart,
-  MessageCircle,
-  UserPlus,
-  Radio,
-  Info,
-  Loader2,
+  ArrowLeft, Bell, CheckCheck, Heart, MessageCircle,
+  UserPlus, Radio, Info, Loader2
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-type NotificationItem = {
+type Actor = {
   id: string;
-  user_id: string;
-  actor_id: string | null;
-  type: "follow" | "like" | "comment" | "live" | "system";
-  message: string | null;
-  link: string | null;
-  read: boolean;
-  created_at: string;
-  actor?: {
-    username?: string | null;
-    full_name?: string | null;
-    avatar_url?: string | null;
-  } | null;
+  username: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
 };
 
-function getIcon(type: NotificationItem["type"]) {
+type NotificationItem = {
+  id: string;
+  to_user_id: string;
+  from_user_id: string | null;
+  type: string;
+  video_id: string | null;
+  message: string | null;
+  read: boolean;
+  created_at: string;
+  actor?: Actor | null;
+};
+
+function getIcon(type: string) {
   switch (type) {
-    case "follow":
-      return UserPlus;
-    case "like":
-      return Heart;
-    case "comment":
-      return MessageCircle;
-    case "live":
-      return Radio;
-    default:
-      return Info;
+    case "follow": return UserPlus;
+    case "like": return Heart;
+    case "comment": return MessageCircle;
+    case "live": return Radio;
+    default: return Info;
   }
 }
 
@@ -77,20 +67,15 @@ export default function NotificationsPage() {
       .from("notifications")
       .select(`
         id,
-        user_id,
-        actor_id,
+        to_user_id,
+        from_user_id,
         type,
+        video_id,
         message,
-        link,
         read,
-        created_at,
-        actor:profiles!notifications_actor_id_fkey(
-          username,
-          full_name,
-          avatar_url
-        )
+        created_at
       `)
-      .eq("user_id", uid)
+      .eq("to_user_id", uid)
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -99,13 +84,47 @@ export default function NotificationsPage() {
       return;
     }
 
-    setItems((data || []) as unknown as NotificationItem[]);
+    const notifications = (data || []) as NotificationItem[];
+    const actorIds = Array.from(
+      new Set(
+        notifications
+          .map((item) => item.from_user_id)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
+    let actors: Actor[] = [];
+
+    if (actorIds.length > 0) {
+      const { data: profiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, username, full_name, avatar_url")
+        .in("id", actorIds);
+
+      if (profileError) {
+        setError(profileError.message);
+      } else {
+        actors = (profiles || []) as Actor[];
+      }
+    }
+
+    const actorMap = new Map(actors.map((actor) => [actor.id, actor]));
+
+    setItems(
+      notifications.map((item) => ({
+        ...item,
+        actor: item.from_user_id
+          ? actorMap.get(item.from_user_id) || null
+          : null,
+      }))
+    );
+
     setError("");
   }, [supabase]);
 
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
     let active = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function initialize() {
       const { data, error: authError } = await supabase.auth.getUser();
@@ -133,7 +152,7 @@ export default function NotificationsPage() {
             event: "*",
             schema: "public",
             table: "notifications",
-            filter: `user_id=eq.${uid}`,
+            filter: `to_user_id=eq.${uid}`,
           },
           () => {
             void loadNotifications(uid);
@@ -156,22 +175,21 @@ export default function NotificationsPage() {
     if (!userId) return;
 
     const previous = items;
-
     setItems((current) =>
       current.map((item) =>
         item.id === id ? { ...item, read: true } : item
       )
     );
 
-    const { error } = await supabase
+    const { error: updateError } = await supabase
       .from("notifications")
       .update({ read: true })
       .eq("id", id)
-      .eq("user_id", userId);
+      .eq("to_user_id", userId);
 
-    if (error) {
+    if (updateError) {
       setItems(previous);
-      setError("Impossible de mettre cette notification à jour.");
+      setError("Impossible de marquer cette notification comme lue.");
     }
   }
 
@@ -179,21 +197,30 @@ export default function NotificationsPage() {
     if (!userId || unreadCount === 0) return;
 
     const previous = items;
-
     setItems((current) =>
       current.map((item) => ({ ...item, read: true }))
     );
 
-    const { error } = await supabase
+    const { error: updateError } = await supabase
       .from("notifications")
       .update({ read: true })
-      .eq("user_id", userId)
+      .eq("to_user_id", userId)
       .eq("read", false);
 
-    if (error) {
+    if (updateError) {
       setItems(previous);
       setError("Impossible de tout marquer comme lu.");
     }
+  }
+
+  function getNotificationLink(item: NotificationItem) {
+    if (item.video_id) return `/videos/${item.video_id}`;
+
+    if (item.from_user_id) {
+      return `/profile/${item.from_user_id}`;
+    }
+
+    return null;
   }
 
   return (
@@ -287,12 +314,11 @@ export default function NotificationsPage() {
 
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-gray-800">
-                      {item.actor_id && (
+                      {item.from_user_id && (
                         <strong>{actorName} </strong>
                       )}
                       {item.message || "Tu as une nouvelle notification."}
                     </p>
-
                     <p className="mt-1 text-xs text-gray-400">
                       {timeAgo(item.created_at)}
                     </p>
@@ -304,11 +330,13 @@ export default function NotificationsPage() {
                 </div>
               );
 
+              const href = getNotificationLink(item);
+
               return (
                 <div key={item.id}>
-                  {item.link ? (
+                  {href ? (
                     <Link
-                      href={item.link}
+                      href={href}
                       onClick={() => {
                         if (!item.read) void markAsRead(item.id);
                       }}
