@@ -4,9 +4,49 @@ import { requireAdmin } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
+export async function GET() {
+  try {
+    const auth = await requireAdmin();
+
+    if (!auth.ok) {
+      return NextResponse.json(
+        { error: auth.error },
+        { status: auth.status }
+      );
+    }
+
+    const { data, error } = await auth.adminClient
+      .from("support_tickets")
+      .select(
+        "id, user_id, description, status, admin_response, created_at"
+      )
+      .eq("category", "account")
+      .eq("subject", "Demande de changement de pays")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Erreur chargement demandes pays:", error);
+      return NextResponse.json(
+        { error: "Impossible de charger les demandes." },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(
+      { success: true, requests: data ?? [] },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  } catch (error) {
+    console.error("Country requests GET error:", error);
+    return NextResponse.json(
+      { error: "Une erreur interne est survenue." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: Request) {
   try {
-    // Vérifier les droits de l'administrateur connecté.
     const auth = await requireAdmin();
 
     if (!auth.ok) {
@@ -33,7 +73,6 @@ export async function POST(request: Request) {
         ? body.adminNote.trim()
         : null;
 
-    // Vérifier l'identifiant UUID.
     const uuidPattern =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -58,7 +97,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Appeler la fonction SQL avec l'identifiant réel de l'administrateur.
     const { data, error } = await auth.adminClient.rpc(
       "review_country_change_request",
       {
@@ -71,20 +109,15 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error("Erreur traitement changement de pays:", error);
-
       return NextResponse.json(
-        {
-          error:
-            error.message ||
-            "Impossible de traiter cette demande.",
-        },
+        { error: error.message || "Impossible de traiter cette demande." },
         { status: 400 }
       );
     }
 
     const messages: Record<string, string> = {
       approved: "Demande approuvée. Le pays du compte a été modifié.",
-      rejected: "Demande de changement de pays refusée.",
+      rejected: "Demande refusée.",
       in_progress: "Demande mise en cours de traitement.",
     };
 
@@ -94,15 +127,10 @@ export async function POST(request: Request) {
         result: data,
         message: messages[decision],
       },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      }
+      { headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
-    console.error("Country change review API error:", error);
-
+    console.error("Country change review POST error:", error);
     return NextResponse.json(
       { error: "Une erreur interne est survenue." },
       { status: 500 }
