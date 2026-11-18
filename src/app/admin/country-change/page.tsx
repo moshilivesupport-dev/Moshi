@@ -12,6 +12,50 @@ type CountryRequest = {
   created_at: string;
 };
 
+const COUNTRIES: Record<string, string> = {
+  TG: "🇹🇬 Togo",
+  BJ: "🇧🇯 Bénin",
+  CI: "🇨🇮 Côte d'Ivoire",
+  SN: "🇸🇳 Sénégal",
+  BF: "🇧🇫 Burkina Faso",
+  ML: "🇲🇱 Mali",
+  NE: "🇳🇪 Niger",
+  GH: "🇬🇭 Ghana",
+  NG: "🇳🇬 Nigeria",
+  CM: "🇨🇲 Cameroun",
+  GA: "🇬🇦 Gabon",
+  CD: "🇨🇩 RD Congo",
+  CG: "🇨🇬 Congo",
+  TD: "🇹🇩 Tchad",
+  CF: "🇨🇫 Centrafrique",
+  MA: "🇲🇦 Maroc",
+  DZ: "🇩🇿 Algérie",
+  TN: "🇹🇳 Tunisie",
+  EG: "🇪🇬 Égypte",
+  FR: "🇫🇷 France",
+  BE: "🇧🇪 Belgique",
+  CH: "🇨🇭 Suisse",
+  CA: "🇨🇦 Canada",
+  US: "🇺🇸 États-Unis",
+  UK: "🇬🇧 Royaume-Uni",
+  DE: "🇩🇪 Allemagne",
+  IT: "🇮🇹 Italie",
+  ES: "🇪🇸 Espagne",
+  PT: "🇵🇹 Portugal",
+  BR: "🇧🇷 Brésil",
+  CN: "🇨🇳 Chine",
+  JP: "🇯🇵 Japon",
+  IN: "🇮🇳 Inde",
+  AE: "🇦🇪 Émirats Arabes Unis",
+  SA: "🇸🇦 Arabie Saoudite",
+  ZA: "🇿🇦 Afrique du Sud",
+};
+
+function displayCountry(value: string) {
+  const normalized = value.trim();
+  return COUNTRIES[normalized] || normalized || "Non renseigné";
+}
+
 function extractField(description: string, field: string) {
   const lines = description.split("\n");
 
@@ -276,13 +320,15 @@ export default function CountryChangeAdminPage() {
                   <div className="mt-5 grid gap-4 sm:grid-cols-2">
                     <div className="rounded-xl bg-slate-800/70 p-4">
                       <p className="text-xs text-slate-400">Pays actuel</p>
-                      <p className="mt-1 font-semibold">{currentCountry}</p>
+                      <p className="mt-1 font-semibold">
+                        {displayCountry(currentCountry)}
+                      </p>
                     </div>
 
                     <div className="rounded-xl bg-slate-800/70 p-4">
                       <p className="text-xs text-slate-400">Pays demandé</p>
                       <p className="mt-1 font-semibold text-cyan-300">
-                        {requestedCountry}
+                        {displayCountry(requestedCountry)}
                       </p>
                     </div>
                   </div>
