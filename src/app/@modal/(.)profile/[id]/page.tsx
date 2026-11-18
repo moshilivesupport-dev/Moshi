@@ -18,12 +18,17 @@ export default async function InterceptedProfilePage({
   const { data: profile, error } = await supabase
     .from("profiles")
     .select(
-      "id, username, full_name, avatar_url, bio, role, first_name, last_name, is_verified"
+      "id, username, full_name, avatar_url, bio, role, is_verified"
     )
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
-  if (error || !profile) {
+  if (error) {
+    console.error("Erreur chargement profil modal :", error);
+    throw new Error("Impossible de charger ce profil.");
+  }
+
+  if (!profile) {
     notFound();
   }
 
