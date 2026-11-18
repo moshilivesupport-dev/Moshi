@@ -57,13 +57,6 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
-/**
- * Lecteur individuel :
- * - détecte si la vidéo est visible ;
- * - lit uniquement la vidéo visible ;
- * - met en pause les autres vidéos ;
- * - limite le préchargement aux métadonnées.
- */
 function FeedVideo({
   item,
   muted,
@@ -113,7 +106,6 @@ function FeedVideo({
 
       if (playPromise !== undefined) {
         playPromise.catch((error) => {
-          // Le navigateur peut bloquer la lecture automatique.
           if (error?.name !== "AbortError") {
             console.warn("Lecture vidéo impossible :", error);
           }
@@ -125,8 +117,10 @@ function FeedVideo({
   }, [isVisible, muted]);
 
   useEffect(() => {
+    const video = videoRef.current;
+
     return () => {
-      videoRef.current?.pause();
+      video?.pause();
     };
   }, []);
 
@@ -134,7 +128,6 @@ function FeedVideo({
     const video = videoRef.current;
     if (!video) return;
 
-    // Modification immédiate dans le geste de l'utilisateur.
     onToggleMute(video);
   };
 
@@ -153,10 +146,8 @@ function FeedVideo({
         preload="metadata"
       />
 
-      {/* DÉGRADÉ */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
 
-      {/* SON */}
       <button
         type="button"
         onClick={handleToggleMute}
@@ -184,7 +175,6 @@ export default function HomeFeed() {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
 
-  // Utilisateur connecté
   useEffect(() => {
     let cancelled = false;
 
@@ -205,7 +195,6 @@ export default function HomeFeed() {
     };
   }, [supabase]);
 
-  // Chargement du fil
   const loadFeed = useCallback(async () => {
     setLoading(true);
 
@@ -231,7 +220,7 @@ export default function HomeFeed() {
 
       const uniqueUserIds = [...new Set(allUserIds)];
 
-      let profilesMap: Record<string, FeedItem["profiles"]> = {};
+      const profilesMap: Record<string, FeedItem["profiles"]> = {};
 
       if (uniqueUserIds.length > 0) {
         const { data: profilesData } = await supabase
@@ -293,7 +282,6 @@ export default function HomeFeed() {
     void loadFeed();
   }, [loadFeed]);
 
-  // Activer / désactiver le son de la vidéo concernée
   const toggleMute = (video: HTMLVideoElement) => {
     const nextMuted = !video.muted;
 
@@ -301,7 +289,6 @@ export default function HomeFeed() {
     setMuted(nextMuted);
   };
 
-  // J'aime
   const toggleLike = async (videoId: string) => {
     if (!currentUser) return;
 
@@ -348,7 +335,6 @@ export default function HomeFeed() {
     } catch (error) {
       console.error("Erreur J'aime :", error);
 
-      // Annuler la modification visuelle en cas d'erreur.
       setLiked((previous) => ({
         ...previous,
         [videoId]: isCurrentlyLiked,
@@ -438,7 +424,6 @@ export default function HomeFeed() {
             muted={muted}
             onToggleMute={toggleMute}
           >
-            {/* PROFIL ET ACTIONS */}
             <div className="absolute bottom-32 right-3 z-20 flex flex-col items-center gap-4">
               <Link
                 href={`/profile/${item.user_id}`}
@@ -525,7 +510,6 @@ export default function HomeFeed() {
               </button>
             </div>
 
-            {/* DESCRIPTION */}
             <div className="absolute bottom-28 left-4 right-20 z-20 space-y-2">
               <Link
                 href={`/profile/${item.user_id}`}
