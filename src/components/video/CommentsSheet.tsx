@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { X, Send, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -21,21 +21,23 @@ interface Comment {
 interface CommentsSheetProps {
   videoId: string;
   onClose: () => void;
+  onCommentAdded?: (videoId: string) => void;
 }
 
 export default function CommentsSheet({
   videoId,
   onClose,
+  onCommentAdded,
 }: CommentsSheetProps) {
+  const supabase = useMemo(() => createClient(), []);
+
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [userProfile, setUserProfile] = useState<Comment["profiles"]>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-
-  const supabase = createClient();
 
   const loadComments = useCallback(async () => {
     setLoading(true);
@@ -45,7 +47,7 @@ export default function CommentsSheet({
       data: { user },
     } = await supabase.auth.getUser();
 
-    setCurrentUser(user);
+    setCurrentUser(user ? { id: user.id } : null);
 
     if (user) {
       const { data: profile } = await supabase
@@ -71,7 +73,6 @@ export default function CommentsSheet({
 
     const rows = data ?? [];
     const userIds = [...new Set(rows.map((comment) => comment.user_id))];
-
     const profilesMap: Record<string, Comment["profiles"]> = {};
 
     if (userIds.length > 0) {
@@ -137,6 +138,9 @@ export default function CommentsSheet({
 
     setNewComment("");
     setSending(false);
+
+    // Met à jour immédiatement le compteur du fil.
+    onCommentAdded?.(videoId);
   };
 
   return (
