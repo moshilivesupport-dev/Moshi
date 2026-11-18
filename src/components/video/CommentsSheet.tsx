@@ -72,7 +72,7 @@ export default function CommentsSheet({
     const rows = data ?? [];
     const userIds = [...new Set(rows.map((comment) => comment.user_id))];
 
-    let profilesMap: Record<string, Comment["profiles"]> = {};
+    const profilesMap: Record<string, Comment["profiles"]> = {};
 
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
