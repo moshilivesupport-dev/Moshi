@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { X, Send, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -22,105 +23,193 @@ interface CommentsSheetProps {
   onClose: () => void;
 }
 
-export default function CommentsSheet({ videoId, onClose }: CommentsSheetProps) {
-  const supabase = createClient();
-  const scrollRef = useRef<HTMLDivElement>(null);
-
+export default function CommentsSheet({
+  videoId,
+  onClose,
+}: CommentsSheetProps) {
   const [comments, setComments] = useState<Comment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<Comment["profiles"]>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const supabase = createClient();
+
+  const loadComments = useCallback(async () => {
+    setLoading(true);
+    setErrorMessage("");
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    setCurrentUser(user);
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("username, full_name, avatar_url")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      setUserProfile(profile ?? null);
+    }
+
+    const { data, error } = await supabase
+      .from("video_comments")
+      .select("id, content, created_at, user_id")
+      .eq("video_id", videoId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      setErrorMessage("Impossible de charger les commentaires.");
+      setLoading(false);
+      return;
+    }
+
+    const rows = data ?? [];
+    const userIds = [...new Set(rows.map((comment) => comment.user_id))];
+
+    let profilesMap: Record<string, Comment["profiles"]> = {};
+
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username, full_name, avatar_url")
+        .in("id", userIds);
+
+      for (const profile of profiles ?? []) {
+        profilesMap[profile.id] = profile;
+      }
+    }
+
+    setComments(
+      rows.map((comment) => ({
+        ...comment,
+        profiles: profilesMap[comment.user_id] ?? null,
+      }))
+    );
+
+    setLoading(false);
+  }, [supabase, videoId]);
 
   useEffect(() => {
-    const loadData = async () => {
-      // 1. Charger l'utilisateur connecté
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
-      if (user) {
-        const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-        setUserProfile(profile);
-      }
-
-      // 2. Charger les commentaires
-      const { data } = await supabase
-        .from("comments")
-        .select("id, content, created_at, user_id")
-        .eq("video_id", videoId)
-        .order("created_at", { ascending: true });
-
-      if (data) {
-        // Récupérer les profils des auteurs
-        const userIds = [...new Set(data.map(c => c.user_id))];
-        const { data: profilesData } = await supabase.from("profiles").select("id, username, full_name, avatar_url").in("id", userIds);
-        
-        const profilesMap: Record<string, any> = {};
-        (profilesData || []).forEach(p => { profilesMap[p.id] = p; });
-
-        const merged = data.map(c => ({ ...c, profiles: profilesMap[c.user_id] || null }));
-        setComments(merged as Comment[]);
-      }
-      setLoading(false);
-    };
-    loadData();
-  }, [videoId, supabase]);
+    void loadComments();
+  }, [loadComments]);
 
   const handleSend = async () => {
-    if (!newComment.trim() || !currentUser) return;
-    setSending(true);
+    const content = newComment.trim();
 
-    const { data, error } = await supabase.from("comments").insert({
-      video_id: videoId,
-      user_id: currentUser.id,
-      content: newComment.trim(),
-    }).select().single();
-
-    if (!error && data) {
-      setComments([...comments, { ...data, profiles: userProfile }]);
-      setNewComment("");
-      setTimeout(() => { scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" }); }, 100);
+    if (!content || !currentUser || sending || content.length > 500) {
+      return;
     }
+
+    setSending(true);
+    setErrorMessage("");
+
+    const { data, error } = await supabase
+      .from("video_comments")
+      .insert({
+        video_id: videoId,
+        user_id: currentUser.id,
+        content,
+      })
+      .select("id, content, created_at, user_id")
+      .single();
+
+    if (error || !data) {
+      setErrorMessage(
+        error?.message ?? "Impossible d'envoyer le commentaire."
+      );
+      setSending(false);
+      return;
+    }
+
+    setComments((previous) => [
+      ...previous,
+      {
+        ...data,
+        profiles: userProfile,
+      },
+    ]);
+
+    setNewComment("");
     setSending(false);
   };
 
   return (
     <>
-      {/* Overlay sombre */}
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-      
-      {/* Modale */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl h-[75dvh] flex flex-col animate-slide-up">
-        
-        {/* Header */}
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between relative">
-          <div className="w-10" />
-          <h2 className="font-bold text-moshi-text">{comments.length} commentaires</h2>
-          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center"><X size={20} /></button>
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-gray-300" />
-        </div>
+      <button
+        type="button"
+        aria-label="Fermer les commentaires"
+        onClick={onClose}
+        className="fixed inset-0 z-40 bg-black/60"
+      />
 
-        {/* Liste des commentaires */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      <section className="fixed bottom-0 left-0 right-0 z-50 flex h-[75dvh] flex-col rounded-t-3xl bg-white">
+        <header className="flex items-center justify-between border-b border-gray-100 p-4">
+          <div className="w-10" />
+          <h2 className="font-bold text-moshi-text">
+            {comments.length} commentaires
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="flex h-10 w-10 items-center justify-center"
+          >
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {loading ? (
-            <div className="flex justify-center py-10"><Loader2 className="animate-spin text-moshi-purple" /></div>
+            <div className="flex justify-center py-10">
+              <Loader2 className="animate-spin text-moshi-purple" />
+            </div>
+          ) : errorMessage ? (
+            <p className="py-8 text-center text-sm text-red-500">
+              {errorMessage}
+            </p>
           ) : comments.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-10">Sois le premier à commenter !</p>
+            <p className="py-10 text-center text-sm text-gray-400">
+              Sois le premier à commenter !
+            </p>
           ) : (
-            comments.map(c => {
-              const name = c.profiles?.username || c.profiles?.full_name || "Utilisateur";
+            comments.map((comment) => {
+              const name =
+                comment.profiles?.username ||
+                comment.profiles?.full_name ||
+                "Utilisateur";
+
               return (
-                <div key={c.id} className="flex gap-3">
-                  <div className="w-9 h-9 rounded-full bg-gray-100 overflow-hidden shrink-0">
-                    {c.profiles?.avatar_url ? (
-                      <Image src={c.profiles.avatar_url} alt={name} width={36} height={36} className="w-full h-full object-cover" unoptimized />
+                <div key={comment.id} className="flex gap-3">
+                  <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100">
+                    {comment.profiles?.avatar_url ? (
+                      <Image
+                        src={comment.profiles.avatar_url}
+                        alt={name}
+                        width={36}
+                        height={36}
+                        className="h-full w-full object-cover"
+                        unoptimized
+                      />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs font-bold text-moshi-purple">{name.charAt(0).toUpperCase()}</div>
+                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-moshi-purple">
+                        {name.charAt(0).toUpperCase()}
+                      </div>
                     )}
                   </div>
-                  <div className="flex-1">
-                    <p className="text-xs font-bold text-gray-500">@{name}</p>
-                    <p className="text-sm text-moshi-text leading-snug mt-0.5">{c.content}</p>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-gray-500">
+                      @{name}
+                    </p>
+                    <p className="mt-0.5 break-words text-sm leading-snug text-moshi-text">
+                      {comment.content}
+                    </p>
                   </div>
                 </div>
               );
@@ -128,23 +217,54 @@ export default function CommentsSheet({ videoId, onClose }: CommentsSheetProps) 
           )}
         </div>
 
-        {/* Barre de saisie */}
-        <div className="p-3 border-t border-gray-100 bg-white pb-safe">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2">
-            <input
-              type="text"
-              placeholder="Ajouter un commentaire..."
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              className="flex-1 bg-transparent outline-none text-sm"
-            />
-            <button onClick={handleSend} disabled={sending || !newComment.trim()} className="text-moshi-purple disabled:opacity-50 p-1">
-              {sending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
-            </button>
-          </div>
-        </div>
-      </div>
+        <footer className="border-t border-gray-100 bg-white p-3 pb-safe">
+          {!currentUser ? (
+            <p className="text-center text-sm text-gray-500">
+              Connecte-toi pour commenter.
+            </p>
+          ) : (
+            <>
+              {errorMessage && (
+                <p className="mb-2 text-xs text-red-500">
+                  {errorMessage}
+                </p>
+              )}
+
+              <div className="flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2">
+                <input
+                  type="text"
+                  maxLength={500}
+                  placeholder="Ajouter un commentaire..."
+                  value={newComment}
+                  onChange={(event) => setNewComment(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void handleSend();
+                  }}
+                  className="flex-1 bg-transparent text-sm outline-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => void handleSend()}
+                  disabled={sending || !newComment.trim()}
+                  aria-label="Envoyer le commentaire"
+                  className="p-1 text-moshi-purple disabled:opacity-40"
+                >
+                  {sending ? (
+                    <Loader2 size={20} className="animate-spin" />
+                  ) : (
+                    <Send size={20} />
+                  )}
+                </button>
+              </div>
+
+              <p className="mt-1 text-right text-[10px] text-gray-400">
+                {newComment.length}/500
+              </p>
+            </>
+          )}
+        </footer>
+      </section>
     </>
   );
 }
