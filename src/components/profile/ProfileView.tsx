@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
@@ -37,7 +38,11 @@ interface VideoData {
   view_count: number;
   like_count: number;
   caption: string | null;
+  status?: string | null;
+  user_id?: string;
 }
+
+type ProfileTab = "videos" | "private" | "saved" | "liked";
 
 interface ProfileViewProps {
   profile: ProfileData;
@@ -69,8 +74,10 @@ export default function ProfileView({
     ? `/live/${encodeURIComponent(returnToLiveId)}`
     : "/";
 
+  const [activeTab, setActiveTab] = useState<ProfileTab>("videos");
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const [stats, setStats] = useState({
@@ -79,75 +86,149 @@ export default function ProfileView({
     total_likes: 0,
   });
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadVideos = useCallback(async () => {
+    setLoading(true);
+    setErrorMessage("");
 
-    const loadData = async () => {
-      setLoading(true);
+    try {
+      let videoIds: string[] = [];
+      let loadedVideos: VideoData[] = [];
 
-      try {
-        const { data: videosData, error: videosError } = await supabase
+      if (activeTab === "videos") {
+        const { data, error } = await supabase
           .from("videos")
-          .select("id, url, view_count, like_count, caption")
+          .select("id, url, view_count, like_count, caption, status, user_id")
+          .eq("user_id", profile.id)
+          .eq("status", "published")
+          .order("created_at", { ascending: false })
+          .limit(60);
+
+        if (error) throw error;
+        loadedVideos = data ?? [];
+      } else if (activeTab === "private") {
+        if (!isOwnProfile) {
+          setVideos([]);
+          setLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("videos")
+          .select("id, url, view_count, like_count, caption, status, user_id")
+          .eq("user_id", profile.id)
+          .eq("status", "hidden")
+          .order("created_at", { ascending: false })
+          .limit(60);
+
+        if (error) throw error;
+        loadedVideos = data ?? [];
+      } else if (activeTab === "saved") {
+        if (!isOwnProfile) {
+          setVideos([]);
+          setLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("video_saves")
+          .select("video_id")
           .eq("user_id", profile.id)
           .order("created_at", { ascending: false })
           .limit(60);
 
-        if (videosError) throw videosError;
+        if (error) throw error;
 
-        const loadedVideos = videosData || [];
+        videoIds = (data ?? []).map((item) => item.video_id);
+      } else if (activeTab === "liked") {
+        const { data, error } = await supabase
+          .from("video_likes")
+          .select("video_id")
+          .eq("user_id", profile.id)
+          .order("created_at", { ascending: false })
+          .limit(60);
 
-        if (cancelled) return;
+        if (error) throw error;
 
-        setVideos(loadedVideos);
+        videoIds = (data ?? []).map((item) => item.video_id);
+      }
 
-        const totalLikes = loadedVideos.reduce(
-          (sum, video) => sum + (video.like_count || 0),
-          0
+      if (videoIds.length > 0) {
+        const { data, error } = await supabase
+          .from("videos")
+          .select("id, url, view_count, like_count, caption, status, user_id")
+          .in("id", videoIds)
+          .eq("status", "published");
+
+        if (error) throw error;
+
+        const videoMap = new Map(
+          (data ?? []).map((video) => [video.id, video])
         );
 
-        const [followersResult, followingResult] = await Promise.all([
+        loadedVideos = videoIds
+          .map((id) => videoMap.get(id))
+          .filter((video): video is VideoData => Boolean(video));
+      }
+
+      setVideos(loadedVideos);
+    } catch (error) {
+      console.error("Erreur chargement onglet profil :", error);
+      setVideos([]);
+      setErrorMessage(
+        "Impossible de charger ce contenu pour le moment."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab, isOwnProfile, profile.id, supabase]);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const [followersResult, followingResult, likesResult] =
+        await Promise.all([
           supabase
             .from("follows")
-            .select("*", { count: "exact", head: true })
+            .select("id", { count: "exact", head: true })
             .eq("following_id", profile.id),
 
           supabase
             .from("follows")
-            .select("*", { count: "exact", head: true })
+            .select("id", { count: "exact", head: true })
             .eq("follower_id", profile.id),
+
+          supabase
+            .from("videos")
+            .select("like_count")
+            .eq("user_id", profile.id)
+            .eq("status", "published"),
         ]);
 
-        if (cancelled) return;
+      if (followersResult.error) throw followersResult.error;
+      if (followingResult.error) throw followingResult.error;
+      if (likesResult.error) throw likesResult.error;
 
-        setStats({
-          followers_count: followersResult.count || 0,
-          following_count: followingResult.count || 0,
-          total_likes: totalLikes,
-        });
-      } catch (error) {
-        console.error("Erreur chargement profil :", error);
+      const totalLikes = (likesResult.data ?? []).reduce(
+        (sum, video) => sum + (video.like_count || 0),
+        0
+      );
 
-        if (!cancelled) {
-          setStats({
-            followers_count: 0,
-            following_count: 0,
-            total_likes: 0,
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadData();
-
-    return () => {
-      cancelled = true;
-    };
+      setStats({
+        followers_count: followersResult.count ?? 0,
+        following_count: followingResult.count ?? 0,
+        total_likes: totalLikes,
+      });
+    } catch (error) {
+      console.error("Erreur chargement statistiques :", error);
+    }
   }, [profile.id, supabase]);
+
+  useEffect(() => {
+    void loadVideos();
+  }, [loadVideos]);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
 
   const handleDeleteVideo = async (videoId: string) => {
     if (!confirm("Supprimer cette vidéo définitivement ?")) return;
@@ -156,7 +237,54 @@ export default function ProfileView({
       const { error } = await supabase
         .from("videos")
         .delete()
-        .eq("id", videoId);
+        .eq("id", videoId)
+        .eq("user_id", profile.id);
+
+      if (error) throw error;
+
+      setVideos((current) =>
+        current.filter((video) => video.id !== videoId)
+      );
+
+      setMenuOpenId(null);
+      void loadStats();
+    } catch (error) {
+      console.error("Erreur suppression vidéo :", error);
+      alert("Erreur lors de la suppression.");
+    }
+  };
+
+  const handleTogglePrivate = async (video: VideoData) => {
+    const nextStatus =
+      video.status === "hidden" ? "published" : "hidden";
+
+    try {
+      const { error } = await supabase
+        .from("videos")
+        .update({ status: nextStatus })
+        .eq("id", video.id)
+        .eq("user_id", profile.id);
+
+      if (error) throw error;
+
+      setVideos((current) =>
+        current.filter((item) => item.id !== video.id)
+      );
+
+      setMenuOpenId(null);
+    } catch (error) {
+      console.error("Erreur modification visibilité :", error);
+      alert("Impossible de modifier la visibilité de cette vidéo.");
+    }
+  };
+
+  const handleUnsaveVideo = async (videoId: string) => {
+    try {
+      const { error } = await supabase
+        .from("video_saves")
+        .delete()
+        .eq("video_id", videoId)
+        .eq("user_id", profile.id);
 
       if (error) throw error;
 
@@ -166,21 +294,36 @@ export default function ProfileView({
 
       setMenuOpenId(null);
     } catch (error) {
-      console.error("Erreur suppression vidéo :", error);
-      alert("Erreur lors de la suppression.");
+      console.error("Erreur retrait favori :", error);
+      alert("Impossible de retirer cette vidéo des favoris.");
     }
   };
 
   const name = profile.full_name || profile.username || "Utilisateur";
-
   const handle = profile.username ? `@${profile.username}` : "";
-
-  const isVendeur = profile.role === "vendeur";
+  const isVendeur = profile.role === "vendeur" || profile.role === "seller";
   const isVerified = profile.is_verified === true;
+
+  const tabs: {
+    id: ProfileTab;
+    label: string;
+    icon: typeof Grid3X3;
+  }[] = [
+    { id: "videos", label: "Vidéos", icon: Grid3X3 },
+    { id: "private", label: "Privé", icon: Lock },
+    { id: "saved", label: "Favoris", icon: Bookmark },
+    { id: "liked", label: "J'aime", icon: Heart },
+  ];
+
+  const emptyMessages: Record<ProfileTab, string> = {
+    videos: "Aucune vidéo publiée",
+    private: "Aucune vidéo privée",
+    saved: "Aucune vidéo enregistrée",
+    liked: "Aucune vidéo aimée",
+  };
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg text-moshi-text pb-24">
-      {/* HEADER */}
       <header className="px-4 pt-6 pb-2 flex items-center justify-between">
         <Link
           href={returnHref}
@@ -221,6 +364,17 @@ export default function ProfileView({
           <button
             type="button"
             aria-label="Partager le profil"
+            onClick={() => {
+              if (typeof navigator !== "undefined" && navigator.share) {
+                void navigator.share({
+                  title: name,
+                  url: window.location.href,
+                }).catch(() => undefined);
+              } else if (typeof navigator !== "undefined") {
+                void navigator.clipboard?.writeText(window.location.href);
+                alert("Lien du profil copié.");
+              }
+            }}
             className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"
           >
             <Share2 className="w-5 h-5 text-moshi-text" />
@@ -228,7 +382,6 @@ export default function ProfileView({
         </div>
       </header>
 
-      {/* INFOS */}
       <div className="px-4 flex items-start justify-between mb-4 mt-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -251,7 +404,6 @@ export default function ProfileView({
           <p className="text-sm text-moshi-text/60">{handle}</p>
         </div>
 
-        {/* AVATAR */}
         <div className="relative">
           <div className="w-20 h-20 rounded-full p-[3px] bg-gradient-to-br from-[#FF8FB1] via-[#9D7BEA] to-[#60A5FA]">
             <div className="w-full h-full rounded-full overflow-hidden border-2 border-white bg-gray-100">
@@ -274,7 +426,6 @@ export default function ProfileView({
         </div>
       </div>
 
-      {/* STATS */}
       <div className="px-4 flex items-center gap-8 mb-4">
         <div className="text-center">
           <p className="text-lg font-bold">
@@ -298,14 +449,12 @@ export default function ProfileView({
         </div>
       </div>
 
-      {/* BIO */}
       {profile.bio && (
         <p className="px-4 text-sm whitespace-pre-wrap leading-snug mb-4">
           {profile.bio}
         </p>
       )}
 
-      {/* ACTIONS PROFIL */}
       {isOwnProfile && (
         <div className="px-4 mb-4 space-y-2">
           <Link
@@ -327,55 +476,69 @@ export default function ProfileView({
         </div>
       )}
 
-      {/* ONGLETS */}
       <div className="flex border-b border-gray-200">
-        <button
-          type="button"
-          aria-label="Vidéos"
-          className="flex-1 py-3 flex justify-center border-b-2 border-moshi-purple"
-        >
-          <Grid3X3 className="w-5 h-5 text-moshi-purple" />
-        </button>
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const selected = activeTab === tab.id;
+          const disabled =
+            !isOwnProfile &&
+            (tab.id === "private" || tab.id === "saved");
 
-        <button
-          type="button"
-          aria-label="Privé"
-          className="flex-1 py-3 flex justify-center text-gray-400"
-        >
-          <Lock className="w-5 h-5" />
-        </button>
+          if (disabled) return null;
 
-        <button
-          type="button"
-          aria-label="Favoris"
-          className="flex-1 py-3 flex justify-center text-gray-400"
-        >
-          <Bookmark className="w-5 h-5" />
-        </button>
-
-        <button
-          type="button"
-          aria-label="J'aime"
-          className="flex-1 py-3 flex justify-center text-gray-400"
-        >
-          <Heart className="w-5 h-5" />
-        </button>
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              aria-label={tab.label}
+              aria-pressed={selected}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${
+                selected
+                  ? "border-moshi-purple text-moshi-purple"
+                  : "border-transparent text-gray-400"
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+            </button>
+          );
+        })}
       </div>
 
-      {/* GRILLE VIDÉOS (TA VERSION ACTUELLE – intacte) */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" />
         </div>
+      ) : errorMessage ? (
+        <div className="flex flex-col items-center justify-center py-20 px-6">
+          <p className="text-sm text-center text-red-500">
+            {errorMessage}
+          </p>
+          <button
+            type="button"
+            onClick={() => void loadVideos()}
+            className="mt-4 rounded-full bg-moshi-purple px-5 py-2 text-sm font-semibold text-white"
+          >
+            Réessayer
+          </button>
+        </div>
       ) : videos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <Play className="w-10 h-10 text-gray-300" />
+          {activeTab === "private" ? (
+            <Lock className="w-10 h-10 text-gray-300" />
+          ) : activeTab === "saved" ? (
+            <Bookmark className="w-10 h-10 text-gray-300" />
+          ) : activeTab === "liked" ? (
+            <Heart className="w-10 h-10 text-gray-300" />
+          ) : (
+            <Play className="w-10 h-10 text-gray-300" />
+          )}
 
           <p className="text-sm text-moshi-text/60">
-            Aucune vidéo publiée
+            {emptyMessages[activeTab]}
           </p>
 
-          {isOwnProfile && (
+          {isOwnProfile && activeTab === "videos" && (
             <Link
               href="/create"
               className="moshi-gradient text-white font-bold px-6 py-2.5 rounded-full text-sm"
@@ -423,20 +586,50 @@ export default function ProfileView({
 
                   {menuOpenId === video.id && (
                     <>
-                      <div
-                        className="fixed inset-0 z-30"
+                      <button
+                        type="button"
+                        aria-label="Fermer le menu"
+                        className="fixed inset-0 z-30 cursor-default"
                         onClick={() => setMenuOpenId(null)}
                       />
 
-                      <div className="absolute top-9 right-0 z-40 bg-white rounded-xl shadow-xl overflow-hidden min-w-[120px]">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteVideo(video.id)}
-                          className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-red-50 w-full text-left text-xs font-semibold"
-                        >
-                          <Trash2 size={14} />
-                          Supprimer
-                        </button>
+                      <div className="absolute top-9 right-0 z-40 bg-white rounded-xl shadow-xl overflow-hidden min-w-[150px]">
+                        {activeTab === "videos" ||
+                        activeTab === "private" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleTogglePrivate(video)}
+                            className="flex items-center gap-2 px-4 py-3 text-gray-700 hover:bg-gray-50 w-full text-left text-xs font-semibold"
+                          >
+                            <Lock size={14} />
+                            {video.status === "hidden"
+                              ? "Rendre public"
+                              : "Rendre privé"}
+                          </button>
+                        ) : null}
+
+                        {activeTab === "saved" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleUnsaveVideo(video.id)}
+                            className="flex items-center gap-2 px-4 py-3 text-gray-700 hover:bg-gray-50 w-full text-left text-xs font-semibold"
+                          >
+                            <Bookmark size={14} />
+                            Retirer des favoris
+                          </button>
+                        ) : null}
+
+                        {activeTab === "videos" ||
+                        activeTab === "private" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteVideo(video.id)}
+                            className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-red-50 w-full text-left text-xs font-semibold"
+                          >
+                            <Trash2 size={14} />
+                            Supprimer
+                          </button>
+                        ) : null}
                       </div>
                     </>
                   )}
