@@ -64,8 +64,14 @@ const COUNTRIES = [
   { code: "ZA", flag: "🇿🇦", name: "Afrique du Sud" },
 ];
 
+const COUNTRY_CATEGORY = "country_change";
+
 const CATEGORIES = [
   { value: "account", label: "Compte et profil" },
+  {
+    value: COUNTRY_CATEGORY,
+    label: "Demande de changement de pays",
+  },
   { value: "payment", label: "Paiement" },
   { value: "purchase", label: "Achat et commande" },
   { value: "live", label: "Problème pendant un live" },
@@ -76,8 +82,8 @@ const CATEGORIES = [
 const STATUS_LABELS: Record<string, string> = {
   open: "En attente",
   in_progress: "En cours de traitement",
-  resolved: "Résolu",
-  closed: "Fermé",
+  resolved: "Approuvé",
+  closed: "Refusée",
 };
 
 function getCountryLabel(value: string) {
@@ -102,8 +108,6 @@ function getCountryCode(value: string) {
 
 export default function ReportProblemPage() {
   const router = useRouter();
-
-  // Le client est créé une seule fois pour éviter les rechargements répétés.
   const [supabase] = useState(() => createClient());
 
   const [loading, setLoading] = useState(true);
@@ -143,6 +147,10 @@ export default function ReportProblemPage() {
 
         setIsCountryRequest(countryMode);
 
+        if (countryMode) {
+          setCategory(COUNTRY_CATEGORY);
+        }
+
         const { data: profile } = await supabase
           .from("profiles")
           .select("country")
@@ -169,9 +177,7 @@ export default function ReportProblemPage() {
       } catch (error) {
         console.error("Erreur chargement signalements :", error);
       } finally {
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoading(false);
       }
     };
 
@@ -181,6 +187,13 @@ export default function ReportProblemPage() {
       active = false;
     };
   }, [supabase, router]);
+
+  const handleCategoryChange = (value: string) => {
+    setCategory(value);
+    setIsCountryRequest(value === COUNTRY_CATEGORY);
+    setRequestedCountry("");
+    setDescription("");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -276,8 +289,12 @@ export default function ReportProblemPage() {
   };
 
   const getStatusStyle = (status: string) => {
-    if (status === "resolved" || status === "closed") {
+    if (status === "resolved") {
       return "bg-green-100 text-green-700";
+    }
+
+    if (status === "closed") {
+      return "bg-red-100 text-red-700";
     }
 
     if (status === "in_progress") {
@@ -355,7 +372,7 @@ export default function ReportProblemPage() {
 
                 <select
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
                   className={inputClass}
                 >
                   {CATEGORIES.map((item) => (
