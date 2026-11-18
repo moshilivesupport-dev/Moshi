@@ -215,7 +215,6 @@ export default function HomeFeed() {
       ];
 
       const uniqueUserIds = [...new Set(allUserIds)];
-
       const profilesMap: Record<string, FeedItem["profiles"]> = {};
 
       if (uniqueUserIds.length > 0) {
@@ -365,6 +364,20 @@ export default function HomeFeed() {
         [videoId]: false,
       }));
     }
+  };
+
+  // Actualisation immédiate du compteur après publication.
+  const handleCommentAdded = (videoId: string) => {
+    setItems((previous) =>
+      previous.map((item) =>
+        item.id === videoId
+          ? {
+              ...item,
+              comment_count: item.comment_count + 1,
+            }
+          : item
+      )
+    );
   };
 
   if (loading) {
@@ -549,6 +562,7 @@ export default function HomeFeed() {
         <CommentsSheet
           videoId={activeCommentsVideoId}
           onClose={() => setActiveCommentsVideoId(null)}
+          onCommentAdded={handleCommentAdded}
         />
       )}
     </div>
