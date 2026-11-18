@@ -91,9 +91,7 @@ function FeedVideo({
 
     observer.observe(section);
 
-    return () => {
-      observer.disconnect();
-    };
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -119,16 +117,12 @@ function FeedVideo({
 
   useEffect(() => {
     const video = videoRef.current;
-
-    return () => {
-      video?.pause();
-    };
+    return () => video?.pause();
   }, []);
 
   const handleToggleMute = () => {
     const video = videoRef.current;
     if (!video) return;
-
     onToggleMute(video);
   };
 
@@ -155,11 +149,7 @@ function FeedVideo({
         className="absolute right-4 top-20 z-30 moshi-glass flex h-10 w-10 items-center justify-center rounded-full text-white"
         aria-label={muted ? "Activer le son" : "Couper le son"}
       >
-        {muted ? (
-          <VolumeX size={18} />
-        ) : (
-          <Volume2 size={18} />
-        )}
+        {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
       </button>
 
       {children}
@@ -174,7 +164,10 @@ export default function HomeFeed() {
   const [loading, setLoading] = useState(true);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
+  const [pendingLikes, setPendingLikes] = useState<Record<string, boolean>>({});
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
+  const [activeCommentsVideoId, setActiveCommentsVideoId] =
+    useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -202,8 +195,10 @@ export default function HomeFeed() {
     try {
       const { data: videosData, error: videosError } = await supabase
         .from("videos")
-        .select("id, url, caption, like_count, comment_count, user_id")
-        .limit(20);
+        .select("id, url, caption, like_count, comment_count, user_id, created_at")
+        .eq("status", "published")
+        .order("created_at", { ascending: false })
+        .limit(30);
 
       if (videosError) throw videosError;
 
@@ -224,10 +219,12 @@ export default function HomeFeed() {
       const profilesMap: Record<string, FeedItem["profiles"]> = {};
 
       if (uniqueUserIds.length > 0) {
-        const { data: profilesData } = await supabase
+        const { data: profilesData, error: profilesError } = await supabase
           .from("profiles")
           .select("id, username, avatar_url, full_name, country")
           .in("id", uniqueUserIds);
+
+        if (profilesError) throw profilesError;
 
         (profilesData || []).forEach((profile) => {
           profilesMap[profile.id] = profile;
@@ -259,18 +256,22 @@ export default function HomeFeed() {
       setItems([...livesItems, ...videosItems]);
 
       if (currentUser) {
-        const { data: likesData } = await supabase
+        const { data: likesData, error: likesError } = await supabase
           .from("video_likes")
           .select("video_id")
           .eq("user_id", currentUser.id);
 
+        if (likesError) throw likesError;
+
         const likedMap: Record<string, boolean> = {};
 
-        likesData?.forEach((like) => {
+        (likesData || []).forEach((like) => {
           likedMap[like.video_id] = true;
         });
 
         setLiked(likedMap);
+      } else {
+        setLiked({});
       }
     } catch (error) {
       console.error("Erreur chargement du fil :", error);
@@ -285,15 +286,19 @@ export default function HomeFeed() {
 
   const toggleMute = (video: HTMLVideoElement) => {
     const nextMuted = !video.muted;
-
     video.muted = nextMuted;
     setMuted(nextMuted);
   };
 
   const toggleLike = async (videoId: string) => {
-    if (!currentUser) return;
+    if (!currentUser || pendingLikes[videoId]) return;
 
     const isCurrentlyLiked = !!liked[videoId];
+
+    setPendingLikes((previous) => ({
+      ...previous,
+      [videoId]: true,
+    }));
 
     setLiked((previous) => ({
       ...previous,
@@ -354,6 +359,11 @@ export default function HomeFeed() {
             : item
         )
       );
+    } finally {
+      setPendingLikes((previous) => ({
+        ...previous,
+        [videoId]: false,
+      }));
     }
   };
 
@@ -449,7 +459,9 @@ export default function HomeFeed() {
               <button
                 type="button"
                 onClick={() => void toggleLike(item.id)}
-                className="flex flex-col items-center gap-1"
+                disabled={!currentUser || !!pendingLikes[item.id]}
+                className="flex flex-col items-center gap-1 disabled:opacity-70"
+                aria-label={isLiked ? "Retirer le J'aime" : "Aimer cette vidéo"}
               >
                 <motion.div
                   whileTap={{ scale: 0.8 }}
@@ -472,7 +484,9 @@ export default function HomeFeed() {
 
               <button
                 type="button"
+                onClick={() => setActiveCommentsVideoId(item.id)}
                 className="flex flex-col items-center gap-1"
+                aria-label="Voir les commentaires"
               >
                 <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
                   <MessageCircle size={24} className="text-white" />
@@ -504,6 +518,7 @@ export default function HomeFeed() {
                     }
                   }
                 }}
+                aria-label="Partager la vidéo"
               >
                 <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
                   <Share2 size={22} className="text-white" />
@@ -529,6 +544,13 @@ export default function HomeFeed() {
           </FeedVideo>
         );
       })}
+
+      {activeCommentsVideoId && (
+        <CommentsSheet
+          videoId={activeCommentsVideoId}
+          onClose={() => setActiveCommentsVideoId(null)}
+        />
+      )}
     </div>
   );
 }
