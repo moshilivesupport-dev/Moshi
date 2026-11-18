@@ -14,6 +14,7 @@ import {
   Settings,
   Loader2,
   AlertCircle,
+  MessageCircle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -50,7 +51,6 @@ export default function SettingsPage() {
 
   return (
     <main className="min-h-[100dvh] bg-gray-50 pb-10">
-      {/* EN-TÊTE */}
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-gray-100 bg-white px-4 py-4">
         <button
           type="button"
@@ -63,14 +63,11 @@ export default function SettingsPage() {
 
         <div className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-purple-600" />
-          <h1 className="text-lg font-bold text-gray-900">
-            Paramètres
-          </h1>
+          <h1 className="text-lg font-bold text-gray-900">Paramètres</h1>
         </div>
       </header>
 
       <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
-        {/* COMPTE */}
         <section>
           <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
             Mon compte
@@ -86,9 +83,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">
-                  Modifier mon profil
-                </p>
+                <p className="font-semibold text-gray-900">Modifier mon profil</p>
                 <p className="mt-1 text-xs text-gray-500">
                   Photo, nom, identifiant et biographie
                 </p>
@@ -121,7 +116,34 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* PORTEFEUILLE */}
+        <section>
+          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
+            Assistance
+          </h2>
+
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <Link
+              href="/support/report-problem"
+              className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
+            >
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+                <MessageCircle className="h-5 w-5" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-900">
+                  Signaler un problème
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Contacter l’équipe Moshi et suivre tes demandes
+                </p>
+              </div>
+
+              <ChevronRight className="h-5 w-5 text-gray-400" />
+            </Link>
+          </div>
+        </section>
+
         <section>
           <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
             Finances
@@ -137,9 +159,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">
-                  Mon portefeuille
-                </p>
+                <p className="font-semibold text-gray-900">Mon portefeuille</p>
                 <p className="mt-1 text-xs text-gray-500">
                   Consulter mon portefeuille Moshi
                 </p>
@@ -150,7 +170,6 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* SESSION */}
         <section>
           <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
             Session
