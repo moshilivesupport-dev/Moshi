@@ -90,9 +90,21 @@ function getCountryLabel(value: string) {
     : value || "Non renseigné";
 }
 
+function getCountryCode(value: string) {
+  const country = COUNTRIES.find(
+    (item) =>
+      item.code.toUpperCase() === value.trim().toUpperCase() ||
+      item.name.toLowerCase() === value.trim().toLowerCase()
+  );
+
+  return country?.code || value.trim().toUpperCase();
+}
+
 export default function ReportProblemPage() {
   const router = useRouter();
-  const supabase = createClient();
+
+  // Le client est créé une seule fois pour éviter les rechargements répétés.
+  const [supabase] = useState(() => createClient());
 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -108,52 +120,78 @@ export default function ReportProblemPage() {
   const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
+    let active = true;
+
     const loadPage = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      if (!user) {
-        router.push("/auth/login");
-        return;
+        if (!active) return;
+
+        if (authError || !user) {
+          router.replace("/auth/login");
+          return;
+        }
+
+        setUserId(user.id);
+
+        const params = new URLSearchParams(window.location.search);
+        const countryMode = params.get("type") === "country";
+
+        setIsCountryRequest(countryMode);
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("country")
+          .eq("id", user.id)
+          .single();
+
+        if (!active) return;
+
+        setCurrentCountry(profile?.country || "");
+
+        const { data: ticketData, error: ticketError } = await supabase
+          .from("support_tickets")
+          .select(
+            "id, category, subject, description, status, admin_response, created_at"
+          )
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (!active) return;
+
+        if (!ticketError && ticketData) {
+          setTickets(ticketData as Ticket[]);
+        }
+      } catch (error) {
+        console.error("Erreur chargement signalements :", error);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-
-      setUserId(user.id);
-
-      const params = new URLSearchParams(window.location.search);
-      const countryMode = params.get("type") === "country";
-      setIsCountryRequest(countryMode);
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("country")
-        .eq("id", user.id)
-        .single();
-
-      setCurrentCountry(profile?.country || "");
-
-      const { data: ticketData, error } = await supabase
-        .from("support_tickets")
-        .select(
-          "id, category, subject, description, status, admin_response, created_at"
-        )
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (!error && ticketData) {
-        setTickets(ticketData as Ticket[]);
-      }
-
-      setLoading(false);
     };
 
     loadPage();
+
+    return () => {
+      active = false;
+    };
   }, [supabase, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!userId) return;
+    if (sending) return;
+
+    if (!userId) {
+      alert("Ta session a expiré. Reconnecte-toi.");
+      router.replace("/auth/login");
+      return;
+    }
 
     if (description.trim().length < 10) {
       alert("Décris ton problème en au moins 10 caractères.");
@@ -165,70 +203,76 @@ export default function ReportProblemPage() {
       return;
     }
 
-    if (
-      isCountryRequest &&
-      requestedCountry === currentCountry
-    ) {
-      alert("Ce pays est déjà associé à ton compte.");
-      return;
-    }
-
-    setSending(true);
-
     const selectedCountry = COUNTRIES.find(
       (country) => country.code === requestedCountry
     );
 
     if (isCountryRequest && !selectedCountry) {
       alert("Le pays sélectionné est invalide.");
-      setSending(false);
       return;
     }
 
-    const subject = isCountryRequest
-      ? "Demande de changement de pays"
-      : CATEGORIES.find((item) => item.value === category)?.label ||
-        "Autre problème";
-
-    const fullDescription = isCountryRequest
-      ? `Pays actuel : ${currentCountry}\nPays demandé : ${selectedCountry!.code}\n\nMotif de la demande :\n${description.trim()}`
-      : description.trim();
-
-    const { error } = await supabase.from("support_tickets").insert({
-      user_id: userId,
-      category: isCountryRequest ? "account" : category,
-      subject,
-      description: fullDescription,
-      status: "open",
-    });
-
-    if (error) {
-      alert("Impossible d'envoyer la demande : " + error.message);
-      setSending(false);
+    if (
+      isCountryRequest &&
+      getCountryCode(requestedCountry) === getCountryCode(currentCountry)
+    ) {
+      alert("Ce pays est déjà associé à ton compte.");
       return;
     }
 
-    setSuccessMessage(
-      "Ta demande a bien été envoyée à l’équipe Moshi."
-    );
+    setSending(true);
+    setSuccessMessage("");
 
-    setDescription("");
-    setRequestedCountry("");
+    try {
+      const subject = isCountryRequest
+        ? "Demande de changement de pays"
+        : CATEGORIES.find((item) => item.value === category)?.label ||
+          "Autre problème";
 
-    const { data: ticketData } = await supabase
-      .from("support_tickets")
-      .select(
-        "id, category, subject, description, status, admin_response, created_at"
-      )
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+      const fullDescription = isCountryRequest
+        ? `Pays actuel : ${currentCountry}\nPays demandé : ${selectedCountry!.code}\n\nMotif de la demande :\n${description.trim()}`
+        : description.trim();
 
-    if (ticketData) {
-      setTickets(ticketData as Ticket[]);
+      const { error } = await supabase.from("support_tickets").insert({
+        user_id: userId,
+        category: isCountryRequest ? "account" : category,
+        subject,
+        description: fullDescription,
+        status: "open",
+      });
+
+      if (error) {
+        console.error("Erreur envoi signalement :", error);
+        alert("Impossible d'envoyer la demande : " + error.message);
+        return;
+      }
+
+      setSuccessMessage(
+        "Ta demande a bien été envoyée à l’équipe Moshi."
+      );
+
+      setDescription("");
+      setRequestedCountry("");
+
+      const { data: ticketData, error: refreshError } = await supabase
+        .from("support_tickets")
+        .select(
+          "id, category, subject, description, status, admin_response, created_at"
+        )
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (!refreshError && ticketData) {
+        setTickets(ticketData as Ticket[]);
+      }
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (error) {
+      console.error("Erreur inattendue :", error);
+      alert("Une erreur est survenue. Réessaie dans quelques instants.");
+    } finally {
+      setSending(false);
     }
-
-    setSending(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const getStatusStyle = (status: string) => {
@@ -257,7 +301,12 @@ export default function ReportProblemPage() {
   return (
     <div className="min-h-[100dvh] bg-moshi-bg pb-10">
       <header className="sticky top-0 z-20 bg-white shadow-sm px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="p-1">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="p-1"
+          aria-label="Retour"
+        >
           <ArrowLeft className="w-6 h-6 text-moshi-text" />
         </button>
 
@@ -360,10 +409,7 @@ export default function ReportProblemPage() {
                     <option value="">Sélectionne un pays</option>
 
                     {COUNTRIES.map((country) => (
-                      <option
-                        key={country.code}
-                        value={country.code}
-                      >
+                      <option key={country.code} value={country.code}>
                         {country.flag} {country.name}
                       </option>
                     ))}
