@@ -7,6 +7,7 @@ import {
   useState,
   useCallback,
   useMemo,
+  type ReactNode,
 } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -43,9 +44,11 @@ function formatNumber(num: number) {
   if (num >= 1_000_000) {
     return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
   }
+
   if (num >= 1_000) {
     return (num / 1_000).toFixed(1).replace(".0", "") + "K";
   }
+
   return String(num);
 }
 
@@ -53,10 +56,12 @@ function FeedVideo({
   item,
   muted,
   onToggleMute,
+  children,
 }: {
   item: FeedItem;
   muted: boolean;
   onToggleMute: (video: HTMLVideoElement) => void;
+  children?: ReactNode;
 }) {
   const sectionRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -78,6 +83,7 @@ function FeedVideo({
     );
 
     observer.observe(section);
+
     return () => observer.disconnect();
   }, []);
 
@@ -110,7 +116,10 @@ function FeedVideo({
 
   useEffect(() => {
     const video = videoRef.current;
-    return () => video?.pause();
+
+    return () => {
+      video?.pause();
+    };
   }, []);
 
   return (
@@ -126,7 +135,6 @@ function FeedVideo({
         loop
         muted={muted}
         playsInline
-        webkit-playsinline="true"
         preload="auto"
         onError={(event) => {
           console.warn(
@@ -142,7 +150,10 @@ function FeedVideo({
         type="button"
         onClick={() => {
           const video = videoRef.current;
-          if (video) onToggleMute(video);
+
+          if (video) {
+            onToggleMute(video);
+          }
         }}
         className="absolute right-4 top-5 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-lg"
         aria-label={muted ? "Activer le son" : "Couper le son"}
@@ -150,7 +161,7 @@ function FeedVideo({
         {muted ? <VolumeX size={19} /> : <Volume2 size={19} />}
       </button>
 
-      <div className="pointer-events-none absolute inset-0 z-10" />
+      {children}
     </section>
   );
 }
@@ -171,7 +182,9 @@ export default function HomeFeed() {
     let cancelled = false;
 
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       if (!cancelled) {
         setCurrentUser(user ? { id: user.id } : null);
@@ -261,9 +274,11 @@ export default function HomeFeed() {
         if (error) throw error;
 
         const map: Record<string, boolean> = {};
+
         (likes || []).forEach((like) => {
           map[like.video_id] = true;
         });
+
         setLiked(map);
       } else {
         setLiked({});
@@ -479,7 +494,9 @@ export default function HomeFeed() {
                 onClick={() => void toggleLike(item.id)}
                 disabled={!currentUser || !!pendingLikes[item.id]}
                 className="flex flex-col items-center gap-1 disabled:opacity-70"
-                aria-label={isLiked ? "Retirer le J'aime" : "Aimer cette vidéo"}
+                aria-label={
+                  isLiked ? "Retirer le J'aime" : "Aimer cette vidéo"
+                }
               >
                 <motion.div
                   whileTap={{ scale: 0.8 }}
@@ -494,6 +511,7 @@ export default function HomeFeed() {
                     }
                   />
                 </motion.div>
+
                 <span className="text-xs font-semibold text-white">
                   {formatNumber(item.like_count)}
                 </span>
@@ -508,6 +526,7 @@ export default function HomeFeed() {
                 <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
                   <MessageCircle size={24} className="text-white" />
                 </div>
+
                 <span className="text-xs font-semibold text-white">
                   {formatNumber(item.comment_count)}
                 </span>
@@ -568,7 +587,9 @@ export default function HomeFeed() {
         <CommentsSheet
           videoId={activeCommentsVideoId}
           onClose={() => setActiveCommentsVideoId(null)}
-          onCommentAdded={handleCommentAdded}
+          onCommentAdded={() =>
+            handleCommentAdded(activeCommentsVideoId)
+          }
         />
       )}
     </div>
