@@ -6,19 +6,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import {
-  Grid3X3,
-  Play,
-  Share2,
-  Wallet,
-  Lock,
-  Bookmark,
-  Heart,
-  MoreVertical,
-  Trash2,
-  Video,
-  BadgeCheck,
-  ShieldCheck,
-  Settings,
+  Grid3X3, Play, Share2, Wallet, Lock, Bookmark, Heart,
+  MoreVertical, Trash2, Video, BadgeCheck, ShieldCheck, Settings,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -50,26 +39,16 @@ interface ProfileViewProps {
 }
 
 function formatNumber(num: number): string {
-  if (num >= 1_000_000) {
-    return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
-  }
-
-  if (num >= 1_000) {
-    return (num / 1_000).toFixed(1).replace(".0", "") + "K";
-  }
-
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
+  if (num >= 1_000) return (num / 1_000).toFixed(1).replace(".0", "") + "K";
   return num.toString();
 }
 
-export default function ProfileView({
-  profile,
-  isOwnProfile,
-}: ProfileViewProps) {
+export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps) {
   const supabase = createClient();
   const searchParams = useSearchParams();
 
   const returnToLiveId = searchParams.get("returnToLive");
-
   const returnHref = returnToLiveId
     ? `/live/${encodeURIComponent(returnToLiveId)}`
     : "/";
@@ -79,6 +58,10 @@ export default function ProfileView({
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
 
   const [stats, setStats] = useState({
     followers_count: 0,
@@ -94,19 +77,8 @@ export default function ProfileView({
       let videoIds: string[] = [];
       let loadedVideos: VideoData[] = [];
 
-      if (activeTab === "videos") {
-        const { data, error } = await supabase
-          .from("videos")
-          .select("id, url, view_count, like_count, caption, status, user_id")
-          .eq("user_id", profile.id)
-          .eq("status", "published")
-          .order("created_at", { ascending: false })
-          .limit(60);
-
-        if (error) throw error;
-        loadedVideos = data ?? [];
-      } else if (activeTab === "private") {
-        if (!isOwnProfile) {
+      if (activeTab === "videos" || activeTab === "private") {
+        if (activeTab === "private" && !isOwnProfile) {
           setVideos([]);
           setLoading(false);
           return;
@@ -116,7 +88,7 @@ export default function ProfileView({
           .from("videos")
           .select("id, url, view_count, like_count, caption, status, user_id")
           .eq("user_id", profile.id)
-          .eq("status", "hidden")
+          .eq("status", activeTab === "private" ? "hidden" : "published")
           .order("created_at", { ascending: false })
           .limit(60);
 
@@ -137,7 +109,6 @@ export default function ProfileView({
           .limit(60);
 
         if (error) throw error;
-
         videoIds = (data ?? []).map((item) => item.video_id);
       } else if (activeTab === "liked") {
         const { data, error } = await supabase
@@ -148,7 +119,6 @@ export default function ProfileView({
           .limit(60);
 
         if (error) throw error;
-
         videoIds = (data ?? []).map((item) => item.video_id);
       }
 
@@ -161,10 +131,7 @@ export default function ProfileView({
 
         if (error) throw error;
 
-        const videoMap = new Map(
-          (data ?? []).map((video) => [video.id, video])
-        );
-
+        const videoMap = new Map((data ?? []).map((video) => [video.id, video]));
         loadedVideos = videoIds
           .map((id) => videoMap.get(id))
           .filter((video): video is VideoData => Boolean(video));
@@ -174,9 +141,7 @@ export default function ProfileView({
     } catch (error) {
       console.error("Erreur chargement onglet profil :", error);
       setVideos([]);
-      setErrorMessage(
-        "Impossible de charger ce contenu pour le moment."
-      );
+      setErrorMessage("Impossible de charger ce contenu pour le moment.");
     } finally {
       setLoading(false);
     }
@@ -184,24 +149,23 @@ export default function ProfileView({
 
   const loadStats = useCallback(async () => {
     try {
-      const [followersResult, followingResult, likesResult] =
-        await Promise.all([
-          supabase
-            .from("follows")
-            .select("id", { count: "exact", head: true })
-            .eq("following_id", profile.id),
+      const [followersResult, followingResult, likesResult] = await Promise.all([
+        supabase
+          .from("follows")
+          .select("id", { count: "exact", head: true })
+          .eq("following_id", profile.id),
 
-          supabase
-            .from("follows")
-            .select("id", { count: "exact", head: true })
-            .eq("follower_id", profile.id),
+        supabase
+          .from("follows")
+          .select("id", { count: "exact", head: true })
+          .eq("follower_id", profile.id),
 
-          supabase
-            .from("videos")
-            .select("like_count")
-            .eq("user_id", profile.id)
-            .eq("status", "published"),
-        ]);
+        supabase
+          .from("videos")
+          .select("like_count")
+          .eq("user_id", profile.id)
+          .eq("status", "published"),
+      ]);
 
       if (followersResult.error) throw followersResult.error;
       if (followingResult.error) throw followingResult.error;
@@ -222,13 +186,102 @@ export default function ProfileView({
     }
   }, [profile.id, supabase]);
 
+  const loadFollowStatus = useCallback(async () => {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      setCurrentUserId(null);
+      setIsFollowing(false);
+      return;
+    }
+
+    setCurrentUserId(user.id);
+
+    if (user.id === profile.id) {
+      setIsFollowing(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("follows")
+      .select("id")
+      .eq("follower_id", user.id)
+      .eq("following_id", profile.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Erreur vérification abonnement :", error);
+      return;
+    }
+
+    setIsFollowing(Boolean(data));
+  }, [profile.id, supabase]);
+
   useEffect(() => {
     void loadVideos();
   }, [loadVideos]);
 
   useEffect(() => {
     void loadStats();
-  }, [loadStats]);
+    void loadFollowStatus();
+  }, [loadStats, loadFollowStatus]);
+
+  const handleToggleFollow = async () => {
+    if (followLoading) return;
+
+    if (!currentUserId) {
+      alert("Connectez-vous pour suivre ce profil.");
+      return;
+    }
+
+    if (currentUserId === profile.id) return;
+
+    setFollowLoading(true);
+
+    try {
+      if (isFollowing) {
+        const { error } = await supabase
+          .from("follows")
+          .delete()
+          .eq("follower_id", currentUserId)
+          .eq("following_id", profile.id);
+
+        if (error) throw error;
+
+        setIsFollowing(false);
+        setStats((current) => ({
+          ...current,
+          followers_count: Math.max(0, current.followers_count - 1),
+        }));
+      } else {
+        const { error } = await supabase
+          .from("follows")
+          .insert({
+            follower_id: currentUserId,
+            following_id: profile.id,
+          });
+
+        if (error) {
+          if (error.code === "23505") {
+            setIsFollowing(true);
+            return;
+          }
+          throw error;
+        }
+
+        setIsFollowing(true);
+        setStats((current) => ({
+          ...current,
+          followers_count: current.followers_count + 1,
+        }));
+      }
+    } catch (error) {
+      console.error("Erreur abonnement :", error);
+      alert("Impossible de modifier votre abonnement pour le moment.");
+    } finally {
+      setFollowLoading(false);
+    }
+  };
 
   const handleDeleteVideo = async (videoId: string) => {
     if (!confirm("Supprimer cette vidéo définitivement ?")) return;
@@ -242,10 +295,7 @@ export default function ProfileView({
 
       if (error) throw error;
 
-      setVideos((current) =>
-        current.filter((video) => video.id !== videoId)
-      );
-
+      setVideos((current) => current.filter((video) => video.id !== videoId));
       setMenuOpenId(null);
       void loadStats();
     } catch (error) {
@@ -255,8 +305,7 @@ export default function ProfileView({
   };
 
   const handleTogglePrivate = async (video: VideoData) => {
-    const nextStatus =
-      video.status === "hidden" ? "published" : "hidden";
+    const nextStatus = video.status === "hidden" ? "published" : "hidden";
 
     try {
       const { error } = await supabase
@@ -267,10 +316,7 @@ export default function ProfileView({
 
       if (error) throw error;
 
-      setVideos((current) =>
-        current.filter((item) => item.id !== video.id)
-      );
-
+      setVideos((current) => current.filter((item) => item.id !== video.id));
       setMenuOpenId(null);
     } catch (error) {
       console.error("Erreur modification visibilité :", error);
@@ -288,10 +334,7 @@ export default function ProfileView({
 
       if (error) throw error;
 
-      setVideos((current) =>
-        current.filter((video) => video.id !== videoId)
-      );
-
+      setVideos((current) => current.filter((video) => video.id !== videoId));
       setMenuOpenId(null);
     } catch (error) {
       console.error("Erreur retrait favori :", error);
@@ -304,11 +347,7 @@ export default function ProfileView({
   const isVendeur = profile.role === "vendeur" || profile.role === "seller";
   const isVerified = profile.is_verified === true;
 
-  const tabs: {
-    id: ProfileTab;
-    label: string;
-    icon: typeof Grid3X3;
-  }[] = [
+  const tabs: { id: ProfileTab; label: string; icon: typeof Grid3X3 }[] = [
     { id: "videos", label: "Vidéos", icon: Grid3X3 },
     { id: "private", label: "Privé", icon: Lock },
     { id: "saved", label: "Favoris", icon: Bookmark },
@@ -325,37 +364,22 @@ export default function ProfileView({
   return (
     <div className="min-h-[100dvh] bg-moshi-bg text-moshi-text pb-24">
       <header className="px-4 pt-6 pb-2 flex items-center justify-between">
-        <Link
-          href={returnHref}
-          className="flex items-center gap-2 text-sm font-semibold text-moshi-purple"
-        >
+        <Link href={returnHref} className="flex items-center gap-2 text-sm font-semibold text-moshi-purple">
           {returnToLiveId ? (
             <>
               <Video className="w-5 h-5" />
               Retour au live
             </>
-          ) : (
-            "← Retour"
-          )}
+          ) : "← Retour"}
         </Link>
 
         <div className="flex gap-2">
           {isOwnProfile && (
             <>
-              <Link
-                href="/settings"
-                aria-label="Paramètres"
-                title="Paramètres"
-                className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"
-              >
+              <Link href="/settings" aria-label="Paramètres" title="Paramètres" className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center">
                 <Settings className="w-5 h-5 text-moshi-purple" />
               </Link>
-
-              <Link
-                href="/wallet"
-                aria-label="Mon portefeuille"
-                className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"
-              >
+              <Link href="/wallet" aria-label="Mon portefeuille" className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center">
                 <Wallet className="w-5 h-5 text-moshi-purple" />
               </Link>
             </>
@@ -366,10 +390,7 @@ export default function ProfileView({
             aria-label="Partager le profil"
             onClick={() => {
               if (typeof navigator !== "undefined" && navigator.share) {
-                void navigator.share({
-                  title: name,
-                  url: window.location.href,
-                }).catch(() => undefined);
+                void navigator.share({ title: name, url: window.location.href }).catch(() => undefined);
               } else if (typeof navigator !== "undefined") {
                 void navigator.clipboard?.writeText(window.location.href);
                 alert("Lien du profil copié.");
@@ -386,89 +407,70 @@ export default function ProfileView({
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h1 className="text-2xl font-bold">{name}</h1>
-
-            {isVerified && (
-              <BadgeCheck
-                className="w-5 h-5 text-blue-500 fill-blue-500"
-                aria-label="Compte certifié"
-              />
-            )}
-
+            {isVerified && <BadgeCheck className="w-5 h-5 text-blue-500 fill-blue-500" aria-label="Compte certifié" />}
             {isVendeur && (
               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-[#FF8FB1] to-[#9D7BEA] text-white">
                 Vendeur
               </span>
             )}
           </div>
-
           <p className="text-sm text-moshi-text/60">{handle}</p>
         </div>
 
-        <div className="relative">
-          <div className="w-20 h-20 rounded-full p-[3px] bg-gradient-to-br from-[#FF8FB1] via-[#9D7BEA] to-[#60A5FA]">
-            <div className="w-full h-full rounded-full overflow-hidden border-2 border-white bg-gray-100">
-              {profile.avatar_url ? (
-                <Image
-                  src={profile.avatar_url}
-                  alt={name}
-                  width={80}
-                  height={80}
-                  className="w-full h-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-moshi-purple">
-                  {name.charAt(0).toUpperCase()}
-                </div>
-              )}
-            </div>
+        <div className="w-20 h-20 rounded-full p-[3px] bg-gradient-to-br from-[#FF8FB1] via-[#9D7BEA] to-[#60A5FA]">
+          <div className="w-full h-full rounded-full overflow-hidden border-2 border-white bg-gray-100">
+            {profile.avatar_url ? (
+              <Image src={profile.avatar_url} alt={name} width={80} height={80} className="w-full h-full object-cover" unoptimized />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-moshi-purple">
+                {name.charAt(0).toUpperCase()}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       <div className="px-4 flex items-center gap-8 mb-4">
         <div className="text-center">
-          <p className="text-lg font-bold">
-            {formatNumber(stats.following_count)}
-          </p>
+          <p className="text-lg font-bold">{formatNumber(stats.following_count)}</p>
           <p className="text-xs text-moshi-text/60">Suivis</p>
         </div>
-
         <div className="text-center">
-          <p className="text-lg font-bold">
-            {formatNumber(stats.followers_count)}
-          </p>
+          <p className="text-lg font-bold">{formatNumber(stats.followers_count)}</p>
           <p className="text-xs text-moshi-text/60">Followers</p>
         </div>
-
         <div className="text-center">
-          <p className="text-lg font-bold">
-            {formatNumber(stats.total_likes)}
-          </p>
+          <p className="text-lg font-bold">{formatNumber(stats.total_likes)}</p>
           <p className="text-xs text-moshi-text/60">J'aime</p>
         </div>
       </div>
 
-      {profile.bio && (
-        <p className="px-4 text-sm whitespace-pre-wrap leading-snug mb-4">
-          {profile.bio}
-        </p>
+      {profile.bio && <p className="px-4 text-sm whitespace-pre-wrap leading-snug mb-4">{profile.bio}</p>}
+
+      {!isOwnProfile && (
+        <div className="px-4 mb-4">
+          <button
+            type="button"
+            onClick={() => void handleToggleFollow()}
+            disabled={followLoading}
+            className={`w-full rounded-full py-3 text-sm font-bold transition-all disabled:opacity-60 ${
+              isFollowing
+                ? "bg-gray-100 text-gray-800 border border-gray-300"
+                : "moshi-gradient text-white shadow-sm"
+            }`}
+          >
+            {followLoading ? "Patientez..." : isFollowing ? "Abonné ✓" : "Suivre"}
+          </button>
+        </div>
       )}
 
       {isOwnProfile && (
         <div className="px-4 mb-4 space-y-2">
-          <Link
-            href="/profile/edit"
-            className="flex items-center justify-center bg-white rounded-full py-2.5 text-sm font-semibold shadow-sm text-gray-800"
-          >
+          <Link href="/profile/edit" className="flex items-center justify-center bg-white rounded-full py-2.5 text-sm font-semibold shadow-sm text-gray-800">
             Modifier le profil
           </Link>
-
           {!isVerified && (
-            <Link
-              href="/verification/request"
-              className="flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 shadow-sm"
-            >
+            <Link href="/verification/request" className="flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 shadow-sm">
               <ShieldCheck className="w-4 h-4" />
               Demander la certification
             </Link>
@@ -480,10 +482,7 @@ export default function ProfileView({
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const selected = activeTab === tab.id;
-          const disabled =
-            !isOwnProfile &&
-            (tab.id === "private" || tab.id === "saved");
-
+          const disabled = !isOwnProfile && (tab.id === "private" || tab.id === "saved");
           if (disabled) return null;
 
           return (
@@ -494,9 +493,7 @@ export default function ProfileView({
               aria-pressed={selected}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 py-3 flex justify-center border-b-2 transition-colors ${
-                selected
-                  ? "border-moshi-purple text-moshi-purple"
-                  : "border-transparent text-gray-400"
+                selected ? "border-moshi-purple text-moshi-purple" : "border-transparent text-gray-400"
               }`}
             >
               <Icon className="w-5 h-5" />
@@ -511,38 +508,22 @@ export default function ProfileView({
         </div>
       ) : errorMessage ? (
         <div className="flex flex-col items-center justify-center py-20 px-6">
-          <p className="text-sm text-center text-red-500">
-            {errorMessage}
-          </p>
-          <button
-            type="button"
-            onClick={() => void loadVideos()}
-            className="mt-4 rounded-full bg-moshi-purple px-5 py-2 text-sm font-semibold text-white"
-          >
+          <p className="text-sm text-center text-red-500">{errorMessage}</p>
+          <button type="button" onClick={() => void loadVideos()} className="mt-4 rounded-full bg-moshi-purple px-5 py-2 text-sm font-semibold text-white">
             Réessayer
           </button>
         </div>
       ) : videos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
-          {activeTab === "private" ? (
-            <Lock className="w-10 h-10 text-gray-300" />
-          ) : activeTab === "saved" ? (
-            <Bookmark className="w-10 h-10 text-gray-300" />
-          ) : activeTab === "liked" ? (
-            <Heart className="w-10 h-10 text-gray-300" />
-          ) : (
-            <Play className="w-10 h-10 text-gray-300" />
-          )}
+          {activeTab === "private" ? <Lock className="w-10 h-10 text-gray-300" /> :
+           activeTab === "saved" ? <Bookmark className="w-10 h-10 text-gray-300" /> :
+           activeTab === "liked" ? <Heart className="w-10 h-10 text-gray-300" /> :
+           <Play className="w-10 h-10 text-gray-300" />}
 
-          <p className="text-sm text-moshi-text/60">
-            {emptyMessages[activeTab]}
-          </p>
+          <p className="text-sm text-moshi-text/60">{emptyMessages[activeTab]}</p>
 
           {isOwnProfile && activeTab === "videos" && (
-            <Link
-              href="/create"
-              className="moshi-gradient text-white font-bold px-6 py-2.5 rounded-full text-sm"
-            >
+            <Link href="/create" className="moshi-gradient text-white font-bold px-6 py-2.5 rounded-full text-sm">
               Publier ma première vidéo
             </Link>
           )}
@@ -550,18 +531,9 @@ export default function ProfileView({
       ) : (
         <div className="grid grid-cols-3 gap-[2px] p-1">
           {videos.map((video) => (
-            <div
-              key={video.id}
-              className="relative aspect-[9/16] bg-gray-900 overflow-hidden rounded-lg"
-            >
+            <div key={video.id} className="relative aspect-[9/16] bg-gray-900 overflow-hidden rounded-lg">
               <Link href={`/videos/${video.id}`}>
-                <video
-                  src={`${video.url}#t=0.1`}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  className="w-full h-full object-cover"
-                />
+                <video src={`${video.url}#t=0.1`} muted playsInline preload="metadata" className="w-full h-full object-cover" />
               </Link>
 
               <div className="absolute bottom-1 left-1 flex items-center gap-1 text-white text-xs font-semibold drop-shadow-md pointer-events-none">
@@ -573,11 +545,7 @@ export default function ProfileView({
                 <div className="absolute top-1 right-1 z-20">
                   <button
                     type="button"
-                    onClick={() =>
-                      setMenuOpenId(
-                        menuOpenId === video.id ? null : video.id
-                      )
-                    }
+                    onClick={() => setMenuOpenId(menuOpenId === video.id ? null : video.id)}
                     aria-label="Options vidéo"
                     className="w-7 h-7 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center text-white"
                   >
@@ -586,50 +554,28 @@ export default function ProfileView({
 
                   {menuOpenId === video.id && (
                     <>
-                      <button
-                        type="button"
-                        aria-label="Fermer le menu"
-                        className="fixed inset-0 z-30 cursor-default"
-                        onClick={() => setMenuOpenId(null)}
-                      />
-
+                      <button type="button" aria-label="Fermer le menu" className="fixed inset-0 z-30 cursor-default" onClick={() => setMenuOpenId(null)} />
                       <div className="absolute top-9 right-0 z-40 bg-white rounded-xl shadow-xl overflow-hidden min-w-[150px]">
-                        {activeTab === "videos" ||
-                        activeTab === "private" ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleTogglePrivate(video)}
-                            className="flex items-center gap-2 px-4 py-3 text-gray-700 hover:bg-gray-50 w-full text-left text-xs font-semibold"
-                          >
+                        {(activeTab === "videos" || activeTab === "private") && (
+                          <button type="button" onClick={() => void handleTogglePrivate(video)} className="flex items-center gap-2 px-4 py-3 text-gray-700 hover:bg-gray-50 w-full text-left text-xs font-semibold">
                             <Lock size={14} />
-                            {video.status === "hidden"
-                              ? "Rendre public"
-                              : "Rendre privé"}
+                            {video.status === "hidden" ? "Rendre public" : "Rendre privé"}
                           </button>
-                        ) : null}
+                        )}
 
-                        {activeTab === "saved" ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleUnsaveVideo(video.id)}
-                            className="flex items-center gap-2 px-4 py-3 text-gray-700 hover:bg-gray-50 w-full text-left text-xs font-semibold"
-                          >
+                        {activeTab === "saved" && (
+                          <button type="button" onClick={() => void handleUnsaveVideo(video.id)} className="flex items-center gap-2 px-4 py-3 text-gray-700 hover:bg-gray-50 w-full text-left text-xs font-semibold">
                             <Bookmark size={14} />
                             Retirer des favoris
                           </button>
-                        ) : null}
+                        )}
 
-                        {activeTab === "videos" ||
-                        activeTab === "private" ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteVideo(video.id)}
-                            className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-red-50 w-full text-left text-xs font-semibold"
-                          >
+                        {(activeTab === "videos" || activeTab === "private") && (
+                          <button type="button" onClick={() => void handleDeleteVideo(video.id)} className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-red-50 w-full text-left text-xs font-semibold">
                             <Trash2 size={14} />
                             Supprimer
                           </button>
-                        ) : null}
+                        )}
                       </div>
                     </>
                   )}
