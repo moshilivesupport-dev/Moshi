@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -29,8 +28,6 @@ interface ProfileData {
   avatar_url: string | null;
   bio: string | null;
   role: string | null;
-  first_name: string | null;
-  last_name: string | null;
   is_verified: boolean;
 }
 
@@ -174,12 +171,9 @@ export default function ProfileView({
     }
   };
 
-  const name =
-    profile.full_name || profile.username || "Utilisateur";
+  const name = profile.full_name || profile.username || "Utilisateur";
 
-  const handle = profile.username
-    ? `@${profile.username}`
-    : "";
+  const handle = profile.username ? `@${profile.username}` : "";
 
   const isVendeur = profile.role === "vendeur";
   const isVerified = profile.is_verified === true;
@@ -368,7 +362,7 @@ export default function ProfileView({
         </button>
       </div>
 
-      {/* GRILLE VIDÉOS */}
+      {/* GRILLE VIDÉOS (TA VERSION ACTUELLE – intacte) */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" />
