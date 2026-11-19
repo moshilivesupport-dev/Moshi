@@ -48,9 +48,7 @@ function formatNumber(num: number) {
   const safeNumber = Math.max(0, Number(num) || 0);
 
   if (safeNumber >= 1_000_000) {
-    return (
-      (safeNumber / 1_000_000).toFixed(1).replace(".0", "") + "M"
-    );
+    return (safeNumber / 1_000_000).toFixed(1).replace(".0", "") + "M";
   }
 
   if (safeNumber >= 1_000) {
@@ -64,15 +62,18 @@ function FeedVideo({
   item,
   muted,
   onToggleMute,
+  onQualifiedView,
   children,
 }: {
   item: FeedItem;
   muted: boolean;
   onToggleMute: (video: HTMLVideoElement) => void;
+  onQualifiedView: (videoId: string) => void;
   children?: ReactNode;
 }) {
   const sectionRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -95,6 +96,29 @@ function FeedVideo({
     return () => observer.disconnect();
   }, []);
 
+  // Comptabilisation après 1,5 seconde de visibilité réelle.
+  useEffect(() => {
+    if (viewTimerRef.current) {
+      clearTimeout(viewTimerRef.current);
+      viewTimerRef.current = null;
+    }
+
+    if (!isVisible) return;
+
+    viewTimerRef.current = setTimeout(() => {
+      onQualifiedView(item.id);
+      viewTimerRef.current = null;
+    }, 1500);
+
+    return () => {
+      if (viewTimerRef.current) {
+        clearTimeout(viewTimerRef.current);
+        viewTimerRef.current = null;
+      }
+    };
+  }, [isVisible, item.id, onQualifiedView]);
+
+  // Lecture et pause automatiques.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -134,6 +158,10 @@ function FeedVideo({
     const video = videoRef.current;
 
     return () => {
+      if (viewTimerRef.current) {
+        clearTimeout(viewTimerRef.current);
+      }
+
       video?.pause();
     };
   }, []);
@@ -192,12 +220,8 @@ export default function HomeFeed({
   const [loading, setLoading] = useState(true);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
-  const [pendingLikes, setPendingLikes] = useState<
-    Record<string, boolean>
-  >({});
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-  } | null>(null);
+  const [pendingLikes, setPendingLikes] = useState<Record<string, boolean>>({});
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [emptyMessage, setEmptyMessage] = useState(
     "Aucune vidéo pour le moment"
@@ -206,6 +230,12 @@ export default function HomeFeed({
     useState<string | null>(null);
 
   const loadRequestRef = useRef(0);
+
+  // Empêche plusieurs appels simultanés pour la même vidéo.
+  const viewsInFlightRef = useRef<Set<string>>(new Set());
+
+  // Évite de rappeler la fonction après une vue déjà enregistrée.
+  const viewedVideosRef = useRef<Set<string>>(new Set());
 
   // Récupération de l'utilisateur connecté.
   useEffect(() => {
@@ -241,12 +271,43 @@ export default function HomeFeed({
     };
   }, [supabase]);
 
+  // Enregistre une vue qualifiée dans Supabase.
+  const registerVideoView = useCallback(
+    async (videoId: string) => {
+      if (!currentUser) return;
+      if (viewedVideosRef.current.has(videoId)) return;
+      if (viewsInFlightRef.current.has(videoId)) return;
+
+      const videoExists = items.some(
+        (item) => item.id === videoId && item.type === "video"
+      );
+
+      if (!videoExists) return;
+
+      viewsInFlightRef.current.add(videoId);
+
+      try {
+        const { error } = await supabase.rpc("increment_video_view", {
+          vid_id: videoId,
+        });
+
+        if (error) throw error;
+
+        viewedVideosRef.current.add(videoId);
+      } catch (error) {
+        console.error("Erreur comptabilisation vue vidéo :", error);
+      } finally {
+        viewsInFlightRef.current.delete(videoId);
+      }
+    },
+    [supabase, currentUser, items]
+  );
+
   // Chargement du fil.
   const loadFeed = useCallback(async () => {
     if (!authLoaded) return;
 
     const requestId = ++loadRequestRef.current;
-
     setLoading(true);
 
     try {
@@ -298,8 +359,7 @@ export default function HomeFeed({
         videosQuery = videosQuery.in("user_id", followedIds);
       }
 
-      const { data: videosData, error: videosError } =
-        await videosQuery;
+      const { data: videosData, error: videosError } = await videosQuery;
 
       if (videosError) throw videosError;
 
@@ -312,8 +372,7 @@ export default function HomeFeed({
         livesQuery = livesQuery.in("host_id", followedIds);
       }
 
-      const { data: livesData, error: livesError } =
-        await livesQuery;
+      const { data: livesData, error: livesError } = await livesQuery;
 
       if (livesError) throw livesError;
 
@@ -421,7 +480,6 @@ export default function HomeFeed({
   }, [loadFeed]);
 
   // Synchronisation des compteurs depuis la table videos.
-  // Les triggers SQL existants mettent les compteurs à jour côté serveur.
   useEffect(() => {
     const channel = supabase
       .channel(`moshi-feed-counts-${mode}`)
@@ -437,6 +495,7 @@ export default function HomeFeed({
             id?: string;
             like_count?: number;
             comment_count?: number;
+            view_count?: number;
             status?: string;
           };
 
@@ -724,6 +783,7 @@ export default function HomeFeed({
             item={item}
             muted={muted}
             onToggleMute={toggleMute}
+            onQualifiedView={registerVideoView}
           >
             <div className="absolute bottom-5 right-3 z-20 flex flex-col items-center gap-4">
               <Link
