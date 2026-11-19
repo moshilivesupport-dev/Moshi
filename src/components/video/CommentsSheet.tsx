@@ -40,10 +40,17 @@ export default function CommentsSheet({
   const supabase = useMemo(() => createClient(), []);
   const callbackRef = useRef(onCommentAdded);
 
+  // Référence des commentaires déjà traités.
+  // Évite les doublons entre l'insertion locale et Realtime.
+  const knownCommentIds = useRef<Set<string>>(new Set());
+
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
-  const [userProfile, setUserProfile] = useState<CommentProfile | null>(null);
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+  } | null>(null);
+  const [userProfile, setUserProfile] =
+    useState<CommentProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -53,108 +60,126 @@ export default function CommentsSheet({
     callbackRef.current = onCommentAdded;
   }, [onCommentAdded]);
 
-  const loadComments = useCallback(async () => {
-    let cancelled = false;
+  const sortComments = useCallback((list: Comment[]) => {
+    return [...list].sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() -
+        new Date(b.created_at).getTime()
+    );
+  }, []);
 
-    setLoading(true);
-    setErrorMessage("");
+  const loadComments = useCallback(
+    async (signal: { cancelled: boolean }) => {
+      setLoading(true);
+      setErrorMessage("");
 
-    try {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      if (authError) throw authError;
-      if (cancelled) return;
+        if (authError) throw authError;
+        if (signal.cancelled) return;
 
-      setCurrentUser(user ? { id: user.id } : null);
-      setAuthReady(true);
+        const connectedUser = user ? { id: user.id } : null;
 
-      let ownProfile: CommentProfile | null = null;
+        setCurrentUser(connectedUser);
+        setAuthReady(true);
 
-      if (user) {
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("username, full_name, avatar_url")
-          .eq("id", user.id)
-          .maybeSingle();
+        let ownProfile: CommentProfile | null = null;
 
-        if (profileError) throw profileError;
-        ownProfile = profile ?? null;
-      }
+        if (user) {
+          const { data: profile, error: profileError } =
+            await supabase
+              .from("profiles")
+              .select("username, full_name, avatar_url")
+              .eq("id", user.id)
+              .maybeSingle();
 
-      if (cancelled) return;
-      setUserProfile(ownProfile);
+          if (profileError) throw profileError;
 
-      const { data, error } = await supabase
-        .from("video_comments")
-        .select("id, content, created_at, user_id")
-        .eq("video_id", videoId)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-      if (cancelled) return;
-
-      const rows = data ?? [];
-      const userIds = [...new Set(rows.map((item) => item.user_id))];
-      const profilesMap: Record<string, CommentProfile> = {};
-
-      if (userIds.length > 0) {
-        const { data: profiles, error: profilesError } = await supabase
-          .from("profiles")
-          .select("id, username, full_name, avatar_url")
-          .in("id", userIds);
-
-        if (profilesError) throw profilesError;
-
-        for (const profile of profiles ?? []) {
-          profilesMap[profile.id] = {
-            username: profile.username,
-            full_name: profile.full_name,
-            avatar_url: profile.avatar_url,
-          };
+          ownProfile = profile ?? null;
         }
-      }
 
-      if (cancelled) return;
+        if (signal.cancelled) return;
 
-      setComments(
-        rows.map((item) => ({
+        setUserProfile(ownProfile);
+
+        const { data, error } = await supabase
+          .from("video_comments")
+          .select("id, content, created_at, user_id")
+          .eq("video_id", videoId)
+          .order("created_at", { ascending: true });
+
+        if (error) throw error;
+        if (signal.cancelled) return;
+
+        const rows = data ?? [];
+        const userIds = [
+          ...new Set(rows.map((item) => item.user_id)),
+        ];
+
+        const profilesMap: Record<string, CommentProfile> = {};
+
+        if (userIds.length > 0) {
+          const { data: profiles, error: profilesError } =
+            await supabase
+              .from("profiles")
+              .select("id, username, full_name, avatar_url")
+              .in("id", userIds);
+
+          if (profilesError) throw profilesError;
+          if (signal.cancelled) return;
+
+          for (const profile of profiles ?? []) {
+            profilesMap[profile.id] = {
+              username: profile.username,
+              full_name: profile.full_name,
+              avatar_url: profile.avatar_url,
+            };
+          }
+        }
+
+        if (signal.cancelled) return;
+
+        const loadedComments: Comment[] = rows.map((item) => ({
           ...item,
           profiles: profilesMap[item.user_id] ?? null,
-        }))
-      );
-    } catch (error) {
-      console.error("Erreur chargement commentaires :", error);
-      if (!cancelled) {
+        }));
+
+        knownCommentIds.current = new Set(
+          loadedComments.map((item) => item.id)
+        );
+
+        setComments(loadedComments);
+      } catch (error) {
+        if (signal.cancelled) return;
+
+        console.error("Erreur chargement commentaires :", error);
         setErrorMessage("Impossible de charger les commentaires.");
         setAuthReady(true);
+      } finally {
+        if (!signal.cancelled) {
+          setLoading(false);
+        }
       }
-    } finally {
-      if (!cancelled) setLoading(false);
-    }
+    },
+    [supabase, videoId]
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase, videoId]);
-
+  // Chargement avec véritable nettoyage du cycle React.
   useEffect(() => {
-    let cancelled = false;
+    const signal = { cancelled: false };
 
-    const load = async () => {
-      await loadComments();
-    };
-
-    void load();
+    void loadComments(signal);
 
     return () => {
-      cancelled = true;
+      signal.cancelled = true;
     };
   }, [loadComments]);
 
-  // Un seul abonnement Realtime par vidéo et par utilisateur authentifié.
+  // Abonnement Realtime aux nouveaux commentaires et suppressions.
   useEffect(() => {
     if (!authReady) return;
 
@@ -179,6 +204,14 @@ export default function CommentsSheet({
             video_id: string;
           };
 
+          if (!active || knownCommentIds.current.has(row.id)) {
+            return;
+          }
+
+          // Marquer immédiatement l'identifiant pour éviter
+          // qu'un événement répété soit traité deux fois.
+          knownCommentIds.current.add(row.id);
+
           const { data: profile } = await supabase
             .from("profiles")
             .select("username, full_name, avatar_url")
@@ -195,26 +228,17 @@ export default function CommentsSheet({
             profiles: profile ?? null,
           };
 
-          let inserted = false;
-
           setComments((previous) => {
             if (previous.some((item) => item.id === newItem.id)) {
               return previous;
             }
 
-            inserted = true;
-
-            return [...previous, newItem].sort(
-              (a, b) =>
-                new Date(a.created_at).getTime() -
-                new Date(b.created_at).getTime()
-            );
+            return sortComments([...previous, newItem]);
           });
 
-          // Le créateur du commentaire incrémente déjà son compteur
-          // après l'insertion. Seuls les commentaires des autres
-          // utilisateurs sont comptés ici.
-          if (inserted && row.user_id !== currentUser?.id) {
+          // Le commentaire de l'utilisateur courant est déjà
+          // compté localement après l'insertion.
+          if (row.user_id !== currentUser?.id) {
             callbackRef.current?.(videoId);
           }
         }
@@ -230,11 +254,13 @@ export default function CommentsSheet({
         (payload) => {
           const deleted = payload.old as { id?: string };
 
-          if (deleted.id) {
-            setComments((previous) =>
-              previous.filter((item) => item.id !== deleted.id)
-            );
-          }
+          if (!deleted.id || !active) return;
+
+          knownCommentIds.current.delete(deleted.id);
+
+          setComments((previous) =>
+            previous.filter((item) => item.id !== deleted.id)
+          );
         }
       )
       .subscribe((status) => {
@@ -249,7 +275,13 @@ export default function CommentsSheet({
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, videoId, currentUser?.id, authReady]);
+  }, [
+    supabase,
+    videoId,
+    currentUser?.id,
+    authReady,
+    sortComments,
+  ]);
 
   const handleSend = async () => {
     const content = newComment.trim();
@@ -284,23 +316,25 @@ export default function CommentsSheet({
         profiles: userProfile,
       };
 
+      // Enregistrer l'ID avant la mise à jour locale :
+      // l'événement Realtime ne comptera donc pas deux fois.
+      const isNew = !knownCommentIds.current.has(newItem.id);
+
+      knownCommentIds.current.add(newItem.id);
+
       setComments((previous) => {
         if (previous.some((item) => item.id === newItem.id)) {
           return previous;
         }
 
-        return [...previous, newItem].sort(
-          (a, b) =>
-            new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime()
-        );
+        return sortComments([...previous, newItem]);
       });
 
       setNewComment("");
 
-      // Le compteur local est incrémenté une seule fois.
-      // L'événement Realtime de notre propre commentaire est ignoré.
-      callbackRef.current?.(videoId);
+      if (isNew) {
+        callbackRef.current?.(videoId);
+      }
     } catch (error) {
       console.error("Erreur envoi commentaire :", error);
       setErrorMessage(
