@@ -1,4 +1,3 @@
-
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ProfileView from "@/components/profile/ProfileView";
@@ -11,6 +10,11 @@ interface PageProps {
 
 export default async function ProfilePage({ params }: PageProps) {
   const { id } = await params;
+
+  if (id === "me" || id === "profile") {
+    notFound();
+  }
+
   const supabase = await createClient();
 
   const {
