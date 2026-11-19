@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import Image from "next/image";
@@ -37,21 +38,24 @@ export default function CommentsSheet({
   onCommentAdded,
 }: CommentsSheetProps) {
   const supabase = useMemo(() => createClient(), []);
+  const callbackRef = useRef(onCommentAdded);
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(
-    null
-  );
-  const [userProfile, setUserProfile] = useState<CommentProfile | null>(
-    null
-  );
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
+  const [userProfile, setUserProfile] = useState<CommentProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [authReady, setAuthReady] = useState(false);
 
+  useEffect(() => {
+    callbackRef.current = onCommentAdded;
+  }, [onCommentAdded]);
+
   const loadComments = useCallback(async () => {
+    let cancelled = false;
+
     setLoading(true);
     setErrorMessage("");
 
@@ -62,6 +66,7 @@ export default function CommentsSheet({
       } = await supabase.auth.getUser();
 
       if (authError) throw authError;
+      if (cancelled) return;
 
       setCurrentUser(user ? { id: user.id } : null);
       setAuthReady(true);
@@ -76,10 +81,10 @@ export default function CommentsSheet({
           .maybeSingle();
 
         if (profileError) throw profileError;
-
         ownProfile = profile ?? null;
       }
 
+      if (cancelled) return;
       setUserProfile(ownProfile);
 
       const { data, error } = await supabase
@@ -89,10 +94,10 @@ export default function CommentsSheet({
         .order("created_at", { ascending: true });
 
       if (error) throw error;
+      if (cancelled) return;
 
       const rows = data ?? [];
       const userIds = [...new Set(rows.map((item) => item.user_id))];
-
       const profilesMap: Record<string, CommentProfile> = {};
 
       if (userIds.length > 0) {
@@ -112,6 +117,8 @@ export default function CommentsSheet({
         }
       }
 
+      if (cancelled) return;
+
       setComments(
         rows.map((item) => ({
           ...item,
@@ -120,19 +127,39 @@ export default function CommentsSheet({
       );
     } catch (error) {
       console.error("Erreur chargement commentaires :", error);
-      setErrorMessage("Impossible de charger les commentaires.");
-      setAuthReady(true);
+      if (!cancelled) {
+        setErrorMessage("Impossible de charger les commentaires.");
+        setAuthReady(true);
+      }
     } finally {
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [supabase, videoId]);
 
   useEffect(() => {
-    void loadComments();
+    let cancelled = false;
+
+    const load = async () => {
+      await loadComments();
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [loadComments]);
 
-  // Synchronisation des nouveaux commentaires en temps réel.
+  // Un seul abonnement Realtime par vidéo et par utilisateur authentifié.
   useEffect(() => {
+    if (!authReady) return;
+
+    let active = true;
+
     const channel = supabase
       .channel(`video-comments-${videoId}`)
       .on(
@@ -158,6 +185,8 @@ export default function CommentsSheet({
             .eq("id", row.user_id)
             .maybeSingle();
 
+          if (!active) return;
+
           const newItem: Comment = {
             id: row.id,
             content: row.content,
@@ -166,10 +195,14 @@ export default function CommentsSheet({
             profiles: profile ?? null,
           };
 
+          let inserted = false;
+
           setComments((previous) => {
             if (previous.some((item) => item.id === newItem.id)) {
               return previous;
             }
+
+            inserted = true;
 
             return [...previous, newItem].sort(
               (a, b) =>
@@ -178,8 +211,11 @@ export default function CommentsSheet({
             );
           });
 
-          if (row.user_id !== currentUser?.id) {
-            onCommentAdded?.(videoId);
+          // Le créateur du commentaire incrémente déjà son compteur
+          // après l'insertion. Seuls les commentaires des autres
+          // utilisateurs sont comptés ici.
+          if (inserted && row.user_id !== currentUser?.id) {
+            callbackRef.current?.(videoId);
           }
         }
       )
@@ -202,15 +238,18 @@ export default function CommentsSheet({
         }
       )
       .subscribe((status) => {
-        if (status === "CHANNEL_ERROR") {
-          console.warn("Synchronisation des commentaires indisponible.");
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn(
+            "Synchronisation des commentaires momentanément indisponible."
+          );
         }
       });
 
     return () => {
+      active = false;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, videoId, currentUser?.id, onCommentAdded]);
+  }, [supabase, videoId, currentUser?.id, authReady]);
 
   const handleSend = async () => {
     const content = newComment.trim();
@@ -250,13 +289,18 @@ export default function CommentsSheet({
           return previous;
         }
 
-        return [...previous, newItem];
+        return [...previous, newItem].sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() -
+            new Date(b.created_at).getTime()
+        );
       });
 
       setNewComment("");
 
       // Le compteur local est incrémenté une seule fois.
-      onCommentAdded?.(videoId);
+      // L'événement Realtime de notre propre commentaire est ignoré.
+      callbackRef.current?.(videoId);
     } catch (error) {
       console.error("Erreur envoi commentaire :", error);
       setErrorMessage(
@@ -381,7 +425,10 @@ export default function CommentsSheet({
 
           {!authReady ? (
             <div className="flex justify-center py-2">
-              <Loader2 className="animate-spin text-moshi-purple" size={18} />
+              <Loader2
+                className="animate-spin text-moshi-purple"
+                size={18}
+              />
             </div>
           ) : !currentUser ? (
             <p className="text-center text-sm text-gray-500">
