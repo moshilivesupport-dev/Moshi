@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
@@ -36,13 +36,17 @@ export default function EditProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    let active = true;
 
-      if (!user) {
-        router.push("/auth/login");
+    const loadProfile = async () => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        router.replace("/auth/login");
         return;
       }
+
+      if (!active) return;
 
       setUserId(user.id);
 
@@ -63,6 +67,8 @@ export default function EditProfilePage() {
         .eq("id", user.id)
         .single();
 
+      if (!active) return;
+
       if (error) {
         alert("Impossible de charger le profil : " + error.message);
       } else if (data) {
@@ -81,12 +87,14 @@ export default function EditProfilePage() {
       setLoading(false);
     };
 
-    loadProfile();
+    void loadProfile();
+
+    return () => {
+      active = false;
+    };
   }, [supabase, router]);
 
-  const handleAvatarUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleAvatarUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !userId) return;
 
@@ -125,8 +133,9 @@ export default function EditProfilePage() {
 
       setAvatarUrl(publicUrl + "?t=" + Date.now());
       alert("Photo de profil mise à jour.");
-    } catch (err: any) {
-      alert("Erreur photo : " + err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur inconnue";
+      alert("Erreur photo : " + message);
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -142,41 +151,54 @@ export default function EditProfilePage() {
   };
 
   const handleSave = async () => {
-    if (!userId) return;
+    if (!userId || saving || uploading) return;
 
-    if (!username.trim()) {
+    const normalizedUsername = username.trim().toLowerCase().replace(/\s/g, "");
+
+    if (!normalizedUsername) {
       alert("Le nom d'utilisateur est obligatoire.");
       return;
     }
 
     setSaving(true);
 
-    const profileData = {
-      username: username.trim().toLowerCase().replace(/\s/g, ""),
-      full_name: fullName.trim(),
-      bio: bio.slice(0, 150),
-      link_url: normalizeUrl(linkUrl),
-      instagram_url: normalizeUrl(instagramUrl),
-      tiktok_url: normalizeUrl(tiktokUrl),
-      youtube_url: normalizeUrl(youtubeUrl),
-      facebook_url: normalizeUrl(facebookUrl),
-      updated_at: new Date().toISOString()
-    };
+    try {
+      const profileData = {
+        username: normalizedUsername,
+        full_name: fullName.trim(),
+        bio: bio.slice(0, 150),
+        link_url: normalizeUrl(linkUrl),
+        instagram_url: normalizeUrl(instagramUrl),
+        tiktok_url: normalizeUrl(tiktokUrl),
+        youtube_url: normalizeUrl(youtubeUrl),
+        facebook_url: normalizeUrl(facebookUrl),
+        updated_at: new Date().toISOString()
+      };
 
-    const { error } = await supabase
-      .from("profiles")
-      .update(profileData)
-      .eq("id", userId);
+      const { error } = await supabase
+        .from("profiles")
+        .update(profileData)
+        .eq("id", userId);
 
-    if (error) {
-      alert("Erreur lors de l'enregistrement : " + error.message);
-    } else {
+      if (error) throw error;
+
       alert("Profil mis à jour !");
-      router.push(`/profile/${userId}`);
+      router.replace(`/profile/${userId}`);
       router.refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur inconnue";
+      alert("Erreur lors de l'enregistrement : " + message);
+    } finally {
+      setSaving(false);
     }
+  };
 
-    setSaving(false);
+  const handleBack = () => {
+    if (userId) {
+      router.push(`/profile/${userId}`);
+    } else {
+      router.push("/");
+    }
   };
 
   if (loading) {
@@ -195,7 +217,12 @@ export default function EditProfilePage() {
   return (
     <div className="min-h-[100dvh] bg-moshi-bg pb-10">
       <header className="px-4 py-4 flex items-center justify-between bg-white shadow-sm sticky top-0 z-20">
-        <button onClick={() => router.back()} className="p-2">
+        <button
+          type="button"
+          onClick={handleBack}
+          aria-label="Retour au profil"
+          className="p-2"
+        >
           <ArrowLeft className="w-6 h-6 text-moshi-text" />
         </button>
 
@@ -204,6 +231,7 @@ export default function EditProfilePage() {
         </h1>
 
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving || uploading}
           className="text-sm font-bold text-moshi-purple disabled:opacity-50"
@@ -239,8 +267,11 @@ export default function EditProfilePage() {
           </div>
 
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-moshi-purple"
+            disabled={uploading}
+            aria-label="Changer la photo de profil"
+            className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-moshi-purple disabled:opacity-50"
           >
             <Camera size={18} />
           </button>
@@ -392,6 +423,7 @@ export default function EditProfilePage() {
           </div>
 
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving || uploading}
             className="w-full py-3 rounded-xl bg-moshi-purple text-white font-bold text-sm disabled:opacity-50"
