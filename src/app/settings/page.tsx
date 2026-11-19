@@ -18,26 +18,47 @@ import {
   Bell,
   Languages,
   Check,
+  Coins,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-type Language = "fr" | "en";
+const LANGUAGES = [
+  { value: "fr", label: "Français 🇫🇷" },
+  { value: "en", label: "English 🇬🇧" },
+  { value: "pt", label: "Português 🇵🇹" },
+  { value: "es", label: "Español 🇪🇸" },
+  { value: "ar", label: "العربية 🇸🇦" },
+] as const;
+
+const CURRENCIES = [
+  { value: "XOF", label: "XOF — Franc CFA (BCEAO)" },
+  { value: "EUR", label: "EUR — Euro" },
+  { value: "USD", label: "USD — Dollar américain" },
+  { value: "GBP", label: "GBP — Livre sterling" },
+  { value: "GHS", label: "GHS — Cedi ghanéen" },
+] as const;
+
+type Language = (typeof LANGUAGES)[number]["value"];
+type Currency = (typeof CURRENCIES)[number]["value"];
 
 export default function SettingsPage() {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
 
   const [loggingOut, setLoggingOut] = useState(false);
-  const [loadingLanguage, setLoadingLanguage] = useState(true);
-  const [savingLanguage, setSavingLanguage] = useState(false);
+  const [loadingPreferences, setLoadingPreferences] = useState(true);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+
   const [language, setLanguage] = useState<Language>("fr");
+  const [currency, setCurrency] = useState<Currency>("XOF");
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
     let active = true;
 
-    async function loadLanguage() {
+    async function loadPreferences() {
       try {
         const {
           data: { user },
@@ -53,36 +74,51 @@ export default function SettingsPage() {
 
         const { data, error: profileError } = await supabase
           .from("profiles")
-          .select("preferred_language")
+          .select("preferred_language, preferred_currency")
           .eq("id", user.id)
           .maybeSingle();
 
         if (profileError) throw profileError;
 
-        if (active && data?.preferred_language) {
-          setLanguage(data.preferred_language === "en" ? "en" : "fr");
-        }
+        if (!active) return;
+
+        const savedLanguage = LANGUAGES.find(
+          (item) => item.value === data?.preferred_language
+        );
+
+        const savedCurrency = CURRENCIES.find(
+          (item) => item.value === data?.preferred_currency
+        );
+
+        setLanguage(savedLanguage?.value ?? "fr");
+        setCurrency(savedCurrency?.value ?? "XOF");
       } catch (err) {
-        console.error("Erreur de chargement de la langue :", err);
+        console.error("Erreur de chargement des préférences :", err);
+
         if (active) {
           setError("Impossible de charger les préférences du compte.");
         }
       } finally {
-        if (active) setLoadingLanguage(false);
+        if (active) setLoadingPreferences(false);
       }
     }
 
-    void loadLanguage();
+    void loadPreferences();
 
     return () => {
       active = false;
     };
   }, [supabase, router]);
 
-  async function handleLanguageChange(nextLanguage: Language) {
-    if (savingLanguage || nextLanguage === language) return;
+  async function savePreferences(
+    nextLanguage: Language,
+    nextCurrency: Currency
+  ) {
+    if (savingPreferences) return;
 
-    setSavingLanguage(true);
+    if (nextLanguage === language && nextCurrency === currency) return;
+
+    setSavingPreferences(true);
     setError("");
     setSuccess("");
 
@@ -99,6 +135,7 @@ export default function SettingsPage() {
         .from("profiles")
         .update({
           preferred_language: nextLanguage,
+          preferred_currency: nextCurrency,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
@@ -106,16 +143,18 @@ export default function SettingsPage() {
       if (updateError) throw updateError;
 
       setLanguage(nextLanguage);
-      setSuccess("Préférence de langue enregistrée.");
+      setCurrency(nextCurrency);
+      setSuccess("Tes préférences ont été enregistrées.");
     } catch (err) {
-      console.error("Erreur de mise à jour de la langue :", err);
+      console.error("Erreur de sauvegarde des préférences :", err);
+
       setError(
         err instanceof Error
           ? err.message
-          : "Impossible d'enregistrer cette préférence."
+          : "Impossible d'enregistrer ces préférences."
       );
     } finally {
-      setSavingLanguage(false);
+      setSavingPreferences(false);
     }
   }
 
@@ -234,7 +273,7 @@ export default function SettingsPage() {
 
           <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
             <div className="flex items-center gap-3 p-4">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
                 <Languages className="h-5 w-5" />
               </div>
 
@@ -245,23 +284,79 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              {loadingLanguage || savingLanguage ? (
+              {loadingPreferences ? (
                 <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
               ) : (
                 <select
                   aria-label="Choisir la langue"
                   value={language}
+                  disabled={savingPreferences}
                   onChange={(event) =>
-                    void handleLanguageChange(event.target.value as Language)
+                    void savePreferences(
+                      event.target.value as Language,
+                      currency
+                    )
                   }
-                  className="max-w-[120px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-purple-500"
+                  className="max-w-[145px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-purple-500 disabled:opacity-50"
                 >
-                  <option value="fr">Français</option>
-                  <option value="en">English</option>
+                  {LANGUAGES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
                 </select>
               )}
             </div>
+
+            <div className="mx-4 border-t border-gray-100" />
+
+            <div className="flex items-center gap-3 p-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <Coins className="h-5 w-5" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-900">Devise</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Devise préférée de ton compte
+                </p>
+              </div>
+
+              {loadingPreferences ? (
+                <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
+              ) : (
+                <select
+                  aria-label="Choisir la devise"
+                  value={currency}
+                  disabled={savingPreferences}
+                  onChange={(event) =>
+                    void savePreferences(
+                      language,
+                      event.target.value as Currency
+                    )
+                  }
+                  className="max-w-[165px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-purple-500 disabled:opacity-50"
+                >
+                  {CURRENCIES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {savingPreferences && (
+              <div className="flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
+                Enregistrement des préférences...
+              </div>
+            )}
           </div>
+
+          <p className="mt-2 px-1 text-xs text-gray-400">
+            Ces choix sont enregistrés dans ton profil Moshi.
+          </p>
         </section>
 
         <section>
