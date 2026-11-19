@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -6,7 +7,7 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import {
   Grid3X3, Play, Share2, Wallet, Lock, Bookmark, Heart,
-  MoreVertical, Trash2, Video, BadgeCheck, ShieldCheck, Settings,
+  MoreVertical, Trash2, Video, BadgeCheck, Settings,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -464,16 +465,10 @@ export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps)
       )}
 
       {isOwnProfile && (
-        <div className="px-4 mb-4 space-y-2">
+        <div className="px-4 mb-4">
           <Link href="/profile/edit" className="flex items-center justify-center bg-white rounded-full py-2.5 text-sm font-semibold shadow-sm text-gray-800">
             Modifier le profil
           </Link>
-          {!isVerified && (
-            <Link href="/verification/request" className="flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 shadow-sm">
-              <ShieldCheck className="w-4 h-4" />
-              Demander la certification
-            </Link>
-          )}
         </div>
       )}
 
