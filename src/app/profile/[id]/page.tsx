@@ -17,6 +17,20 @@ export default async function ProfilePage({ params }: PageProps) {
 
   const supabase = await createClient();
 
+  // === VÉRIFIE D'ABORD SI L'UTILISATEUR EXISTE ===
+  const {
+    data: user,
+    error: userError,
+  } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (userError || !user) {
+    notFound(); // ou tu peux renvoyer un profil vide + un message "Nouveau compte"
+  }
+
   const {
     data: profile,
     error,
@@ -38,10 +52,10 @@ export default async function ProfilePage({ params }: PageProps) {
   }
 
   const {
-    data: { user },
+    data: { user: currentUser },
   } = await supabase.auth.getUser();
 
-  const isOwnProfile = user?.id === profile.id;
+  const isOwnProfile = currentUser?.id === profile.id;
 
   return (
     <ProfileView
