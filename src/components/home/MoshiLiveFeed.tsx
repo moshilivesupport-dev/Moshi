@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Radio, Users, PlayCircle, Loader2, RefreshCw } from "lucide-react";
+import { Users, PlayCircle, Loader2, RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface Live {
@@ -47,7 +47,7 @@ export default function MoshiLiveFeed() {
       const liveRows = data || [];
       const hostIds = [...new Set(liveRows.map((live) => live.host_id))];
 
-      let profilesMap: Record<
+      const profilesMap: Record<
         string,
         Live["profiles"]
       > = {};
