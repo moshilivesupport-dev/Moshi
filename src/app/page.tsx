@@ -8,10 +8,12 @@ import HomeFeed from "@/components/home/HomeFeed";
 import MoshiLiveFeed from "@/components/home/MoshiLiveFeed";
 import { cn } from "@/lib/utils";
 
-export default function HomePage() {
-  const [activeTab, setActiveTab] = useState("Pour toi");
+type HomeTab = "Pour toi" | "Suivis" | "Moshi Live";
 
-  const tabs = ["Pour toi", "Suivis", "Moshi Live"];
+export default function HomePage() {
+  const [activeTab, setActiveTab] = useState<HomeTab>("Pour toi");
+
+  const tabs: HomeTab[] = ["Pour toi", "Suivis", "Moshi Live"];
 
   return (
     <div className="relative h-[100dvh] w-full overflow-hidden bg-black">
@@ -28,6 +30,7 @@ export default function HomePage() {
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               aria-label="Rechercher"
               className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white backdrop-blur-md"
             >
@@ -35,6 +38,7 @@ export default function HomePage() {
             </button>
 
             <button
+              type="button"
               aria-label="Cadeaux"
               className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white backdrop-blur-md"
             >
@@ -53,7 +57,9 @@ export default function HomePage() {
                 onClick={() => setActiveTab(tab)}
                 className={cn(
                   "relative whitespace-nowrap pb-1 text-[15px] font-semibold transition-colors",
-                  activeTab === tab ? "text-white" : "text-white/70"
+                  activeTab === tab
+                    ? "text-white"
+                    : "text-white/70"
                 )}
               >
                 {tab}
@@ -78,8 +84,10 @@ export default function HomePage() {
       <div className="h-full">
         {activeTab === "Moshi Live" ? (
           <MoshiLiveFeed />
+        ) : activeTab === "Suivis" ? (
+          <HomeFeed key="following" mode="following" />
         ) : (
-          <HomeFeed />
+          <HomeFeed key="forYou" mode="forYou" />
         )}
       </div>
     </div>
