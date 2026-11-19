@@ -45,15 +45,19 @@ interface HomeFeedProps {
 }
 
 function formatNumber(num: number) {
-  if (num >= 1_000_000) {
-    return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
+  const safeNumber = Math.max(0, Number(num) || 0);
+
+  if (safeNumber >= 1_000_000) {
+    return (
+      (safeNumber / 1_000_000).toFixed(1).replace(".0", "") + "M"
+    );
   }
 
-  if (num >= 1_000) {
-    return (num / 1_000).toFixed(1).replace(".0", "") + "K";
+  if (safeNumber >= 1_000) {
+    return (safeNumber / 1_000).toFixed(1).replace(".0", "") + "K";
   }
 
-  return String(num);
+  return String(safeNumber);
 }
 
 function FeedVideo({
@@ -81,10 +85,13 @@ function FeedVideo({
           entry.isIntersecting && entry.intersectionRatio >= 0.6
         );
       },
-      { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1] }
+      {
+        threshold: [0, 0.25, 0.5, 0.6, 0.75, 1],
+      }
     );
 
     observer.observe(section);
+
     return () => observer.disconnect();
   }, []);
 
@@ -99,11 +106,14 @@ function FeedVideo({
       return;
     }
 
+    let cancelled = false;
+
     const play = async () => {
       try {
         await video.play();
       } catch (error) {
         if (
+          !cancelled &&
           error instanceof Error &&
           error.name !== "AbortError"
         ) {
@@ -113,18 +123,30 @@ function FeedVideo({
     };
 
     void play();
+
+    return () => {
+      cancelled = true;
+      video.pause();
+    };
   }, [isVisible, muted]);
 
   useEffect(() => {
     const video = videoRef.current;
-    return () => video?.pause();
+
+    return () => {
+      video?.pause();
+    };
   }, []);
 
   return (
     <section
       ref={sectionRef}
       className="moshi-video relative w-full overflow-hidden bg-black"
-      style={{ height: "100%", minHeight: "100%" }}
+      style={{
+        height: "100%",
+        minHeight: "100%",
+        scrollSnapAlign: "start",
+      }}
     >
       <video
         ref={videoRef}
@@ -133,7 +155,7 @@ function FeedVideo({
         loop
         muted={muted}
         playsInline
-        preload="auto"
+        preload={isVisible ? "auto" : "metadata"}
         onError={(event) => {
           console.warn(
             "Erreur de chargement vidéo :",
@@ -170,8 +192,12 @@ export default function HomeFeed({
   const [loading, setLoading] = useState(true);
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
-  const [pendingLikes, setPendingLikes] = useState<Record<string, boolean>>({});
-  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
+  const [pendingLikes, setPendingLikes] = useState<
+    Record<string, boolean>
+  >({});
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+  } | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [emptyMessage, setEmptyMessage] = useState(
     "Aucune vidéo pour le moment"
@@ -179,6 +205,9 @@ export default function HomeFeed({
   const [activeCommentsVideoId, setActiveCommentsVideoId] =
     useState<string | null>(null);
 
+  const loadRequestRef = useRef(0);
+
+  // Récupération de l'utilisateur connecté.
   useEffect(() => {
     let cancelled = false;
 
@@ -197,6 +226,7 @@ export default function HomeFeed({
         }
       } catch (error) {
         console.error("Erreur récupération utilisateur :", error);
+
         if (!cancelled) {
           setCurrentUser(null);
           setAuthLoaded(true);
@@ -211,8 +241,11 @@ export default function HomeFeed({
     };
   }, [supabase]);
 
+  // Chargement du fil.
   const loadFeed = useCallback(async () => {
     if (!authLoaded) return;
+
+    const requestId = ++loadRequestRef.current;
 
     setLoading(true);
 
@@ -237,7 +270,9 @@ export default function HomeFeed({
         if (followsError) throw followsError;
 
         followedIds = [
-          ...new Set((follows || []).map((follow) => follow.following_id)),
+          ...new Set(
+            (follows || []).map((follow) => follow.following_id)
+          ),
         ];
 
         if (followedIds.length === 0) {
@@ -325,8 +360,9 @@ export default function HomeFeed({
         profiles: profilesMap[live.host_id] || null,
       }));
 
-      const feedItems = [...lives, ...videos];
-      setItems(feedItems);
+      if (requestId !== loadRequestRef.current) return;
+
+      setItems([...lives, ...videos]);
 
       if (currentUser) {
         const videoIds = videos.map((video) => video.id);
@@ -340,10 +376,14 @@ export default function HomeFeed({
 
           if (error) throw error;
 
+          if (requestId !== loadRequestRef.current) return;
+
           const map: Record<string, boolean> = {};
+
           (likes || []).forEach((like) => {
             map[like.video_id] = true;
           });
+
           setLiked(map);
         } else {
           setLiked({});
@@ -359,17 +399,143 @@ export default function HomeFeed({
       );
     } catch (error) {
       console.error("Erreur chargement du fil :", error);
-      setEmptyMessage(
-        "Impossible de charger le fil. Vérifie ta connexion puis réessaie."
-      );
+
+      if (requestId === loadRequestRef.current) {
+        setEmptyMessage(
+          "Impossible de charger le fil. Vérifie ta connexion puis réessaie."
+        );
+      }
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) {
+        setLoading(false);
+      }
     }
   }, [supabase, currentUser, authLoaded, mode]);
 
   useEffect(() => {
     void loadFeed();
+
+    return () => {
+      loadRequestRef.current += 1;
+    };
   }, [loadFeed]);
+
+  // Synchronisation des compteurs depuis la table videos.
+  // Les triggers SQL existants mettent les compteurs à jour côté serveur.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`moshi-feed-counts-${mode}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "videos",
+        },
+        (payload) => {
+          const updated = payload.new as {
+            id?: string;
+            like_count?: number;
+            comment_count?: number;
+            status?: string;
+          };
+
+          if (!updated.id) return;
+
+          if (updated.status && updated.status !== "published") {
+            setItems((previous) =>
+              previous.filter(
+                (item) =>
+                  item.type !== "video" || item.id !== updated.id
+              )
+            );
+            return;
+          }
+
+          setItems((previous) =>
+            previous.map((item) => {
+              if (item.type !== "video" || item.id !== updated.id) {
+                return item;
+              }
+
+              return {
+                ...item,
+                like_count:
+                  typeof updated.like_count === "number"
+                    ? updated.like_count
+                    : item.like_count,
+                comment_count:
+                  typeof updated.comment_count === "number"
+                    ? updated.comment_count
+                    : item.comment_count,
+              };
+            })
+          );
+        }
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn(
+            "Synchronisation des compteurs momentanément indisponible."
+          );
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, mode]);
+
+  // Synchronisation des likes de l'utilisateur connecté.
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const channel = supabase
+      .channel(`moshi-user-likes-${currentUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "video_likes",
+          filter: `user_id=eq.${currentUser.id}`,
+        },
+        (payload) => {
+          const row = payload.new as { video_id?: string };
+
+          if (!row.video_id) return;
+
+          setLiked((previous) => ({
+            ...previous,
+            [row.video_id as string]: true,
+          }));
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "video_likes",
+          filter: `user_id=eq.${currentUser.id}`,
+        },
+        (payload) => {
+          const row = payload.old as { video_id?: string };
+
+          if (!row.video_id) return;
+
+          setLiked((previous) => ({
+            ...previous,
+            [row.video_id as string]: false,
+          }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, currentUser]);
 
   const toggleMute = (video: HTMLVideoElement) => {
     const next = !video.muted;
@@ -377,6 +543,7 @@ export default function HomeFeed({
     setMuted(next);
   };
 
+  // Like optimiste avec restauration en cas d'erreur.
   const toggleLike = async (videoId: string) => {
     if (!currentUser || pendingLikes[videoId]) return;
 
@@ -394,7 +561,7 @@ export default function HomeFeed({
 
     setItems((previous) =>
       previous.map((item) =>
-        item.id === videoId
+        item.id === videoId && item.type === "video"
           ? {
               ...item,
               like_count: Math.max(
@@ -435,7 +602,7 @@ export default function HomeFeed({
 
       setItems((previous) =>
         previous.map((item) =>
-          item.id === videoId
+          item.id === videoId && item.type === "video"
             ? {
                 ...item,
                 like_count: Math.max(
@@ -454,10 +621,10 @@ export default function HomeFeed({
     }
   };
 
-  const handleCommentAdded = (videoId: string) => {
+  const handleCommentAdded = useCallback((videoId: string) => {
     setItems((previous) =>
       previous.map((item) =>
-        item.id === videoId
+        item.id === videoId && item.type === "video"
           ? {
               ...item,
               comment_count: item.comment_count + 1,
@@ -465,7 +632,7 @@ export default function HomeFeed({
           : item
       )
     );
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -481,6 +648,7 @@ export default function HomeFeed({
         <p className="max-w-sm font-medium leading-relaxed text-neutral-400">
           {emptyMessage}
         </p>
+
         {mode === "following" && !currentUser && (
           <Link
             href="/login"
@@ -515,7 +683,11 @@ export default function HomeFeed({
             <section
               key={item.id}
               className="moshi-video relative flex w-full items-center justify-center overflow-hidden bg-gradient-to-br from-purple-900 via-pink-900 to-black"
-              style={{ height: "100%", minHeight: "100%", scrollSnapAlign: "start" }}
+              style={{
+                height: "100%",
+                minHeight: "100%",
+                scrollSnapAlign: "start",
+              }}
             >
               <Link
                 href={`/live/${item.id}`}
@@ -672,9 +844,7 @@ export default function HomeFeed({
         <CommentsSheet
           videoId={activeCommentsVideoId}
           onClose={() => setActiveCommentsVideoId(null)}
-          onCommentAdded={() =>
-            handleCommentAdded(activeCommentsVideoId)
-          }
+          onCommentAdded={handleCommentAdded}
         />
       )}
     </div>
