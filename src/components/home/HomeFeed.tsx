@@ -40,6 +40,10 @@ interface FeedItem {
   } | null;
 }
 
+interface HomeFeedProps {
+  mode?: "forYou" | "following";
+}
+
 function formatNumber(num: number) {
   if (num >= 1_000_000) {
     return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
@@ -77,13 +81,10 @@ function FeedVideo({
           entry.isIntersecting && entry.intersectionRatio >= 0.6
         );
       },
-      {
-        threshold: [0, 0.25, 0.5, 0.6, 0.75, 1],
-      }
+      { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1] }
     );
 
     observer.observe(section);
-
     return () => observer.disconnect();
   }, []);
 
@@ -116,10 +117,7 @@ function FeedVideo({
 
   useEffect(() => {
     const video = videoRef.current;
-
-    return () => {
-      video?.pause();
-    };
+    return () => video?.pause();
   }, []);
 
   return (
@@ -150,10 +148,7 @@ function FeedVideo({
         type="button"
         onClick={() => {
           const video = videoRef.current;
-
-          if (video) {
-            onToggleMute(video);
-          }
+          if (video) onToggleMute(video);
         }}
         className="absolute right-4 top-5 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-lg"
         aria-label={muted ? "Activer le son" : "Couper le son"}
@@ -166,7 +161,9 @@ function FeedVideo({
   );
 }
 
-export default function HomeFeed() {
+export default function HomeFeed({
+  mode = "forYou",
+}: HomeFeedProps) {
   const supabase = useMemo(() => createClient(), []);
 
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -175,6 +172,10 @@ export default function HomeFeed() {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [pendingLikes, setPendingLikes] = useState<Record<string, boolean>>({});
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
+  const [emptyMessage, setEmptyMessage] = useState(
+    "Aucune vidéo pour le moment"
+  );
   const [activeCommentsVideoId, setActiveCommentsVideoId] =
     useState<string | null>(null);
 
@@ -182,12 +183,24 @@ export default function HomeFeed() {
     let cancelled = false;
 
     const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
 
-      if (!cancelled) {
-        setCurrentUser(user ? { id: user.id } : null);
+        if (error) throw error;
+
+        if (!cancelled) {
+          setCurrentUser(user ? { id: user.id } : null);
+          setAuthLoaded(true);
+        }
+      } catch (error) {
+        console.error("Erreur récupération utilisateur :", error);
+        if (!cancelled) {
+          setCurrentUser(null);
+          setAuthLoaded(true);
+        }
       }
     };
 
@@ -199,10 +212,45 @@ export default function HomeFeed() {
   }, [supabase]);
 
   const loadFeed = useCallback(async () => {
+    if (!authLoaded) return;
+
     setLoading(true);
 
     try {
-      const { data: videosData, error: videosError } = await supabase
+      let followedIds: string[] | null = null;
+
+      if (mode === "following") {
+        if (!currentUser) {
+          setItems([]);
+          setLiked({});
+          setEmptyMessage(
+            "Connecte-toi pour voir les vidéos des comptes que tu suis."
+          );
+          return;
+        }
+
+        const { data: follows, error: followsError } = await supabase
+          .from("follows")
+          .select("following_id")
+          .eq("follower_id", currentUser.id);
+
+        if (followsError) throw followsError;
+
+        followedIds = [
+          ...new Set((follows || []).map((follow) => follow.following_id)),
+        ];
+
+        if (followedIds.length === 0) {
+          setItems([]);
+          setLiked({});
+          setEmptyMessage(
+            "Tu ne suis encore aucun compte. Découvre des créateurs et abonne-toi pour voir leurs vidéos ici."
+          );
+          return;
+        }
+      }
+
+      let videosQuery = supabase
         .from("videos")
         .select(
           "id, url, caption, like_count, comment_count, user_id, created_at"
@@ -211,12 +259,26 @@ export default function HomeFeed() {
         .order("created_at", { ascending: false })
         .limit(30);
 
+      if (followedIds) {
+        videosQuery = videosQuery.in("user_id", followedIds);
+      }
+
+      const { data: videosData, error: videosError } =
+        await videosQuery;
+
       if (videosError) throw videosError;
 
-      const { data: livesData, error: livesError } = await supabase
+      let livesQuery = supabase
         .from("lives")
         .select("id, title, host_id")
         .eq("status", "live");
+
+      if (followedIds) {
+        livesQuery = livesQuery.in("host_id", followedIds);
+      }
+
+      const { data: livesData, error: livesError } =
+        await livesQuery;
 
       if (livesError) throw livesError;
 
@@ -263,32 +325,47 @@ export default function HomeFeed() {
         profiles: profilesMap[live.host_id] || null,
       }));
 
-      setItems([...lives, ...videos]);
+      const feedItems = [...lives, ...videos];
+      setItems(feedItems);
 
       if (currentUser) {
-        const { data: likes, error } = await supabase
-          .from("video_likes")
-          .select("video_id")
-          .eq("user_id", currentUser.id);
+        const videoIds = videos.map((video) => video.id);
 
-        if (error) throw error;
+        if (videoIds.length > 0) {
+          const { data: likes, error } = await supabase
+            .from("video_likes")
+            .select("video_id")
+            .eq("user_id", currentUser.id)
+            .in("video_id", videoIds);
 
-        const map: Record<string, boolean> = {};
+          if (error) throw error;
 
-        (likes || []).forEach((like) => {
-          map[like.video_id] = true;
-        });
-
-        setLiked(map);
+          const map: Record<string, boolean> = {};
+          (likes || []).forEach((like) => {
+            map[like.video_id] = true;
+          });
+          setLiked(map);
+        } else {
+          setLiked({});
+        }
       } else {
         setLiked({});
       }
+
+      setEmptyMessage(
+        mode === "following"
+          ? "Les comptes que tu suis n'ont pas encore publié de vidéo ou lancé de live."
+          : "Aucune vidéo pour le moment"
+      );
     } catch (error) {
       console.error("Erreur chargement du fil :", error);
+      setEmptyMessage(
+        "Impossible de charger le fil. Vérifie ta connexion puis réessaie."
+      );
     } finally {
       setLoading(false);
     }
-  }, [supabase, currentUser]);
+  }, [supabase, currentUser, authLoaded, mode]);
 
   useEffect(() => {
     void loadFeed();
@@ -401,9 +478,17 @@ export default function HomeFeed() {
   if (items.length === 0) {
     return (
       <div className="flex h-[calc(100dvh-88px)] flex-col items-center justify-center bg-black px-6 text-center">
-        <p className="font-medium text-neutral-400">
-          Aucune vidéo pour le moment
+        <p className="max-w-sm font-medium leading-relaxed text-neutral-400">
+          {emptyMessage}
         </p>
+        {mode === "following" && !currentUser && (
+          <Link
+            href="/login"
+            className="moshi-gradient mt-5 rounded-full px-6 py-3 text-sm font-bold text-white"
+          >
+            Se connecter
+          </Link>
+        )}
       </div>
     );
   }
@@ -430,7 +515,7 @@ export default function HomeFeed() {
             <section
               key={item.id}
               className="moshi-video relative flex w-full items-center justify-center overflow-hidden bg-gradient-to-br from-purple-900 via-pink-900 to-black"
-              style={{ height: "100%", minHeight: "100%" }}
+              style={{ height: "100%", minHeight: "100%", scrollSnapAlign: "start" }}
             >
               <Link
                 href={`/live/${item.id}`}
