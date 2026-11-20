@@ -46,7 +46,7 @@ function formatNumber(num: number): string {
 }
 
 export default function ProfileView({ profile, isOwnProfile }: ProfileViewProps) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
 
   const returnToLiveId = searchParams.get("returnToLive");
