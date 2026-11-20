@@ -4,6 +4,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Search } from "lucide-react";
+import Link from "next/link";
 import HomeFeed from "@/components/home/HomeFeed";
 import MoshiLiveFeed from "@/components/home/MoshiLiveFeed";
 import { cn } from "@/lib/utils";
@@ -17,7 +18,7 @@ export default function HomePage() {
 
   return (
     <div className="relative h-[100dvh] w-full overflow-hidden bg-black">
-      <div className="pointer-events-none absolute left-0 right-0 top-0 z-40 bg-gradient-to-b from-black/95 via-black/75 to-transparent px-4 pb-3 pt-12">
+      <div className="pointer-events-none absolute left-0 right-0 top-0 z-40 px-4 pb-3 pt-12">
         <div className="pointer-events-auto mb-2 flex items-center justify-between">
           <Image
             src="/brand/moshi-logo.jpg"
@@ -28,13 +29,13 @@ export default function HomePage() {
             priority
           />
 
-          <button
-            type="button"
+          <Link
+            href="/search"
             aria-label="Rechercher"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white backdrop-blur-md"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md"
           >
             <Search size={18} />
-          </button>
+          </Link>
         </div>
 
         <div className="pointer-events-auto mt-3 flex items-center justify-between">
@@ -46,7 +47,7 @@ export default function HomePage() {
                 onClick={() => setActiveTab(tab)}
                 className={cn(
                   "relative whitespace-nowrap pb-1 text-[15px] font-semibold transition-colors",
-                  activeTab === tab ? "text-white" : "text-white/70"
+                  activeTab === tab ? "text-white" : "text-white/80"
                 )}
               >
                 {tab}
