@@ -2,6 +2,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import BottomNav from "@/components/layout/BottomNav";
+import LiveInvitationListener from "@/components/live/LiveInvitationListener";
 
 export const metadata: Metadata = {
   title: "Moshi – Soft Social Commerce",
@@ -47,6 +48,8 @@ export default function RootLayout({
         </div>
 
         {modal}
+
+        <LiveInvitationListener />
 
         <BottomNav />
       </body>
