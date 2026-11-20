@@ -18,6 +18,8 @@ import {
   Volume2,
   VolumeX,
   Radio,
+  Bookmark,
+  Pause,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
@@ -63,18 +65,23 @@ function FeedVideo({
   muted,
   onToggleMute,
   onQualifiedView,
+  onDoubleTap,
   children,
 }: {
   item: FeedItem;
   muted: boolean;
   onToggleMute: (video: HTMLVideoElement) => void;
   onQualifiedView: (videoId: string) => void;
+  onDoubleTap: () => void;
   children?: ReactNode;
 }) {
   const sectionRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [isVisible, setIsVisible] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -118,14 +125,14 @@ function FeedVideo({
     };
   }, [isVisible, item.id, onQualifiedView]);
 
-  // Lecture et pause automatiques.
+  // Lecture automatique et pause manuelle.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     video.muted = muted;
 
-    if (!isVisible) {
+    if (!isVisible || isPaused) {
       video.pause();
       return;
     }
@@ -152,7 +159,7 @@ function FeedVideo({
       cancelled = true;
       video.pause();
     };
-  }, [isVisible, muted]);
+  }, [isVisible, isPaused, muted]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -160,6 +167,10 @@ function FeedVideo({
     return () => {
       if (viewTimerRef.current) {
         clearTimeout(viewTimerRef.current);
+      }
+
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
       }
 
       video?.pause();
@@ -170,10 +181,29 @@ function FeedVideo({
     <section
       ref={sectionRef}
       className="moshi-video relative w-full overflow-hidden bg-black"
+      onClick={(event) => {
+        // Les boutons et les liens gardent leur propre action.
+        if ((event.target as HTMLElement).closest("button, a")) return;
+
+        // Deuxième toucher rapide : like.
+        if (tapTimerRef.current) {
+          clearTimeout(tapTimerRef.current);
+          tapTimerRef.current = null;
+          onDoubleTap();
+          return;
+        }
+
+        // Un seul toucher : pause ou reprise.
+        tapTimerRef.current = setTimeout(() => {
+          setIsPaused((previous) => !previous);
+          tapTimerRef.current = null;
+        }, 250);
+      }}
       style={{
         height: "100%",
         minHeight: "100%",
         scrollSnapAlign: "start",
+        cursor: "pointer",
       }}
     >
       <video
@@ -194,9 +224,18 @@ function FeedVideo({
 
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
 
+      {isPaused && isVisible && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+            <Pause size={30} fill="currentColor" />
+          </div>
+        </div>
+      )}
+
       <button
         type="button"
-        onClick={() => {
+        onClick={(event) => {
+          event.stopPropagation();
           const video = videoRef.current;
           if (video) onToggleMute(video);
         }}
@@ -219,22 +258,26 @@ export default function HomeFeed({
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [muted, setMuted] = useState(true);
+
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [pendingLikes, setPendingLikes] = useState<Record<string, boolean>>({});
+
+  const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const [pendingSaves, setPendingSaves] = useState<Record<string, boolean>>({});
+
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
+
   const [emptyMessage, setEmptyMessage] = useState(
     "Aucune vidéo pour le moment"
   );
+
   const [activeCommentsVideoId, setActiveCommentsVideoId] =
     useState<string | null>(null);
 
   const loadRequestRef = useRef(0);
 
-  // Empêche plusieurs appels simultanés pour la même vidéo.
   const viewsInFlightRef = useRef<Set<string>>(new Set());
-
-  // Évite de rappeler la fonction après une vue déjà enregistrée.
   const viewedVideosRef = useRef<Set<string>>(new Set());
 
   // Récupération de l'utilisateur connecté.
@@ -317,6 +360,7 @@ export default function HomeFeed({
         if (!currentUser) {
           setItems([]);
           setLiked({});
+          setSaved({});
           setEmptyMessage(
             "Connecte-toi pour voir les vidéos des comptes que tu suis."
           );
@@ -339,6 +383,7 @@ export default function HomeFeed({
         if (followedIds.length === 0) {
           setItems([]);
           setLiked({});
+          setSaved({});
           setEmptyMessage(
             "Tu ne suis encore aucun compte. Découvre des créateurs et abonne-toi pour voir leurs vidéos ici."
           );
@@ -421,12 +466,28 @@ export default function HomeFeed({
 
       if (requestId !== loadRequestRef.current) return;
 
-      setItems([...lives, ...videos]);
+      // Mélange aléatoire des vidéos dans « Pour toi ».
+      // L'onglet « Suivis » conserve l'ordre chronologique.
+      const feedVideos = mode === "forYou" ? [...videos] : videos;
+
+      if (mode === "forYou") {
+        for (let index = feedVideos.length - 1; index > 0; index -= 1) {
+          const randomIndex = Math.floor(Math.random() * (index + 1));
+
+          [feedVideos[index], feedVideos[randomIndex]] = [
+            feedVideos[randomIndex],
+            feedVideos[index],
+          ];
+        }
+      }
+
+      setItems([...lives, ...feedVideos]);
 
       if (currentUser) {
         const videoIds = videos.map((video) => video.id);
 
         if (videoIds.length > 0) {
+          // Récupération des likes.
           const { data: likes, error } = await supabase
             .from("video_likes")
             .select("video_id")
@@ -444,11 +505,32 @@ export default function HomeFeed({
           });
 
           setLiked(map);
+
+          // Récupération des favoris.
+          const { data: saves, error: savesError } = await supabase
+            .from("video_saves")
+            .select("video_id")
+            .eq("user_id", currentUser.id)
+            .in("video_id", videoIds);
+
+          if (savesError) throw savesError;
+
+          if (requestId !== loadRequestRef.current) return;
+
+          const savedMap: Record<string, boolean> = {};
+
+          (saves || []).forEach((save) => {
+            savedMap[save.video_id] = true;
+          });
+
+          setSaved(savedMap);
         } else {
           setLiked({});
+          setSaved({});
         }
       } else {
         setLiked({});
+        setSaved({});
       }
 
       setEmptyMessage(
@@ -680,6 +762,56 @@ export default function HomeFeed({
     }
   };
 
+  // Enregistre ou retire une vidéo des favoris du compte connecté.
+  const toggleSave = async (videoId: string) => {
+    if (!currentUser || pendingSaves[videoId]) return;
+
+    const wasSaved = !!saved[videoId];
+
+    setPendingSaves((previous) => ({
+      ...previous,
+      [videoId]: true,
+    }));
+
+    setSaved((previous) => ({
+      ...previous,
+      [videoId]: !wasSaved,
+    }));
+
+    try {
+      if (wasSaved) {
+        const { error } = await supabase
+          .from("video_saves")
+          .delete()
+          .eq("video_id", videoId)
+          .eq("user_id", currentUser.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("video_saves")
+          .insert({
+            video_id: videoId,
+            user_id: currentUser.id,
+          });
+
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error("Erreur enregistrement favori :", error);
+
+      setSaved((previous) => ({
+        ...previous,
+        [videoId]: wasSaved,
+      }));
+    } finally {
+      setPendingSaves((previous) => ({
+        ...previous,
+        [videoId]: false,
+      }));
+    }
+  };
+
   // Recharge le vrai compteur de commentaires après un ajout.
   const handleCommentAdded = useCallback(
     async (videoId: string) => {
@@ -802,6 +934,9 @@ export default function HomeFeed({
             muted={muted}
             onToggleMute={toggleMute}
             onQualifiedView={registerVideoView}
+            onDoubleTap={() => {
+              if (!liked[item.id]) void toggleLike(item.id);
+            }}
           >
             <div className="absolute bottom-5 right-3 z-20 flex flex-col items-center gap-4">
               <Link
@@ -827,6 +962,7 @@ export default function HomeFeed({
               <button
                 type="button"
                 onClick={() => void toggleLike(item.id)}
+                onPointerDown={(event) => event.stopPropagation()}
                 disabled={!currentUser || !!pendingLikes[item.id]}
                 className="flex flex-col items-center gap-1 disabled:opacity-70"
                 aria-label={
@@ -855,6 +991,7 @@ export default function HomeFeed({
               <button
                 type="button"
                 onClick={() => setActiveCommentsVideoId(item.id)}
+                onPointerDown={(event) => event.stopPropagation()}
                 className="flex flex-col items-center gap-1"
                 aria-label="Voir les commentaires"
               >
@@ -870,6 +1007,7 @@ export default function HomeFeed({
               <button
                 type="button"
                 className="flex flex-col items-center gap-1"
+                onPointerDown={(event) => event.stopPropagation()}
                 onClick={async () => {
                   const url = `${window.location.origin}/videos/${item.id}`;
 
@@ -896,6 +1034,34 @@ export default function HomeFeed({
                 <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
                   <Share2 size={22} className="text-white" />
                 </div>
+              </button>
+
+              <button
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => void toggleSave(item.id)}
+                disabled={!currentUser || !!pendingSaves[item.id]}
+                className="flex flex-col items-center gap-1 disabled:opacity-60"
+                aria-label={
+                  saved[item.id]
+                    ? "Retirer des favoris"
+                    : "Ajouter aux favoris"
+                }
+              >
+                <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
+                  <Bookmark
+                    size={23}
+                    className={
+                      saved[item.id]
+                        ? "fill-white text-white"
+                        : "text-white"
+                    }
+                  />
+                </div>
+
+                <span className="text-xs font-semibold text-white">
+                  Favori
+                </span>
               </button>
             </div>
 
