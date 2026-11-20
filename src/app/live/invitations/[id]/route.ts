@@ -31,6 +31,49 @@ export async function PATCH(
       );
     }
 
+    // Vérifier l'invitation avant de la traiter.
+    const { data: existingInvitation, error: lookupError } =
+      await supabase
+        .from("live_invitations")
+        .select("id, live_id, inviter_id, invitee_id, invitation_type, status")
+        .eq("id", id)
+        .eq("invitee_id", user.id)
+        .eq("status", "pending")
+        .maybeSingle();
+
+    if (lookupError) {
+      console.error("Invitation lookup error:", lookupError);
+
+      return NextResponse.json(
+        { error: "Impossible de vérifier cette invitation." },
+        { status: 500 }
+      );
+    }
+
+    if (!existingInvitation) {
+      return NextResponse.json(
+        { error: "Invitation introuvable ou déjà traitée." },
+        { status: 404 }
+      );
+    }
+
+    // Vérifier que le live est toujours actif avant acceptation.
+    if (status === "accepted") {
+      const { data: live, error: liveError } = await supabase
+        .from("lives")
+        .select("id, status")
+        .eq("id", existingInvitation.live_id)
+        .maybeSingle();
+
+      if (liveError || !live || live.status !== "live") {
+        return NextResponse.json(
+          { error: "Ce live n'est plus disponible." },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Traiter l'invitation.
     const { data: invitation, error } = await supabase
       .from("live_invitations")
       .update({
