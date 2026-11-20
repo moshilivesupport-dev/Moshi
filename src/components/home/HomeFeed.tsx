@@ -680,18 +680,36 @@ export default function HomeFeed({
     }
   };
 
-  const handleCommentAdded = useCallback((videoId: string) => {
-    setItems((previous) =>
-      previous.map((item) =>
-        item.id === videoId && item.type === "video"
-          ? {
-              ...item,
-              comment_count: item.comment_count + 1,
-            }
-          : item
-      )
-    );
-  }, []);
+  // Recharge le vrai compteur de commentaires après un ajout.
+  const handleCommentAdded = useCallback(
+    async (videoId: string) => {
+      const { data, error } = await supabase
+        .from("videos")
+        .select("comment_count")
+        .eq("id", videoId)
+        .single();
+
+      if (error) {
+        console.error(
+          "Actualisation du compteur commentaires :",
+          error
+        );
+        return;
+      }
+
+      setItems((previous) =>
+        previous.map((item) =>
+          item.id === videoId && item.type === "video"
+            ? {
+                ...item,
+                comment_count: Number(data.comment_count || 0),
+              }
+            : item
+        )
+      );
+    },
+    [supabase]
+  );
 
   if (loading) {
     return (
