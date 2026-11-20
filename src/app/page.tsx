@@ -6,7 +6,6 @@ import Image from "next/image";
 import { Search } from "lucide-react";
 import HomeFeed from "@/components/home/HomeFeed";
 import MoshiLiveFeed from "@/components/home/MoshiLiveFeed";
-import StoriesBar from "@/components/home/StoriesBar";
 import { cn } from "@/lib/utils";
 
 type HomeTab = "Pour toi" | "Suivis" | "Moshi Live";
@@ -36,10 +35,6 @@ export default function HomePage() {
           >
             <Search size={18} />
           </button>
-        </div>
-
-        <div className="pointer-events-auto">
-          <StoriesBar />
         </div>
 
         <div className="pointer-events-auto mt-3 flex items-center justify-between">
