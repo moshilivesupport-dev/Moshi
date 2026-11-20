@@ -109,7 +109,6 @@ export default function StoryViewerPage() {
     setIndex((previous) => previous - 1);
   }, [index, resetProgress, stopTimer]);
 
-  // Charger le profil et les stories actives.
   useEffect(() => {
     let active = true;
 
@@ -166,7 +165,6 @@ export default function StoryViewerPage() {
     };
   }, [supabase, userId]);
 
-  // Enregistrer une vue sans compter le propriétaire.
   useEffect(() => {
     async function registerView() {
       if (!currentStory || !currentUserId || isOwner) return;
@@ -189,10 +187,9 @@ export default function StoryViewerPage() {
       }
     }
 
-    registerView();
+    void registerView();
   }, [currentStory?.id, currentUserId, isOwner, supabase]);
 
-  // Charger le compteur pour le propriétaire.
   useEffect(() => {
     let active = true;
 
@@ -218,14 +215,13 @@ export default function StoryViewerPage() {
       setViewsCount(count || 0);
     }
 
-    loadViewsCount();
+    void loadViewsCount();
 
     return () => {
       active = false;
     };
   }, [currentStory?.id, currentStory?.views_count, isOwner, supabase]);
 
-  // Afficher la liste des spectateurs.
   const openViewers = async () => {
     if (!currentStory || !isOwner || loadingViewers) return;
 
@@ -248,7 +244,7 @@ export default function StoryViewerPage() {
     const rows = viewRows || [];
     const viewerIds = [...new Set(rows.map((row) => row.viewer_id))];
 
-    let profilesMap: Record<string, Profile> = {};
+    const profilesMap: Record<string, Profile> = {};
 
     if (viewerIds.length > 0) {
       const { data: profilesData, error: profilesError } = await supabase
@@ -276,14 +272,12 @@ export default function StoryViewerPage() {
     setLoadingViewers(false);
   };
 
-  // Réinitialiser la progression au changement de story.
   useEffect(() => {
     resetProgress();
     setPaused(false);
     setViewersOpen(false);
   }, [currentStory?.id, resetProgress]);
 
-  // Chronomètre des photos avec reprise après pause.
   useEffect(() => {
     stopTimer();
 
@@ -309,7 +303,6 @@ export default function StoryViewerPage() {
     return stopTimer;
   }, [currentStory?.id, isVideo, paused, nextStory, stopTimer]);
 
-  // Lecture et pause des vidéos.
   useEffect(() => {
     const video = videoRef.current;
 
@@ -326,7 +319,6 @@ export default function StoryViewerPage() {
     return () => stopTimer();
   }, [stopTimer]);
 
-  // Supprimer une story.
   const handleDelete = async () => {
     if (!currentStory || !isOwner || deleting) return;
 
@@ -407,7 +399,6 @@ export default function StoryViewerPage() {
   return (
     <main className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white">
       <div className="relative flex h-full w-full max-w-3xl flex-col justify-center">
-        {/* Progression et profil */}
         <div className="absolute left-0 right-0 top-0 z-30 px-3 pt-[max(env(safe-area-inset-top),12px)]">
           <div className="mb-3 flex gap-1">
             {stories.map((story, storyIndex) => (
@@ -492,7 +483,6 @@ export default function StoryViewerPage() {
           </div>
         </div>
 
-        {/* Média au format 16:9 */}
         <div className="relative mx-auto aspect-video w-full overflow-hidden bg-black">
           {isVideo ? (
             <video
@@ -571,7 +561,6 @@ export default function StoryViewerPage() {
         </div>
       </div>
 
-      {/* Fenêtre des spectateurs */}
       {viewersOpen && isOwner && (
         <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center">
           <div className="flex max-h-[75vh] w-full max-w-lg flex-col rounded-t-3xl border border-white/10 bg-[#151515] sm:rounded-3xl">
