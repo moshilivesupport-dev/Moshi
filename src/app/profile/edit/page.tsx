@@ -11,7 +11,13 @@ import {
   Loader2,
   Globe,
   Link as LinkIcon,
-  ChevronRight
+  ChevronRight,
+  UserRound,
+  Instagram,
+  Video,
+  Youtube,
+  Facebook,
+  Save,
 } from "lucide-react";
 
 export default function EditProfilePage() {
@@ -38,40 +44,43 @@ export default function EditProfilePage() {
   useEffect(() => {
     let active = true;
 
-    const loadProfile = async () => {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+    async function loadProfile() {
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      if (authError || !user) {
-        router.replace("/auth/login");
-        return;
-      }
+        if (authError) throw authError;
 
-      if (!active) return;
+        if (!user) {
+          router.replace("/auth/login");
+          return;
+        }
 
-      setUserId(user.id);
+        if (!active) return;
+        setUserId(user.id);
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(`
-          username,
-          full_name,
-          bio,
-          avatar_url,
-          country,
-          link_url,
-          instagram_url,
-          tiktok_url,
-          youtube_url,
-          facebook_url
-        `)
-        .eq("id", user.id)
-        .single();
+        const { data, error } = await supabase
+          .from("profiles")
+          .select(`
+            username,
+            full_name,
+            bio,
+            avatar_url,
+            country,
+            link_url,
+            instagram_url,
+            tiktok_url,
+            youtube_url,
+            facebook_url
+          `)
+          .eq("id", user.id)
+          .single();
 
-      if (!active) return;
+        if (error) throw error;
+        if (!active) return;
 
-      if (error) {
-        alert("Impossible de charger le profil : " + error.message);
-      } else if (data) {
         setUsername(data.username || "");
         setFullName(data.full_name || "");
         setBio(data.bio || "");
@@ -82,10 +91,14 @@ export default function EditProfilePage() {
         setTiktokUrl(data.tiktok_url || "");
         setYoutubeUrl(data.youtube_url || "");
         setFacebookUrl(data.facebook_url || "");
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Erreur inconnue";
+        if (active) alert("Impossible de charger le profil : " + message);
+      } finally {
+        if (active) setLoading(false);
       }
-
-      setLoading(false);
-    };
+    }
 
     void loadProfile();
 
@@ -94,7 +107,7 @@ export default function EditProfilePage() {
     };
   }, [supabase, router]);
 
-  const handleAvatarUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+  async function handleAvatarUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !userId) return;
 
@@ -120,9 +133,9 @@ export default function EditProfilePage() {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(filePath);
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("avatars").getPublicUrl(filePath);
 
       const { error: updateError } = await supabase
         .from("profiles")
@@ -131,32 +144,40 @@ export default function EditProfilePage() {
 
       if (updateError) throw updateError;
 
-      setAvatarUrl(publicUrl + "?t=" + Date.now());
+      setAvatarUrl(`${publicUrl}?t=${Date.now()}`);
       alert("Photo de profil mise à jour.");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erreur inconnue";
+      const message =
+        err instanceof Error ? err.message : "Erreur inconnue";
       alert("Erreur photo : " + message);
     } finally {
       setUploading(false);
       e.target.value = "";
     }
-  };
+  }
 
-  const normalizeUrl = (value: string) => {
+  function normalizeUrl(value: string) {
     const trimmed = value.trim();
     if (!trimmed) return null;
-
     if (/^https?:\/\//i.test(trimmed)) return trimmed;
     return `https://${trimmed}`;
-  };
+  }
 
-  const handleSave = async () => {
+  async function handleSave() {
     if (!userId || saving || uploading) return;
 
-    const normalizedUsername = username.trim().toLowerCase().replace(/\s/g, "");
+    const normalizedUsername = username
+      .trim()
+      .toLowerCase()
+      .replace(/\s/g, "");
 
     if (!normalizedUsername) {
       alert("Le nom d'utilisateur est obligatoire.");
+      return;
+    }
+
+    if (normalizedUsername.length < 3) {
+      alert("Le nom d'utilisateur doit contenir au moins 3 caractères.");
       return;
     }
 
@@ -172,7 +193,7 @@ export default function EditProfilePage() {
         tiktok_url: normalizeUrl(tiktokUrl),
         youtube_url: normalizeUrl(youtubeUrl),
         facebook_url: normalizeUrl(facebookUrl),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       };
 
       const { error } = await supabase
@@ -186,47 +207,44 @@ export default function EditProfilePage() {
       router.replace(`/profile/${userId}`);
       router.refresh();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erreur inconnue";
+      const message =
+        err instanceof Error ? err.message : "Erreur inconnue";
       alert("Erreur lors de l'enregistrement : " + message);
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  const handleBack = () => {
-    if (userId) {
-      router.push(`/profile/${userId}`);
-    } else {
-      router.push("/");
-    }
-  };
+  function handleBack() {
+    router.push(userId ? `/profile/${userId}` : "/");
+  }
+
+  const inputClass =
+    "mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 outline-none transition focus:border-moshi-purple focus:ring-2 focus:ring-moshi-purple/10";
+
+  const labelClass = "text-sm font-semibold text-gray-700";
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-moshi-bg">
-        <Loader2 className="w-10 h-10 text-moshi-purple animate-spin" />
+      <div className="flex min-h-[100dvh] items-center justify-center bg-moshi-bg">
+        <Loader2 className="h-10 w-10 animate-spin text-moshi-purple" />
       </div>
     );
   }
 
-  const inputClass =
-    "w-full mt-1 px-4 py-3 rounded-xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium";
-
-  const labelClass = "text-xs font-bold text-gray-500 ml-1";
-
   return (
-    <div className="min-h-[100dvh] bg-moshi-bg pb-10">
-      <header className="px-4 py-4 flex items-center justify-between bg-white shadow-sm sticky top-0 z-20">
+    <main className="min-h-[100dvh] bg-moshi-bg pb-12">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-4 shadow-sm backdrop-blur">
         <button
           type="button"
           onClick={handleBack}
           aria-label="Retour au profil"
-          className="p-2"
+          className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-gray-100"
         >
-          <ArrowLeft className="w-6 h-6 text-moshi-text" />
+          <ArrowLeft className="h-5 w-5 text-moshi-text" />
         </button>
 
-        <h1 className="text-lg font-bold text-moshi-text">
+        <h1 className="text-base font-bold text-moshi-text">
           Modifier le profil
         </h1>
 
@@ -234,204 +252,283 @@ export default function EditProfilePage() {
           type="button"
           onClick={handleSave}
           disabled={saving || uploading}
-          className="text-sm font-bold text-moshi-purple disabled:opacity-50"
+          className="flex items-center gap-2 rounded-xl bg-moshi-purple px-3 py-2 text-sm font-bold text-white transition disabled:opacity-50"
         >
-          {saving ? "Enregistrement..." : "Enregistrer"}
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          Enregistrer
         </button>
       </header>
 
-      <div className="p-6 flex flex-col items-center gap-6 max-w-md mx-auto mt-4">
-        <div className="relative">
-          <div className="w-28 h-28 rounded-full p-[3px] bg-gradient-to-br from-[#FF8FB1] via-[#9D7BEA] to-[#60A5FA]">
-            <div className="w-full h-full rounded-full overflow-hidden border-4 border-white bg-gray-100 relative">
-              {avatarUrl ? (
-                <Image
-                  src={avatarUrl}
-                  alt="Avatar"
-                  fill
-                  className="object-cover"
-                  unoptimized
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-moshi-purple">
-                  {username.charAt(0).toUpperCase()}
-                </div>
-              )}
+      <div className="mx-auto max-w-xl space-y-5 px-4 py-6">
+        <section className="flex flex-col items-center rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="relative">
+            <div className="h-28 w-28 rounded-full bg-gradient-to-br from-pink-400 via-purple-500 to-blue-400 p-[3px]">
+              <div className="relative h-full w-full overflow-hidden rounded-full border-4 border-white bg-gray-100">
+                {avatarUrl ? (
+                  <Image
+                    src={avatarUrl}
+                    alt="Photo de profil"
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-3xl font-bold text-moshi-purple">
+                    {username.charAt(0).toUpperCase() || "M"}
+                  </div>
+                )}
 
-              {uploading && (
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 text-white animate-spin" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            aria-label="Changer la photo de profil"
-            className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-moshi-purple disabled:opacity-50"
-          >
-            <Camera size={18} />
-          </button>
-
-          <input
-            type="file"
-            accept="image/*"
-            ref={fileInputRef}
-            onChange={handleAvatarUpload}
-            className="hidden"
-          />
-        </div>
-
-        <div className="w-full space-y-5">
-          <div>
-            <label className={labelClass}>Nom complet</label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className={inputClass}
-              placeholder="Ex : Moshi Shop"
-            />
-          </div>
-
-          <div>
-            <label className={labelClass}>Nom d'utilisateur (@)</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) =>
-                setUsername(e.target.value.toLowerCase().replace(/\s/g, ""))
-              }
-              className={inputClass}
-              placeholder="Ex : moshishop"
-            />
-          </div>
-
-          <div>
-            <div className="flex justify-between items-center">
-              <label className={labelClass}>Bio</label>
-              <span className="text-xs text-gray-400">
-                {bio.length}/150
-              </span>
-            </div>
-
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value.slice(0, 150))}
-              rows={3}
-              maxLength={150}
-              className={`${inputClass} resize-none`}
-              placeholder="Parle un peu de toi..."
-            />
-          </div>
-
-          <div>
-            <label className={labelClass}>Pays actuel</label>
-            <div className="relative">
-              <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={country}
-                readOnly
-                className={`${inputClass} pl-11 bg-gray-100 text-gray-500 cursor-not-allowed`}
-              />
+                {uploading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                    <Loader2 className="h-7 w-7 animate-spin text-white" />
+                  </div>
+                )}
+              </div>
             </div>
 
             <button
               type="button"
-              onClick={() => router.push("/support/report-problem?type=country")}
-              className="w-full mt-3 p-4 rounded-xl bg-white border border-gray-200 flex items-center justify-between text-left"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              aria-label="Changer la photo"
+              className="absolute bottom-0 right-0 flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-moshi-purple text-white shadow-md disabled:opacity-50"
             >
-              <div>
-                <p className="text-sm font-bold text-moshi-purple">
-                  Demander un changement de pays
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Une demande sera examinée par l’équipe Moshi.
-                </p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
+              <Camera className="h-5 w-5" />
             </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarUpload}
+              className="hidden"
+            />
           </div>
 
-          <div>
-            <label className={labelClass}>Lien personnel</label>
-            <div className="relative">
-              <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <p className="mt-4 text-sm font-bold text-gray-900">
+            Photo de profil
+          </p>
+          <p className="mt-1 text-center text-xs text-gray-500">
+            Image JPG, PNG ou WebP · 5 Mo maximum
+          </p>
+        </section>
+
+        <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
+              <UserRound className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-gray-900">Identité</h2>
+              <p className="text-xs text-gray-500">
+                Les informations principales de ton profil
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>Nom complet</label>
               <input
                 type="text"
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                className={`${inputClass} pl-11`}
-                placeholder="https://monsite.com"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className={inputClass}
+                placeholder="Ex : Moshi Shop"
+                maxLength={80}
               />
             </div>
-          </div>
 
-          <div className="pt-3 border-t border-gray-200">
-            <h2 className="font-bold text-sm text-moshi-text mb-1">
-              Réseaux sociaux
-            </h2>
-            <p className="text-xs text-gray-500 mb-4">
-              Ajoute tes comptes pour permettre aux visiteurs de te retrouver.
-            </p>
-
-            <div className="space-y-3">
-              <div>
-                <label className={labelClass}>Instagram</label>
+            <div>
+              <label className={labelClass}>Nom d'utilisateur</label>
+              <div className="relative">
+                <span className="absolute left-4 top-[22px] text-sm font-bold text-gray-400">
+                  @
+                </span>
                 <input
-                  value={instagramUrl}
-                  onChange={(e) => setInstagramUrl(e.target.value)}
-                  className={inputClass}
-                  placeholder="https://instagram.com/toncompte"
+                  type="text"
+                  value={username}
+                  onChange={(e) =>
+                    setUsername(
+                      e.target.value.toLowerCase().replace(/\s/g, "")
+                    )
+                  }
+                  className={`${inputClass} pl-9`}
+                  placeholder="moshishop"
+                  maxLength={30}
                 />
               </div>
-
-              <div>
-                <label className={labelClass}>TikTok</label>
-                <input
-                  value={tiktokUrl}
-                  onChange={(e) => setTiktokUrl(e.target.value)}
-                  className={inputClass}
-                  placeholder="https://tiktok.com/@toncompte"
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>YouTube</label>
-                <input
-                  value={youtubeUrl}
-                  onChange={(e) => setYoutubeUrl(e.target.value)}
-                  className={inputClass}
-                  placeholder="https://youtube.com/@toncompte"
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>Facebook</label>
-                <input
-                  value={facebookUrl}
-                  onChange={(e) => setFacebookUrl(e.target.value)}
-                  className={inputClass}
-                  placeholder="https://facebook.com/toncompte"
-                />
-              </div>
+              <p className="mt-2 text-xs text-gray-400">
+                Ton identifiant permet aux autres de te retrouver.
+              </p>
             </div>
           </div>
+        </section>
+
+        <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="font-bold text-gray-900">Biographie</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Présente-toi en quelques mots.
+          </p>
+
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value.slice(0, 150))}
+            rows={4}
+            maxLength={150}
+            className={`${inputClass} resize-none`}
+            placeholder="Parle un peu de toi..."
+          />
+
+          <div className="mt-2 text-right text-xs text-gray-400">
+            {bio.length}/150
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <Globe className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-gray-900">Pays</h2>
+              <p className="text-xs text-gray-500">
+                Pays associé à ton compte
+              </p>
+            </div>
+          </div>
+
+          <input
+            type="text"
+            value={country}
+            readOnly
+            className={`${inputClass} cursor-not-allowed bg-gray-100 text-gray-500`}
+          />
 
           <button
             type="button"
-            onClick={handleSave}
-            disabled={saving || uploading}
-            className="w-full py-3 rounded-xl bg-moshi-purple text-white font-bold text-sm disabled:opacity-50"
+            onClick={() =>
+              router.push("/support/report-problem?type=country")
+            }
+            className="mt-3 flex w-full items-center justify-between rounded-xl border border-gray-200 p-4 text-left transition hover:border-moshi-purple/40 hover:bg-purple-50/30"
           >
-            {saving ? "Enregistrement..." : "Enregistrer les modifications"}
+            <div>
+              <p className="text-sm font-bold text-moshi-purple">
+                Demander un changement de pays
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                L’équipe Moshi examinera ta demande.
+              </p>
+            </div>
+            <ChevronRight className="h-5 w-5 text-gray-400" />
           </button>
-        </div>
+        </section>
+
+        <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+              <LinkIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-gray-900">Lien personnel</h2>
+              <p className="text-xs text-gray-500">
+                Ton site ou ta page personnelle
+              </p>
+            </div>
+          </div>
+
+          <input
+            type="url"
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            className={inputClass}
+            placeholder="https://monsite.com"
+          />
+        </section>
+
+        <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="font-bold text-gray-900">Réseaux sociaux</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Ajoute tes comptes pour permettre aux visiteurs de te retrouver.
+          </p>
+
+          <div className="mt-5 space-y-4">
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <Instagram className="h-4 w-4" />
+                Instagram
+              </label>
+              <input
+                type="url"
+                value={instagramUrl}
+                onChange={(e) => setInstagramUrl(e.target.value)}
+                className={inputClass}
+                placeholder="https://instagram.com/toncompte"
+              />
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <Video className="h-4 w-4" />
+                TikTok
+              </label>
+              <input
+                type="url"
+                value={tiktokUrl}
+                onChange={(e) => setTiktokUrl(e.target.value)}
+                className={inputClass}
+                placeholder="https://tiktok.com/@toncompte"
+              />
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <Youtube className="h-4 w-4" />
+                YouTube
+              </label>
+              <input
+                type="url"
+                value={youtubeUrl}
+                onChange={(e) => setYoutubeUrl(e.target.value)}
+                className={inputClass}
+                placeholder="https://youtube.com/@toncompte"
+              />
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <Facebook className="h-4 w-4" />
+                Facebook
+              </label>
+              <input
+                type="url"
+                value={facebookUrl}
+                onChange={(e) => setFacebookUrl(e.target.value)}
+                className={inputClass}
+                placeholder="https://facebook.com/toncompte"
+              />
+            </div>
+          </div>
+        </section>
+
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || uploading}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-moshi-purple py-4 text-sm font-bold text-white shadow-lg shadow-purple-900/10 transition hover:opacity-90 disabled:opacity-50"
+        >
+          {saving ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <Save className="h-5 w-5" />
+          )}
+          {saving ? "Enregistrement..." : "Enregistrer les modifications"}
+        </button>
       </div>
-    </div>
+    </main>
   );
 }
