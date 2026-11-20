@@ -9,9 +9,9 @@ permissions:
 
 jobs:
   preview:
-    name: Tester Moshi sur le runtime Cloudflare
+    name: Tester les pages Moshi sur Cloudflare
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Télécharger le dépôt
@@ -35,10 +35,14 @@ jobs:
           PREVIEW_PID=$!
           trap 'kill $PREVIEW_PID 2>/dev/null || true' EXIT
 
+          READY=false
+
           for i in {1..60}; do
-            if curl --silent --fail http://127.0.0.1:8787/ -o /tmp/moshi-home.html; then
-              echo "Moshi répond correctement sur le runtime Cloudflare."
-              exit 0
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8787/ || true)
+
+            if [ "$STATUS" = "200" ]; then
+              READY=true
+              break
             fi
 
             if ! kill -0 "$PREVIEW_PID" 2>/dev/null; then
@@ -50,6 +54,49 @@ jobs:
             sleep 2
           done
 
-          echo "Le serveur n'a pas répondu dans le délai prévu."
-          cat preview.log
-          exit 1
+          if [ "$READY" != "true" ]; then
+            echo "Le serveur n'a pas démarré correctement."
+            cat preview.log
+            exit 1
+          fi
+
+          echo "Le Worker Cloudflare est démarré."
+
+          ROUTES=(
+            "/"
+            "/auth/login"
+            "/create"
+            "/live"
+            "/live/start"
+            "/messages"
+            "/notifications"
+            "/profile/me"
+            "/profile/edit"
+            "/settings"
+            "/shop"
+            "/seller"
+            "/seller/orders"
+            "/wallet"
+            "/admin"
+          )
+
+          FAILED=0
+
+          for ROUTE in "${ROUTES[@]}"; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8787${ROUTE}" || true)
+
+            if [[ "$STATUS" =~ ^[23][0-9][0-9]$ ]]; then
+              echo "OK $STATUS $ROUTE"
+            else
+              echo "ERREUR $STATUS $ROUTE"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "Certaines pages présentent des erreurs."
+            cat preview.log
+            exit 1
+          fi
+
+          echo "Toutes les pages testées répondent correctement."
