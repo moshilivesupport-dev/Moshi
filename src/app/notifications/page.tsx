@@ -1,11 +1,18 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, Bell, CheckCheck, Heart, MessageCircle,
-  UserPlus, Radio, Info, Loader2
+  ArrowLeft,
+  Bell,
+  CheckCheck,
+  Heart,
+  MessageCircle,
+  UserPlus,
+  Radio,
+  Info,
+  Loader2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -30,11 +37,16 @@ type NotificationItem = {
 
 function getIcon(type: string) {
   switch (type) {
-    case "follow": return UserPlus;
-    case "like": return Heart;
-    case "comment": return MessageCircle;
-    case "live": return Radio;
-    default: return Info;
+    case "follow":
+      return UserPlus;
+    case "like":
+      return Heart;
+    case "comment":
+      return MessageCircle;
+    case "live":
+      return Radio;
+    default:
+      return Info;
   }
 }
 
@@ -53,7 +65,8 @@ function timeAgo(date: string) {
 }
 
 export default function NotificationsPage() {
-  const supabase = createClient();
+  // Un seul client stable pendant toute la durée de vie du composant.
+  const supabase = useMemo(() => createClient(), []);
 
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,82 +75,91 @@ export default function NotificationsPage() {
 
   const unreadCount = items.filter((item) => !item.read).length;
 
-  const loadNotifications = useCallback(async (uid: string) => {
-    const { data, error: queryError } = await supabase
-      .from("notifications")
-      .select(`
-        id,
-        to_user_id,
-        from_user_id,
-        type,
-        video_id,
-        message,
-        read,
-        created_at
-      `)
-      .eq("to_user_id", uid)
-      .order("created_at", { ascending: false })
-      .limit(100);
+  const loadNotifications = useCallback(
+    async (uid: string) => {
+      const { data, error: queryError } = await supabase
+        .from("notifications")
+        .select(`
+          id,
+          to_user_id,
+          from_user_id,
+          type,
+          video_id,
+          message,
+          read,
+          created_at
+        `)
+        .eq("to_user_id", uid)
+        .order("created_at", { ascending: false })
+        .limit(100);
 
-    if (queryError) {
-      setError(queryError.message);
-      return;
-    }
-
-    const notifications = (data || []) as NotificationItem[];
-    const actorIds = Array.from(
-      new Set(
-        notifications
-          .map((item) => item.from_user_id)
-          .filter((id): id is string => Boolean(id))
-      )
-    );
-
-    let actors: Actor[] = [];
-
-    if (actorIds.length > 0) {
-      const { data: profiles, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, username, full_name, avatar_url")
-        .in("id", actorIds);
-
-      if (profileError) {
-        setError(profileError.message);
-      } else {
-        actors = (profiles || []) as Actor[];
+      if (queryError) {
+        setError(queryError.message);
+        return;
       }
-    }
 
-    const actorMap = new Map(actors.map((actor) => [actor.id, actor]));
+      const notifications = (data || []) as NotificationItem[];
 
-    setItems(
-      notifications.map((item) => ({
-        ...item,
-        actor: item.from_user_id
-          ? actorMap.get(item.from_user_id) || null
-          : null,
-      }))
-    );
+      const actorIds = Array.from(
+        new Set(
+          notifications
+            .map((item) => item.from_user_id)
+            .filter((id): id is string => Boolean(id))
+        )
+      );
 
-    setError("");
-  }, [supabase]);
+      let actors: Actor[] = [];
+
+      if (actorIds.length > 0) {
+        const { data: profiles, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, username, full_name, avatar_url")
+          .in("id", actorIds);
+
+        if (profileError) {
+          setError(profileError.message);
+        } else {
+          actors = (profiles || []) as Actor[];
+        }
+      }
+
+      const actorMap = new Map(
+        actors.map((actor) => [actor.id, actor])
+      );
+
+      setItems(
+        notifications.map((item) => ({
+          ...item,
+          actor: item.from_user_id
+            ? actorMap.get(item.from_user_id) || null
+            : null,
+        }))
+      );
+
+      setError("");
+    },
+    [supabase]
+  );
 
   useEffect(() => {
     let active = true;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function initialize() {
-      const { data, error: authError } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
       if (!active) return;
 
-      if (authError || !data.user) {
+      if (authError || !user) {
         setError("Connecte-toi pour consulter tes notifications.");
         setLoading(false);
         return;
       }
 
-      const uid = data.user.id;
+      const uid = user.id;
       setUserId(uid);
 
       await loadNotifications(uid);
@@ -158,7 +180,13 @@ export default function NotificationsPage() {
             void loadNotifications(uid);
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === "CHANNEL_ERROR") {
+            console.error(
+              "Erreur de synchronisation des notifications."
+            );
+          }
+        });
 
       setLoading(false);
     }
@@ -167,7 +195,10 @@ export default function NotificationsPage() {
 
     return () => {
       active = false;
-      if (channel) void supabase.removeChannel(channel);
+
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
   }, [supabase, loadNotifications]);
 
@@ -175,6 +206,7 @@ export default function NotificationsPage() {
     if (!userId) return;
 
     const previous = items;
+
     setItems((current) =>
       current.map((item) =>
         item.id === id ? { ...item, read: true } : item
@@ -197,8 +229,12 @@ export default function NotificationsPage() {
     if (!userId || unreadCount === 0) return;
 
     const previous = items;
+
     setItems((current) =>
-      current.map((item) => ({ ...item, read: true }))
+      current.map((item) => ({
+        ...item,
+        read: true,
+      }))
     );
 
     const { error: updateError } = await supabase
@@ -214,7 +250,9 @@ export default function NotificationsPage() {
   }
 
   function getNotificationLink(item: NotificationItem) {
-    if (item.video_id) return `/videos/${item.video_id}`;
+    if (item.video_id) {
+      return `/videos/${item.video_id}`;
+    }
 
     if (item.from_user_id) {
       return `/profile/${item.from_user_id}`;
@@ -239,6 +277,7 @@ export default function NotificationsPage() {
             <h1 className="text-lg font-bold text-gray-900">
               Notifications
             </h1>
+
             <p className="text-xs text-gray-500">
               {unreadCount} non lue{unreadCount > 1 ? "s" : ""}
             </p>
@@ -272,9 +311,11 @@ export default function NotificationsPage() {
             <div className="mb-4 rounded-full bg-purple-100 p-5">
               <Bell className="h-8 w-8 text-purple-600" />
             </div>
+
             <h2 className="font-bold text-gray-900">
               Aucune notification
             </h2>
+
             <p className="mt-1 text-sm text-gray-500">
               Tes nouvelles notifications apparaîtront ici.
             </p>
@@ -283,6 +324,7 @@ export default function NotificationsPage() {
           <div className="space-y-2">
             {items.map((item) => {
               const Icon = getIcon(item.type);
+
               const actorName =
                 item.actor?.full_name ||
                 item.actor?.username ||
@@ -317,8 +359,11 @@ export default function NotificationsPage() {
                       {item.from_user_id && (
                         <strong>{actorName} </strong>
                       )}
-                      {item.message || "Tu as une nouvelle notification."}
+
+                      {item.message ||
+                        "Tu as une nouvelle notification."}
                     </p>
+
                     <p className="mt-1 text-xs text-gray-400">
                       {timeAgo(item.created_at)}
                     </p>
@@ -338,7 +383,9 @@ export default function NotificationsPage() {
                     <Link
                       href={href}
                       onClick={() => {
-                        if (!item.read) void markAsRead(item.id);
+                        if (!item.read) {
+                          void markAsRead(item.id);
+                        }
                       }}
                     >
                       {content}
@@ -347,7 +394,9 @@ export default function NotificationsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (!item.read) void markAsRead(item.id);
+                        if (!item.read) {
+                          void markAsRead(item.id);
+                        }
                       }}
                       className="block w-full text-left"
                     >
