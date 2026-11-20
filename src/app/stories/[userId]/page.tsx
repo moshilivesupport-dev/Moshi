@@ -4,7 +4,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Trash2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  Trash2,
+  X,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface Story {
@@ -42,15 +47,22 @@ export default function StoryViewerPage() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressRef = useRef(0);
 
   const currentStory = stories[index];
   const isOwner = !!currentUserId && currentUserId === userId;
+  const isVideo = currentStory?.media_type === "video";
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+  }, []);
+
+  const resetProgress = useCallback(() => {
+    progressRef.current = 0;
+    setProgress(0);
   }, []);
 
   const goBack = useCallback(() => {
@@ -60,7 +72,7 @@ export default function StoryViewerPage() {
 
   const nextStory = useCallback(() => {
     stopTimer();
-    setProgress(0);
+    resetProgress();
     setPaused(false);
 
     if (index < stories.length - 1) {
@@ -68,14 +80,19 @@ export default function StoryViewerPage() {
     } else {
       goBack();
     }
-  }, [goBack, index, stories.length, stopTimer]);
+  }, [goBack, index, resetProgress, stories.length, stopTimer]);
 
   const previousStory = useCallback(() => {
+    if (index === 0) {
+      resetProgress();
+      return;
+    }
+
     stopTimer();
-    setProgress(0);
+    resetProgress();
     setPaused(false);
-    setIndex((previous) => Math.max(0, previous - 1));
-  }, [stopTimer]);
+    setIndex((previous) => previous - 1);
+  }, [index, resetProgress, stopTimer]);
 
   useEffect(() => {
     let active = true;
@@ -120,49 +137,64 @@ export default function StoryViewerPage() {
       setLoading(false);
     }
 
-    if (userId) loadStories();
+    if (userId) {
+      loadStories();
+    } else {
+      setLoading(false);
+    }
 
     return () => {
       active = false;
     };
   }, [supabase, userId]);
 
+  // Remettre la progression à zéro uniquement lors d'un changement de story.
+  useEffect(() => {
+    resetProgress();
+    setPaused(false);
+  }, [currentStory?.id, resetProgress]);
+
+  // Chronomètre des photos : conserve la progression pendant une pause.
   useEffect(() => {
     stopTimer();
-    setProgress(0);
-    setPaused(false);
 
-    if (!currentStory || currentStory.media_type === "video" || paused) {
+    if (!currentStory || isVideo || paused) {
       return;
     }
 
     const duration = Math.max(3, currentStory.duration || 5);
-    const startedAt = Date.now();
+    const initialProgress = progressRef.current;
+    const startTime =
+      Date.now() - (initialProgress / 100) * duration * 1000;
 
     timerRef.current = setInterval(() => {
-      const elapsed = (Date.now() - startedAt) / 1000;
+      const elapsed = (Date.now() - startTime) / 1000;
       const value = Math.min(100, (elapsed / duration) * 100);
 
+      progressRef.current = value;
       setProgress(value);
 
       if (value >= 100) {
+        stopTimer();
         nextStory();
       }
     }, 50);
 
     return stopTimer;
-  }, [currentStory, index, paused, nextStory, stopTimer]);
+  }, [currentStory?.id, isVideo, paused, nextStory, stopTimer]);
 
+  // Lecture et pause des vidéos.
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+
+    if (!video || !isVideo) return;
 
     if (paused) {
       video.pause();
-    } else if (currentStory?.media_type === "video") {
+    } else {
       video.play().catch(() => {});
     }
-  }, [paused, currentStory, index]);
+  }, [paused, currentStory?.id, isVideo]);
 
   useEffect(() => {
     return () => stopTimer();
@@ -191,7 +223,9 @@ export default function StoryViewerPage() {
       return;
     }
 
-    const remaining = stories.filter((story) => story.id !== currentStory.id);
+    const remaining = stories.filter(
+      (story) => story.id !== currentStory.id
+    );
 
     if (remaining.length === 0) {
       goBack();
@@ -200,7 +234,7 @@ export default function StoryViewerPage() {
 
     setStories(remaining);
     setIndex(Math.min(index, remaining.length - 1));
-    setProgress(0);
+    resetProgress();
     setDeleting(false);
   };
 
@@ -231,8 +265,6 @@ export default function StoryViewerPage() {
       </div>
     );
   }
-
-  const isVideo = currentStory.media_type === "video";
 
   return (
     <main className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white">
@@ -308,10 +340,7 @@ export default function StoryViewerPage() {
           </div>
         </div>
 
-        <div
-          className="relative mx-auto aspect-video w-full overflow-hidden bg-black"
-          onDoubleClick={() => setPaused((value) => !value)}
-        >
+        <div className="relative mx-auto aspect-video w-full overflow-hidden bg-black">
           {isVideo ? (
             <video
               key={currentStory.id}
@@ -322,8 +351,13 @@ export default function StoryViewerPage() {
               playsInline
               onTimeUpdate={(event) => {
                 const video = event.currentTarget;
+
                 if (video.duration > 0) {
-                  setProgress((video.currentTime / video.duration) * 100);
+                  const value =
+                    (video.currentTime / video.duration) * 100;
+
+                  progressRef.current = value;
+                  setProgress(value);
                 }
               }}
               onEnded={nextStory}
@@ -343,26 +377,20 @@ export default function StoryViewerPage() {
           <button
             aria-label="Story précédente"
             onClick={previousStory}
-            className="absolute bottom-0 left-0 top-0 z-10 flex w-[25%] items-center justify-start pl-3"
-          >
-            {index > 0 && <ChevronLeft className="opacity-0" size={24} />}
-          </button>
+            className="absolute bottom-0 left-0 top-0 z-10 w-1/4"
+          />
 
           <button
             aria-label="Story suivante"
             onClick={nextStory}
-            className="absolute bottom-0 right-0 top-0 z-10 flex w-[25%] items-center justify-end pr-3"
-          >
-            <ChevronRight className="opacity-0" size={24} />
-          </button>
+            className="absolute bottom-0 right-0 top-0 z-10 w-1/4"
+          />
 
-          {!isVideo && (
-            <button
-              aria-label={paused ? "Reprendre" : "Mettre en pause"}
-              onClick={() => setPaused((value) => !value)}
-              className="absolute inset-y-0 left-1/4 right-1/4 z-20"
-            />
-          )}
+          <button
+            aria-label={paused ? "Reprendre" : "Mettre en pause"}
+            onClick={() => setPaused((value) => !value)}
+            className="absolute bottom-0 left-1/4 right-1/4 top-0 z-20"
+          />
 
           {paused && (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/20">
@@ -373,13 +401,13 @@ export default function StoryViewerPage() {
           )}
 
           {currentStory.caption && (
-            <div className="absolute bottom-4 left-4 right-4 z-30 rounded-xl bg-black/40 px-4 py-3 text-center text-sm">
+            <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-30 rounded-xl bg-black/40 px-4 py-3 text-center text-sm">
               {currentStory.caption}
             </div>
           )}
         </div>
 
-        <div className="absolute bottom-5 left-0 right-0 z-30 flex justify-center gap-3 px-4">
+        <div className="absolute bottom-5 left-0 right-0 z-30 flex justify-center px-4">
           <button
             onClick={goBack}
             className="rounded-full border border-white/20 bg-black/50 px-5 py-2 text-sm font-semibold backdrop-blur"
