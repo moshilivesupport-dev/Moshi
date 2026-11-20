@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import Image from "next/image";
-import { X, Send, Loader2 } from "lucide-react";
+import { X, Send, Loader2, MessageCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface CommentProfile {
@@ -32,6 +32,37 @@ interface CommentsSheetProps {
   onCommentAdded?: (videoId: string) => void;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = String(error.message);
+
+    if (
+      message.toLowerCase().includes("row-level security") ||
+      message.toLowerCase().includes("policy")
+    ) {
+      return "Supabase refuse l'envoi du commentaire. Vérifie les autorisations de commentaires.";
+    }
+
+    if (
+      message.toLowerCase().includes("jwt") ||
+      message.toLowerCase().includes("token")
+    ) {
+      return "Ta session a expiré. Reconnecte-toi pour commenter.";
+    }
+
+    if (
+      message.toLowerCase().includes("foreign key") ||
+      message.toLowerCase().includes("violates")
+    ) {
+      return "Ton compte ou cette vidéo n'est pas correctement associé. Réessaie après reconnexion.";
+    }
+
+    return message;
+  }
+
+  return "Une erreur inattendue est survenue. Réessaie.";
+}
+
 export default function CommentsSheet({
   videoId,
   onClose,
@@ -39,18 +70,18 @@ export default function CommentsSheet({
 }: CommentsSheetProps) {
   const supabase = useMemo(() => createClient(), []);
   const callbackRef = useRef(onCommentAdded);
-
-  // Référence des commentaires déjà traités.
-  // Évite les doublons entre l'insertion locale et Realtime.
   const knownCommentIds = useRef<Set<string>>(new Set());
+  const sendingRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-  } | null>(null);
-  const [userProfile, setUserProfile] =
-    useState<CommentProfile | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(
+    null
+  );
+  const [userProfile, setUserProfile] = useState<CommentProfile | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -82,28 +113,24 @@ export default function CommentsSheet({
         if (authError) throw authError;
         if (signal.cancelled) return;
 
-        const connectedUser = user ? { id: user.id } : null;
-
-        setCurrentUser(connectedUser);
+        setCurrentUser(user ? { id: user.id } : null);
         setAuthReady(true);
 
         let ownProfile: CommentProfile | null = null;
 
         if (user) {
-          const { data: profile, error: profileError } =
-            await supabase
-              .from("profiles")
-              .select("username, full_name, avatar_url")
-              .eq("id", user.id)
-              .maybeSingle();
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("username, full_name, avatar_url")
+            .eq("id", user.id)
+            .maybeSingle();
 
-          if (profileError) throw profileError;
+          if (error) throw error;
 
-          ownProfile = profile ?? null;
+          ownProfile = data ?? null;
         }
 
         if (signal.cancelled) return;
-
         setUserProfile(ownProfile);
 
         const { data, error } = await supabase
@@ -116,18 +143,14 @@ export default function CommentsSheet({
         if (signal.cancelled) return;
 
         const rows = data ?? [];
-        const userIds = [
-          ...new Set(rows.map((item) => item.user_id)),
-        ];
-
+        const userIds = [...new Set(rows.map((row) => row.user_id))];
         const profilesMap: Record<string, CommentProfile> = {};
 
         if (userIds.length > 0) {
-          const { data: profiles, error: profilesError } =
-            await supabase
-              .from("profiles")
-              .select("id, username, full_name, avatar_url")
-              .in("id", userIds);
+          const { data: profiles, error: profilesError } = await supabase
+            .from("profiles")
+            .select("id, username, full_name, avatar_url")
+            .in("id", userIds);
 
           if (profilesError) throw profilesError;
           if (signal.cancelled) return;
@@ -143,32 +166,29 @@ export default function CommentsSheet({
 
         if (signal.cancelled) return;
 
-        const loadedComments: Comment[] = rows.map((item) => ({
-          ...item,
-          profiles: profilesMap[item.user_id] ?? null,
+        const loaded: Comment[] = rows.map((row) => ({
+          ...row,
+          profiles: profilesMap[row.user_id] ?? null,
         }));
 
         knownCommentIds.current = new Set(
-          loadedComments.map((item) => item.id)
+          loaded.map((comment) => comment.id)
         );
 
-        setComments(loadedComments);
+        setComments(loaded);
       } catch (error) {
         if (signal.cancelled) return;
 
-        console.error("Erreur chargement commentaires :", error);
-        setErrorMessage("Impossible de charger les commentaires.");
+        console.error("Chargement des commentaires :", error);
+        setErrorMessage(getErrorMessage(error));
         setAuthReady(true);
       } finally {
-        if (!signal.cancelled) {
-          setLoading(false);
-        }
+        if (!signal.cancelled) setLoading(false);
       }
     },
     [supabase, videoId]
   );
 
-  // Chargement avec véritable nettoyage du cycle React.
   useEffect(() => {
     const signal = { cancelled: false };
 
@@ -179,14 +199,14 @@ export default function CommentsSheet({
     };
   }, [loadComments]);
 
-  // Abonnement Realtime aux nouveaux commentaires et suppressions.
+  // Synchronisation en temps réel.
   useEffect(() => {
     if (!authReady) return;
 
     let active = true;
 
     const channel = supabase
-      .channel(`video-comments-${videoId}`)
+      .channel(`comments-${videoId}`)
       .on(
         "postgres_changes",
         {
@@ -201,15 +221,10 @@ export default function CommentsSheet({
             content: string;
             created_at: string;
             user_id: string;
-            video_id: string;
           };
 
-          if (!active || knownCommentIds.current.has(row.id)) {
-            return;
-          }
+          if (!active || knownCommentIds.current.has(row.id)) return;
 
-          // Marquer immédiatement l'identifiant pour éviter
-          // qu'un événement répété soit traité deux fois.
           knownCommentIds.current.add(row.id);
 
           const { data: profile } = await supabase
@@ -220,7 +235,7 @@ export default function CommentsSheet({
 
           if (!active) return;
 
-          const newItem: Comment = {
+          const item: Comment = {
             id: row.id,
             content: row.content,
             created_at: row.created_at,
@@ -229,45 +244,21 @@ export default function CommentsSheet({
           };
 
           setComments((previous) => {
-            if (previous.some((item) => item.id === newItem.id)) {
+            if (previous.some((comment) => comment.id === item.id)) {
               return previous;
             }
 
-            return sortComments([...previous, newItem]);
+            return sortComments([...previous, item]);
           });
 
-          // Le commentaire de l'utilisateur courant est déjà
-          // compté localement après l'insertion.
           if (row.user_id !== currentUser?.id) {
             callbackRef.current?.(videoId);
           }
         }
       )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "video_comments",
-          filter: `video_id=eq.${videoId}`,
-        },
-        (payload) => {
-          const deleted = payload.old as { id?: string };
-
-          if (!deleted.id || !active) return;
-
-          knownCommentIds.current.delete(deleted.id);
-
-          setComments((previous) =>
-            previous.filter((item) => item.id !== deleted.id)
-          );
-        }
-      )
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn(
-            "Synchronisation des commentaires momentanément indisponible."
-          );
+          console.warn("Realtime commentaires indisponible :", status);
         }
       });
 
@@ -275,35 +266,42 @@ export default function CommentsSheet({
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [
-    supabase,
-    videoId,
-    currentUser?.id,
-    authReady,
-    sortComments,
-  ]);
+  }, [supabase, videoId, currentUser?.id, authReady, sortComments]);
 
   const handleSend = async () => {
     const content = newComment.trim();
 
-    if (
-      !content ||
-      !currentUser ||
-      sending ||
-      content.length > 500
-    ) {
+    if (!content || content.length > 500 || sendingRef.current) return;
+
+    setErrorMessage("");
+
+    if (!currentUser) {
+      setErrorMessage("Connecte-toi pour publier un commentaire.");
       return;
     }
 
+    sendingRef.current = true;
     setSending(true);
-    setErrorMessage("");
 
     try {
+      // Vérifier la session avant l'insertion.
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+
+      if (!user || user.id !== currentUser.id) {
+        setCurrentUser(user ? { id: user.id } : null);
+        throw new Error("Ta session a expiré. Reconnecte-toi.");
+      }
+
       const { data, error } = await supabase
         .from("video_comments")
         .insert({
           video_id: videoId,
-          user_id: currentUser.id,
+          user_id: user.id,
           content,
         })
         .select("id, content, created_at, user_id")
@@ -311,23 +309,20 @@ export default function CommentsSheet({
 
       if (error) throw error;
 
-      const newItem: Comment = {
+      const item: Comment = {
         ...data,
         profiles: userProfile,
       };
 
-      // Enregistrer l'ID avant la mise à jour locale :
-      // l'événement Realtime ne comptera donc pas deux fois.
-      const isNew = !knownCommentIds.current.has(newItem.id);
-
-      knownCommentIds.current.add(newItem.id);
+      const isNew = !knownCommentIds.current.has(item.id);
+      knownCommentIds.current.add(item.id);
 
       setComments((previous) => {
-        if (previous.some((item) => item.id === newItem.id)) {
+        if (previous.some((comment) => comment.id === item.id)) {
           return previous;
         }
 
-        return sortComments([...previous, newItem]);
+        return sortComments([...previous, item]);
       });
 
       setNewComment("");
@@ -336,19 +331,18 @@ export default function CommentsSheet({
         callbackRef.current?.(videoId);
       }
     } catch (error) {
-      console.error("Erreur envoi commentaire :", error);
-      setErrorMessage(
-        "Impossible d'envoyer le commentaire. Réessaie."
-      );
+      console.error("Erreur détaillée envoi commentaire :", error);
+      setErrorMessage(getErrorMessage(error));
     } finally {
+      sendingRef.current = false;
       setSending(false);
+      inputRef.current?.focus();
     }
   };
 
   const formatDate = (date: string) => {
     const value = new Date(date);
-    const now = Date.now();
-    const difference = Math.max(0, now - value.getTime());
+    const difference = Math.max(0, Date.now() - value.getTime());
 
     const minutes = Math.floor(difference / 60000);
     const hours = Math.floor(difference / 3600000);
@@ -400,9 +394,12 @@ export default function CommentsSheet({
               <Loader2 className="animate-spin text-moshi-purple" />
             </div>
           ) : comments.length === 0 ? (
-            <p className="py-10 text-center text-sm text-gray-400">
-              Sois le premier à commenter !
-            </p>
+            <div className="flex flex-col items-center gap-2 py-10 text-gray-400">
+              <MessageCircle size={32} />
+              <p className="text-center text-sm">
+                Sois le premier à commenter !
+              </p>
+            </div>
           ) : (
             comments.map((comment) => {
               const name =
@@ -452,9 +449,9 @@ export default function CommentsSheet({
 
         <footer className="border-t border-gray-100 bg-white p-3 pb-safe">
           {errorMessage && (
-            <p className="mb-2 text-center text-xs text-red-500">
+            <div className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600 break-words">
               {errorMessage}
-            </p>
+            </div>
           )}
 
           {!authReady ? (
@@ -472,21 +469,20 @@ export default function CommentsSheet({
             <>
               <div className="flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2">
                 <input
+                  ref={inputRef}
                   type="text"
                   maxLength={500}
                   placeholder="Ajouter un commentaire..."
                   value={newComment}
                   disabled={sending}
-                  onChange={(event) =>
-                    setNewComment(event.target.value)
-                  }
+                  onChange={(event) => setNewComment(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
+                    if (event.key === "Enter") {
                       event.preventDefault();
                       void handleSend();
                     }
                   }}
-                  className="flex-1 bg-transparent text-sm outline-none disabled:opacity-50"
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none disabled:opacity-50"
                 />
 
                 <button
@@ -497,10 +493,7 @@ export default function CommentsSheet({
                   className="p-1 text-moshi-purple disabled:opacity-40"
                 >
                   {sending ? (
-                    <Loader2
-                      size={20}
-                      className="animate-spin"
-                    />
+                    <Loader2 size={20} className="animate-spin" />
                   ) : (
                     <Send size={20} />
                   )}
