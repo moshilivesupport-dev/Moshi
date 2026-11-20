@@ -54,6 +54,8 @@ export default function LiveKitRoomComponent({
       try {
         setLoading(true);
         setError("");
+        setTokenData(null);
+        onControlsReady?.(null);
 
         const params = new URLSearchParams({
           room: roomName,
@@ -79,9 +81,12 @@ export default function LiveKitRoomComponent({
           throw new Error("Réponse LiveKit incomplète.");
         }
 
-        if (!controller.signal.aborted) setTokenData(data);
+        if (!controller.signal.aborted) {
+          setTokenData(data);
+        }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
+
         if (!controller.signal.aborted) {
           setError(
             err instanceof Error ? err.message : "Une erreur est survenue."
@@ -93,8 +98,11 @@ export default function LiveKitRoomComponent({
     }
 
     void getToken();
-    return () => controller.abort();
-  }, [roomName, participantName]);
+
+    return () => {
+      controller.abort();
+    };
+  }, [roomName, participantName, onControlsReady]);
 
   useEffect(() => {
     return () => onControlsReady?.(null);
@@ -134,8 +142,10 @@ export default function LiveKitRoomComponent({
       className="absolute inset-0 h-full w-full bg-black"
     >
       <RoomAudioRenderer />
+
       <LiveVideoLayout
         hostId={tokenData.hostId}
+        canPublish={tokenData.canPublish}
         onControlsReady={onControlsReady}
       />
     </LiveKitRoom>
@@ -144,9 +154,11 @@ export default function LiveKitRoomComponent({
 
 function LiveVideoLayout({
   hostId,
+  canPublish,
   onControlsReady,
 }: {
   hostId: string;
+  canPublish: boolean;
   onControlsReady?: (controls: LiveMediaControls | null) => void;
 }) {
   const { localParticipant } = useLocalParticipant();
@@ -183,6 +195,8 @@ function LiveVideoLayout({
   );
 
   async function toggleCamera() {
+    if (!canPublish) return;
+
     try {
       const next = !localParticipant.isCameraEnabled;
       await localParticipant.setCameraEnabled(next);
@@ -193,6 +207,8 @@ function LiveVideoLayout({
   }
 
   async function toggleMicrophone() {
+    if (!canPublish) return;
+
     try {
       const next = !localParticipant.isMicrophoneEnabled;
       await localParticipant.setMicrophoneEnabled(next);
@@ -203,16 +219,22 @@ function LiveVideoLayout({
   }
 
   useEffect(() => {
+    if (!canPublish) {
+      onControlsReady?.(null);
+      return;
+    }
+
     setCameraEnabled(localParticipant.isCameraEnabled);
     setMicrophoneEnabled(localParticipant.isMicrophoneEnabled);
 
     onControlsReady?.({
-      microphoneEnabled,
-      cameraEnabled,
+      microphoneEnabled: localParticipant.isMicrophoneEnabled,
+      cameraEnabled: localParticipant.isCameraEnabled,
       toggleMicrophone,
       toggleCamera,
     });
   }, [
+    canPublish,
     localParticipant,
     microphoneEnabled,
     cameraEnabled,
@@ -248,6 +270,7 @@ function LiveVideoLayout({
                 trackRef={track}
                 className="h-full w-full object-cover"
               />
+
               <div className="absolute bottom-0 left-0 right-0 truncate bg-black/60 px-1 py-1 text-center text-[9px] text-white">
                 {track.participant.name || "Invité"}
               </div>
