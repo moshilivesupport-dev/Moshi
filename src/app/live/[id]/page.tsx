@@ -47,6 +47,8 @@ import { cn, getFlag } from "@/lib/utils";
 import GiftPanel from "@/components/live/GiftPanel";
 import GiftAnimation from "@/components/live/GiftAnimation";
 import Soundboard from "@/components/live/Soundboard";
+import LiveInvitePanel from "@/components/live/LiveInvitePanel";
+import LiveMatchPanel from "@/components/live/LiveMatchPanel";
 
 import type { LiveMediaControls } from "@/components/live/LiveKitRoom";
 
@@ -244,11 +246,11 @@ export default function LiveRoomPage() {
 
           const { data: wallet } = await supabase
             .from("wallets")
-            .select("balance")
+            .select("coins_balance")
             .eq("user_id", user.id)
             .maybeSingle();
 
-          setWalletBalance(Number(wallet?.balance || 0));
+          setWalletBalance(Number(wallet?.coins_balance || 0));
 
           if (user.id !== liveData.host_id) {
             const { data: follow } = await supabase
@@ -503,31 +505,20 @@ export default function LiveRoomPage() {
     }
 
     try {
-      const { error: giftError } = await supabase
-        .from("live_gifts")
-        .insert({
-          live_id: live.id,
-          gift_id: gift.id,
-          sender_id: currentUser.id,
-          recipient_id: live.host_id,
-          quantity: safeQuantity,
-          total_price: totalPrice,
-        });
+      const { data: giftResult, error: giftError } = await supabase.rpc(
+        "send_live_gift",
+        {
+          p_live_id: live.id,
+          p_gift_id: gift.id,
+          p_quantity: safeQuantity,
+        }
+      );
 
       if (giftError) throw giftError;
 
-      const newBalance = walletBalance - totalPrice;
-
-      const { error: walletError } = await supabase
-        .from("wallets")
-        .update({ balance: newBalance })
-        .eq("user_id", currentUser.id);
-
-      if (walletError) {
-        throw new Error(
-          "Cadeau enregistré, mais le portefeuille n'a pas été mis à jour."
-        );
-      }
+      const newBalance = Number(
+        giftResult?.coins_balance ?? walletBalance - totalPrice
+      );
 
       setWalletBalance(newBalance);
 
@@ -567,6 +558,7 @@ export default function LiveRoomPage() {
     } catch (error: any) {
       console.error("Erreur cadeau :", error);
       alert(error?.message || "Impossible d'envoyer le cadeau.");
+      throw error;
     }
   };
 
@@ -601,7 +593,6 @@ export default function LiveRoomPage() {
     router.push(`/shop/${live.product.id}`);
   };
 
-  // CHARGEMENT
   if (loading) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-black">
@@ -634,7 +625,6 @@ export default function LiveRoomPage() {
       className="fixed inset-0 z-[100] h-[100dvh] w-full overflow-hidden bg-black text-white"
       onClick={handleScreenTap}
     >
-      {/* VIDÉO EN PLEIN ÉCRAN */}
       <LiveKitRoomComponent
         roomName={`live-${live.id}`}
         participantName={userName}
@@ -642,10 +632,8 @@ export default function LiveRoomPage() {
         onControlsReady={setMediaControls}
       />
 
-      {/* VOILE DE LECTURE POUR LES TEXTES */}
       <div className="pointer-events-none absolute inset-0 z-[5] bg-gradient-to-b from-black/45 via-transparent to-black/65" />
 
-      {/* ANIMATION DES CADEAUX */}
       {activeGiftAnimation && (
         <GiftAnimation
           key={activeGiftAnimation.id}
@@ -654,7 +642,6 @@ export default function LiveRoomPage() {
         />
       )}
 
-      {/* EN-TÊTE : LOGO */}
       <header className="pointer-events-none absolute left-0 right-0 top-0 z-30 px-4 pt-[max(env(safe-area-inset-top),14px)]">
         <div className="flex items-center justify-between">
           <Image
@@ -685,13 +672,8 @@ export default function LiveRoomPage() {
           )}
         </div>
 
-        {/* PROFIL + TOP DONATEURS + STATISTIQUES */}
         <div className="pointer-events-auto mt-3 grid grid-cols-[1.25fr_1fr_auto] items-center gap-2">
-
-          {/* PROFIL DE L'HÔTE */}
           <div className="flex min-w-0 items-center gap-2 rounded-full bg-black/35 p-1.5 backdrop-blur-md">
-
-            {/* PHOTO ET NOM CLIQUABLES */}
             <Link
               href={`/profile/${live.host_id}?returnToLive=${live.id}`}
               className="flex min-w-0 flex-1 items-center gap-2"
@@ -729,7 +711,6 @@ export default function LiveRoomPage() {
               </div>
             </Link>
 
-            {/* BOUTON SUIVRE */}
             {!isHost && (
               <button
                 onClick={handleFollow}
@@ -741,7 +722,6 @@ export default function LiveRoomPage() {
             )}
           </div>
 
-          {/* TOP DONATEURS */}
           <div className="flex min-w-0 flex-col items-center">
             <p className="mb-1 whitespace-nowrap text-[9px] font-semibold text-white">
               👑 Top donateurs
@@ -778,7 +758,6 @@ export default function LiveRoomPage() {
             </div>
           </div>
 
-          {/* STATISTIQUES */}
           <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-black/35 px-2.5 py-2 backdrop-blur-md">
             <div className="flex items-center gap-1.5 text-xs font-bold">
               <Eye size={14} />
@@ -799,7 +778,6 @@ export default function LiveRoomPage() {
         )}
       </header>
 
-      {/* CŒURS MOSHI */}
       <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
         {hearts.map((heart) => {
           const gradientId = `heart-${String(heart.id).replace(/[^a-zA-Z0-9]/g, "")}`;
@@ -839,7 +817,6 @@ export default function LiveRoomPage() {
         })}
       </div>
 
-      {/* COMMENTAIRES */}
       <section className="pointer-events-none absolute bottom-[190px] left-4 z-30 flex max-h-[23vh] w-[76%] flex-col justify-end gap-2 overflow-hidden">
         {messages.slice(-5).map((message) => (
           <div key={message.id} className="flex items-center gap-2">
@@ -877,7 +854,6 @@ export default function LiveRoomPage() {
         <div ref={chatEndRef} />
       </section>
 
-      {/* PRODUIT ÉPINGLÉ : VENDEUR */}
       {live.product && (
         <div className="pointer-events-auto absolute bottom-[145px] left-4 right-4 z-40">
           <button
@@ -918,7 +894,6 @@ export default function LiveRoomPage() {
         </div>
       )}
 
-      {/* ZONE DE DISCUSSION + CADEAU */}
       <div
         className={cn(
           "pointer-events-auto absolute left-4 right-4 z-40 flex items-center gap-2",
@@ -958,7 +933,6 @@ export default function LiveRoomPage() {
         </button>
       </div>
 
-      {/* BARRE DES COMMANDES */}
       <nav className="absolute bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/10 bg-black/35 px-2 pb-[max(env(safe-area-inset-bottom),12px)] pt-3 backdrop-blur-xl">
         <button
           onClick={() => void mediaControls?.toggleMicrophone()}
@@ -983,7 +957,7 @@ export default function LiveRoomPage() {
         </button>
 
         <button
-          onClick={handleShare}
+          onClick={() => window.dispatchEvent(new Event("moshi-open-invite"))}
           className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white"
         >
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
@@ -1013,7 +987,6 @@ export default function LiveRoomPage() {
         </button>
       </nav>
 
-      {/* MENU PLUS */}
       {isMoreOpen && (
         <div
           className="absolute inset-0 z-[70] flex items-end bg-black/55"
@@ -1093,15 +1066,27 @@ export default function LiveRoomPage() {
         </div>
       )}
 
-      {/* PANNEAU CADEAUX */}
+      <LiveInvitePanel
+        liveId={live.id}
+        currentUserId={currentUser?.id ?? null}
+        isHost={isHost}
+      />
+
+      <LiveMatchPanel
+        liveId={live.id}
+        currentUserId={currentUser?.id ?? null}
+        isHost={isHost}
+      />
+
       <GiftPanel
         isOpen={isGiftPanelOpen}
         onClose={() => setIsGiftPanelOpen(false)}
-        onSendGift={(gift, quantity) => handleSendGift(gift as unknown as GiftItem, quantity)}
+        onSendGift={(gift, quantity) =>
+          handleSendGift(gift as unknown as GiftItem, quantity)
+        }
         balance={walletBalance}
       />
 
-      {/* MUSIQUE ET EFFETS SONORES */}
       <Soundboard
         isOpen={isSoundboardOpen}
         onClose={() => setIsSoundboardOpen(false)}
