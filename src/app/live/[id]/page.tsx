@@ -49,6 +49,7 @@ import GiftAnimation from "@/components/live/GiftAnimation";
 import Soundboard from "@/components/live/Soundboard";
 import LiveInvitePanel from "@/components/live/LiveInvitePanel";
 import LiveMatchPanel from "@/components/live/LiveMatchPanel";
+import LiveViewerCounter from "@/components/live/LiveViewerCounter";
 
 import type { LiveMediaControls } from "@/components/live/LiveKitRoom";
 
@@ -139,6 +140,11 @@ export default function LiveRoomPage() {
 
   const activeGiftAnimation = giftQueue[0] ?? null;
 
+  const hostName =
+    live?.profiles?.full_name ||
+    live?.profiles?.username ||
+    "Hôte";
+
   const finishGiftAnimation = useCallback(() => {
     setGiftQueue((previous) => previous.slice(1));
   }, []);
@@ -151,9 +157,12 @@ export default function LiveRoomPage() {
       target.closest("input") ||
       target.closest("a") ||
       target.closest("[data-no-heart]")
-    ) return;
+    ) {
+      return;
+    }
 
     const rect = e.currentTarget.getBoundingClientRect();
+
     const gradients = [
       { start: "#FF39B8", end: "#B026FF" },
       { start: "#FF58D0", end: "#8B35FF" },
@@ -161,7 +170,8 @@ export default function LiveRoomPage() {
       { start: "#FF72C6", end: "#A855FF" },
     ];
 
-    const gradient = gradients[Math.floor(Math.random() * gradients.length)];
+    const gradient =
+      gradients[Math.floor(Math.random() * gradients.length)];
 
     const heart: HeartParticle = {
       id: Date.now() + Math.random(),
@@ -175,7 +185,9 @@ export default function LiveRoomPage() {
     setLikeCount((previous) => previous + 1);
 
     window.setTimeout(() => {
-      setHearts((previous) => previous.filter((item) => item.id !== heart.id));
+      setHearts((previous) =>
+        previous.filter((item) => item.id !== heart.id)
+      );
     }, 2200);
   };
 
@@ -240,8 +252,11 @@ export default function LiveRoomPage() {
           if (cancelled) return;
 
           setUserName(
-            userProfile?.username || userProfile?.full_name || "Viewer"
+            userProfile?.username ||
+              userProfile?.full_name ||
+              "Viewer"
           );
+
           setUserAvatar(userProfile?.avatar_url || null);
 
           const { data: wallet } = await supabase
@@ -260,7 +275,9 @@ export default function LiveRoomPage() {
               .eq("following_id", liveData.host_id)
               .maybeSingle();
 
-            if (!cancelled) setIsFollowing(!!follow);
+            if (!cancelled) {
+              setIsFollowing(!!follow);
+            }
           }
         }
 
@@ -276,6 +293,7 @@ export default function LiveRoomPage() {
 
           giftsData.forEach((gift) => {
             if (!gift.sender_id) return;
+
             totals[gift.sender_id] =
               (totals[gift.sender_id] || 0) +
               Number(gift.total_price || 0);
@@ -292,14 +310,19 @@ export default function LiveRoomPage() {
               .select("id, username, avatar_url, full_name")
               .in("id", topIds);
 
-            if (!cancelled) setTopDonors(donors || []);
+            if (!cancelled) {
+              setTopDonors(donors || []);
+            }
           }
         }
       } catch (error) {
         console.error("Erreur chargement live :", error);
+
         if (!cancelled) {
           setLiveErrorMessage(
-            error instanceof Error ? error.message : "Erreur inconnue."
+            error instanceof Error
+              ? error.message
+              : "Erreur inconnue."
           );
         }
       } finally {
@@ -324,6 +347,7 @@ export default function LiveRoomPage() {
       })
       .on("broadcast", { event: "message" }, ({ payload }) => {
         const message = payload as ChatMessage;
+
         if (!message?.id) return;
 
         setMessages((previous) =>
@@ -349,7 +373,10 @@ export default function LiveRoomPage() {
           void channel.send({
             type: "broadcast",
             event: "join",
-            payload: { name: userName, avatar: userAvatar },
+            payload: {
+              name: userName,
+              avatar: userAvatar,
+            },
           });
         }
       });
@@ -372,7 +399,9 @@ export default function LiveRoomPage() {
       })
       .on("broadcast", { event: "gift" }, ({ payload }) => {
         const gift = payload as GiftAnimationItem;
+
         if (!gift?.id || !gift?.icon || !gift?.name) return;
+
         setGiftQueue((previous) => [...previous, gift]);
       })
       .subscribe();
@@ -392,6 +421,7 @@ export default function LiveRoomPage() {
   // ENVOYER UN MESSAGE
   const handleSendMessage = async () => {
     const text = chatMessage.trim();
+
     if (!text) return;
 
     const message: ChatMessage = {
@@ -431,6 +461,7 @@ export default function LiveRoomPage() {
           .eq("following_id", live.host_id);
 
         if (error) throw error;
+
         setIsFollowing(false);
       } else {
         const { error } = await supabase.from("follows").insert({
@@ -439,6 +470,7 @@ export default function LiveRoomPage() {
         });
 
         if (error) throw error;
+
         setIsFollowing(true);
       }
     } catch (error: any) {
@@ -509,20 +541,19 @@ export default function LiveRoomPage() {
     }
 
     try {
-      const { data: giftResult, error: giftError } = await supabase.rpc(
-        "send_live_gift",
-        {
+      const { data: giftResult, error: giftError } =
+        await supabase.rpc("send_live_gift", {
           p_live_id: live.id,
           p_gift_id: gift.id,
           p_quantity: safeQuantity,
           p_recipient_id: recipientId ?? null,
-        }
-      );
+        });
 
       if (giftError) throw giftError;
 
       const newBalance = Number(
-        giftResult?.coins_balance ?? walletBalance - totalPrice
+        giftResult?.coins_balance ??
+          walletBalance - totalPrice
       );
 
       setWalletBalance(newBalance);
@@ -571,7 +602,9 @@ export default function LiveRoomPage() {
   const handleEndLive = async () => {
     if (!live || !isHost) return;
 
-    if (!window.confirm("Veux-tu vraiment terminer ce live ?")) return;
+    if (!window.confirm("Veux-tu vraiment terminer ce live ?")) {
+      return;
+    }
 
     const { error } = await supabase
       .from("lives")
@@ -587,14 +620,10 @@ export default function LiveRoomPage() {
     router.replace("/");
   };
 
-  const hostName =
-    live?.profiles?.full_name ||
-    live?.profiles?.username ||
-    "Hôte";
-
   // ACHETER LE PRODUIT
   const handleBuyProduct = () => {
     if (!live?.product?.id) return;
+
     router.push(`/shop/${live.product.id}`);
   };
 
@@ -612,9 +641,11 @@ export default function LiveRoomPage() {
         <p className="mb-3 text-lg font-bold text-white">
           Impossible d'ouvrir ce live
         </p>
+
         <p className="break-words text-sm text-red-400">
           {liveErrorMessage || "Aucune information disponible."}
         </p>
+
         <button
           onClick={() => router.replace("/")}
           className="mt-6 rounded-full bg-white/10 px-6 py-3 text-white"
@@ -702,7 +733,10 @@ export default function LiveRoomPage() {
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">
-                  <p className="truncate text-xs font-bold">{hostName}</p>
+                  <p className="truncate text-xs font-bold">
+                    {hostName}
+                  </p>
+
                   {live.profiles?.is_verified && (
                     <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold">
                       ✓
@@ -722,7 +756,11 @@ export default function LiveRoomPage() {
                 disabled={followLoading}
                 className="shrink-0 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-2.5 py-2 text-[10px] font-bold disabled:opacity-50"
               >
-                {followLoading ? "..." : isFollowing ? "Suivi ✓" : "+ Suivre"}
+                {followLoading
+                  ? "..."
+                  : isFollowing
+                  ? "Suivi ✓"
+                  : "+ Suivre"}
               </button>
             )}
           </div>
@@ -766,11 +804,17 @@ export default function LiveRoomPage() {
           <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-black/35 px-2.5 py-2 backdrop-blur-md">
             <div className="flex items-center gap-1.5 text-xs font-bold">
               <Eye size={14} />
-              {Number(live.viewer_count || 1).toLocaleString("fr-FR")}
+              <LiveViewerCounter
+                liveId={live.id}
+                currentUserId={currentUser?.id ?? null}
+              />
             </div>
 
             <div className="flex items-center gap-1.5 text-xs font-bold">
-              <Heart size={14} className="fill-pink-500 text-pink-500" />
+              <Heart
+                size={14}
+                className="fill-pink-500 text-pink-500"
+              />
               {likeCount.toLocaleString("fr-FR")}
             </div>
           </div>
@@ -785,7 +829,10 @@ export default function LiveRoomPage() {
 
       <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
         {hearts.map((heart) => {
-          const gradientId = `heart-${String(heart.id).replace(/[^a-zA-Z0-9]/g, "")}`;
+          const gradientId = `heart-${String(heart.id).replace(
+            /[^a-zA-Z0-9]/g,
+            ""
+          )}`;
 
           return (
             <div
@@ -807,11 +854,18 @@ export default function LiveRoomPage() {
                 }}
               >
                 <defs>
-                  <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                  <linearGradient
+                    id={gradientId}
+                    x1="0%"
+                    y1="0%"
+                    x2="100%"
+                    y2="100%"
+                  >
                     <stop offset="0%" stopColor={heart.colorStart} />
                     <stop offset="100%" stopColor={heart.colorEnd} />
                   </linearGradient>
                 </defs>
+
                 <path
                   d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"
                   fill={`url(#${gradientId})`}
@@ -851,11 +905,16 @@ export default function LiveRoomPage() {
                   : "bg-black/30"
               )}
             >
-              <p className="text-[10px] font-bold">{message.name}</p>
-              <p className="break-words text-xs">{message.text}</p>
+              <p className="text-[10px] font-bold">
+                {message.name}
+              </p>
+              <p className="break-words text-xs">
+                {message.text}
+              </p>
             </div>
           </div>
         ))}
+
         <div ref={chatEndRef} />
       </section>
 
@@ -883,9 +942,11 @@ export default function LiveRoomPage() {
               <p className="text-[9px] font-bold text-pink-600">
                 Produit épinglé
               </p>
+
               <p className="truncate text-xs font-bold">
                 {live.product.title}
               </p>
+
               <p className="text-sm font-extrabold text-purple-700">
                 {Number(live.product.price || 0).toLocaleString("fr-FR")} FCFA
               </p>
@@ -907,16 +968,23 @@ export default function LiveRoomPage() {
       >
         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-white/25 bg-black/25 px-3 py-3 backdrop-blur-xl">
           <Smile size={20} className="shrink-0 text-white/80" />
+
           <input
             value={chatMessage}
             onChange={(e) => setChatMessage(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void handleSendMessage();
+              if (e.key === "Enter") {
+                void handleSendMessage();
+              }
             }}
             placeholder="Discuter avec la créatrice..."
             className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/65"
           />
-          <button onClick={() => void handleSendMessage()} aria-label="Envoyer">
+
+          <button
+            onClick={() => void handleSendMessage()}
+            aria-label="Envoyer"
+          >
             <Send size={19} />
           </button>
         </div>
@@ -945,7 +1013,11 @@ export default function LiveRoomPage() {
           className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white disabled:opacity-40"
         >
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
-            {mediaControls?.microphoneEnabled ? <Mic size={22} /> : <MicOff size={22} className="text-red-400" />}
+            {mediaControls?.microphoneEnabled ? (
+              <Mic size={22} />
+            ) : (
+              <MicOff size={22} className="text-red-400" />
+            )}
           </span>
           <span className="text-[10px] font-semibold">Micro</span>
         </button>
@@ -956,13 +1028,19 @@ export default function LiveRoomPage() {
           className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white disabled:opacity-40"
         >
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
-            {mediaControls?.cameraEnabled ? <Camera size={22} /> : <CameraOff size={22} className="text-red-400" />}
+            {mediaControls?.cameraEnabled ? (
+              <Camera size={22} />
+            ) : (
+              <CameraOff size={22} className="text-red-400" />
+            )}
           </span>
           <span className="text-[10px] font-semibold">Caméra</span>
         </button>
 
         <button
-          onClick={() => window.dispatchEvent(new Event("moshi-open-invite"))}
+          onClick={() =>
+            window.dispatchEvent(new Event("moshi-open-invite"))
+          }
           className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white"
         >
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
@@ -1002,7 +1080,10 @@ export default function LiveRoomPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-lg font-bold">Plus d'options</h2>
+              <h2 className="text-lg font-bold">
+                Plus d'options
+              </h2>
+
               <button onClick={() => setIsMoreOpen(false)}>
                 <X size={22} />
               </button>
@@ -1018,6 +1099,7 @@ export default function LiveRoomPage() {
                     <Package size={25} />
                     <span className="text-xs">Produits</span>
                   </button>
+
                   <button
                     onClick={() => router.push("/seller")}
                     className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
@@ -1025,6 +1107,7 @@ export default function LiveRoomPage() {
                     <BarChart3 size={25} />
                     <span className="text-xs">Statistiques</span>
                   </button>
+
                   <button
                     onClick={() => router.push("/seller/orders")}
                     className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
@@ -1036,21 +1119,29 @@ export default function LiveRoomPage() {
               ) : (
                 <>
                   <button
-                    onClick={() => alert("La gestion des modérateurs sera disponible ici.")}
+                    onClick={() =>
+                      alert("La gestion des modérateurs sera disponible ici.")
+                    }
                     className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
                   >
                     <Users size={25} />
                     <span className="text-xs">Modérateurs</span>
                   </button>
+
                   <button
-                    onClick={() => alert("Les paramètres des commentaires seront disponibles ici.")}
+                    onClick={() =>
+                      alert("Les paramètres des commentaires seront disponibles ici.")
+                    }
                     className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
                   >
                     <Settings size={25} />
                     <span className="text-xs">Commentaires</span>
                   </button>
+
                   <button
-                    onClick={() => alert("Les paramètres du live seront disponibles ici.")}
+                    onClick={() =>
+                      alert("Les paramètres du live seront disponibles ici.")
+                    }
                     className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
                   >
                     <Settings size={25} />
@@ -1064,8 +1155,15 @@ export default function LiveRoomPage() {
               onClick={handleShare}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-white/10 py-3 text-sm font-semibold"
             >
-              {shareCopied ? <Check size={18} /> : <Copy size={18} />}
-              {shareCopied ? "Lien copié" : "Copier le lien du live"}
+              {shareCopied ? (
+                <Check size={18} />
+              ) : (
+                <Copy size={18} />
+              )}
+
+              {shareCopied
+                ? "Lien copié"
+                : "Copier le lien du live"}
             </button>
           </div>
         </div>
