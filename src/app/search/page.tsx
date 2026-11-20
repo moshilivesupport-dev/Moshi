@@ -123,6 +123,7 @@ export default function SearchPage() {
                 }
               }}
               placeholder="Rechercher un hashtag..."
+              aria-label="Rechercher un hashtag"
               className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
             />
 
@@ -162,9 +163,10 @@ export default function SearchPage() {
 
               <Link
                 href="/hashtag/trending"
-                className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-black"
+                className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-black transition hover:bg-purple-100"
               >
-                Voir toutes les tendances
+                <TrendingUp size={18} />
+                Hashtags tendances
                 <ChevronRight size={17} />
               </Link>
             </section>
