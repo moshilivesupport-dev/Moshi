@@ -1,105 +1,149 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
-  X,
   Check,
   Loader2,
   Swords,
   Video,
-  Sparkles,
+  X,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 type Invitation = {
   id: string;
   live_id: string;
   inviter_id: string;
-  invitation_type?: "guest" | "match";
-  status: "pending" | "accepted" | "declined";
+  invitee_id: string;
+  invitation_type: "guest" | "match";
+  status: string;
   created_at: string;
-  inviter?: {
-    username: string | null;
-    full_name: string | null;
-    avatar_url: string | null;
-  } | null;
-  live?: {
-    title: string | null;
-  } | null;
+};
+
+type InvitationDetails = {
+  invitation: Invitation;
+  username: string;
+  avatarUrl: string | null;
+  liveTitle: string;
 };
 
 export default function LiveInvitationListener() {
-  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
 
-  const [invitation, setInvitation] = useState<Invitation | null>(null);
-  const [processing, setProcessing] = useState(false);
+  const [details, setDetails] = useState<InvitationDetails | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
 
-  const loadPendingInvitation = useCallback(
-    async (userId: string) => {
-      const { data, error: queryError } = await supabase
-        .from("live_invitations")
-        .select(
-          "id, live_id, inviter_id, invitation_type, status, created_at"
-        )
-        .eq("invitee_id", userId)
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-        .limit(1);
+  const supabase = createClient();
 
-      if (queryError) {
-        console.error("Chargement invitation :", queryError);
+  const loadInvitation = useCallback(
+    async (userId: string) => {
+      const { data: invitations, error: invitationError } =
+        await supabase
+          .from("live_invitations")
+          .select(
+            "id, live_id, inviter_id, invitee_id, invitation_type, status, created_at"
+          )
+          .eq("invitee_id", userId)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+      if (invitationError) {
+        console.error("Load invitation error:", invitationError);
         return;
       }
 
-      const pending = data?.[0];
-      if (!pending) return;
+      const invitation = invitations?.[0] as Invitation | undefined;
 
-      const [{ data: profile }, { data: live }] = await Promise.all([
+      if (!invitation) {
+        setDetails(null);
+        return;
+      }
+
+      const [
+        { data: profile, error: profileError },
+        { data: live, error: liveError },
+      ] = await Promise.all([
         supabase
           .from("profiles")
           .select("username, full_name, avatar_url")
-          .eq("id", pending.inviter_id)
+          .eq("id", invitation.inviter_id)
           .maybeSingle(),
+
         supabase
           .from("lives")
           .select("title, status")
-          .eq("id", pending.live_id)
+          .eq("id", invitation.live_id)
           .maybeSingle(),
       ]);
 
-      if (!live || live.status !== "live") return;
+      if (profileError) {
+        console.error("Invitation profile error:", profileError);
+      }
 
-      setInvitation({
-        ...pending,
-        inviter: profile,
-        live,
-      } as Invitation);
+      if (liveError) {
+        console.error("Invitation live error:", liveError);
+      }
+
+      if (!live || live.status !== "live") {
+        await supabase
+          .from("live_invitations")
+          .update({
+            status: "declined",
+            responded_at: new Date().toISOString(),
+          })
+          .eq("id", invitation.id)
+          .eq("status", "pending");
+
+        setDetails(null);
+        return;
+      }
+
+      setDetails({
+        invitation: {
+          ...invitation,
+          invitation_type:
+            invitation.invitation_type === "match" ? "match" : "guest",
+        },
+        username:
+          profile?.full_name ||
+          profile?.username ||
+          "Un utilisateur Moshi",
+        avatarUrl: profile?.avatar_url || null,
+        liveTitle: live.title || "Live en cours",
+      });
     },
     [supabase]
   );
 
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
-    let cancelled = false;
+    let active = true;
 
-    async function initialize() {
+    const initialize = async () => {
       const {
         data: { user },
+        error: authError,
       } = await supabase.auth.getUser();
 
-      if (!user || cancelled) return;
+      if (!active) return;
 
-      await loadPendingInvitation(user.id);
+      if (authError || !user) {
+        setChecking(false);
+        return;
+      }
 
-      if (cancelled) return;
+      await loadInvitation(user.id);
+
+      if (!active) return;
 
       channel = supabase
-        .channel(`global-live-invitations-${user.id}`)
+        .channel(`moshi-invitations-${user.id}`)
         .on(
           "postgres_changes",
           {
@@ -108,58 +152,52 @@ export default function LiveInvitationListener() {
             table: "live_invitations",
             filter: `invitee_id=eq.${user.id}`,
           },
-          async (payload) => {
-            const incoming = payload.new as Invitation;
-
-            if (incoming.status !== "pending") return;
-
-            const [{ data: profile }, { data: live }] =
-              await Promise.all([
-                supabase
-                  .from("profiles")
-                  .select("username, full_name, avatar_url")
-                  .eq("id", incoming.inviter_id)
-                  .maybeSingle(),
-                supabase
-                  .from("lives")
-                  .select("title, status")
-                  .eq("id", incoming.live_id)
-                  .maybeSingle(),
-              ]);
-
-            if (!live || live.status !== "live") return;
-
-            setInvitation({
-              ...incoming,
-              inviter: profile,
-              live,
-            });
-            setError("");
+          () => {
+            void loadInvitation(user.id);
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "live_invitations",
+            filter: `invitee_id=eq.${user.id}`,
+          },
+          () => {
+            void loadInvitation(user.id);
           }
         )
         .subscribe();
-    }
+
+      setChecking(false);
+    };
 
     void initialize();
 
     return () => {
-      cancelled = true;
-      if (channel) void supabase.removeChannel(channel);
+      active = false;
+
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
-  }, [supabase, loadPendingInvitation]);
+  }, [loadInvitation, supabase]);
 
   const respond = async (status: "accepted" | "declined") => {
-    if (!invitation || processing) return;
+    if (!details || loading) return;
 
-    setProcessing(true);
+    setLoading(true);
     setError("");
 
     try {
       const response = await fetch(
-        `/live/invitations/${invitation.id}`,
+        `/live/invitations/${details.invitation.id}`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({ status }),
         }
       );
@@ -167,16 +205,18 @@ export default function LiveInvitationListener() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "Impossible de répondre.");
+        throw new Error(
+          result.error || "Impossible de traiter l'invitation."
+        );
       }
+
+      const liveId = details.invitation.live_id;
+
+      setDetails(null);
 
       if (status === "accepted") {
-        router.push(`/live/${invitation.live_id}`);
-        router.refresh();
-        return;
+        router.push(`/live/${liveId}`);
       }
-
-      setInvitation(null);
     } catch (err) {
       setError(
         err instanceof Error
@@ -184,134 +224,126 @@ export default function LiveInvitationListener() {
           : "Une erreur est survenue."
       );
     } finally {
-      setProcessing(false);
+      setLoading(false);
     }
   };
 
-  if (!invitation) return null;
+  if (checking || !details) {
+    return null;
+  }
 
-  const isMatch = invitation.invitation_type === "match";
-
-  const inviterName =
-    invitation.inviter?.full_name ||
-    invitation.inviter?.username ||
-    "Un utilisateur";
-
-  const avatar = invitation.inviter?.avatar_url;
+  const isMatch = details.invitation.invitation_type === "match";
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-black/75 p-5 backdrop-blur-md">
-      <div className="relative w-full max-w-sm overflow-hidden rounded-[30px] border border-pink-400/25 bg-[#160D25] p-5 text-white shadow-[0_0_60px_rgba(192,38,211,0.22)]">
-        <div className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-purple-600/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-20 -left-20 h-48 w-48 rounded-full bg-pink-600/20 blur-3xl" />
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+      <div className="relative w-full max-w-sm overflow-hidden rounded-[28px] border border-white/10 bg-[#160D25] shadow-[0_25px_100px_rgba(0,0,0,0.65)]">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-violet-600" />
 
         <button
-          onClick={() => setInvitation(null)}
-          disabled={processing}
-          aria-label="Fermer"
-          className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2"
+          type="button"
+          onClick={() => void respond("declined")}
+          disabled={loading}
+          aria-label="Fermer l'invitation"
+          className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white/70 transition hover:bg-white/20 hover:text-white disabled:opacity-50"
         >
           <X size={18} />
         </button>
 
-        <div className="relative z-[1] text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-pink-300/30 bg-gradient-to-br from-pink-500 to-purple-700 shadow-lg shadow-purple-900/40">
+        <div className="px-6 pb-6 pt-8 text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500/20 to-violet-600/20 ring-1 ring-pink-400/30">
             {isMatch ? (
-              <Swords size={29} strokeWidth={2.4} />
+              <Swords className="h-8 w-8 text-pink-300" />
             ) : (
-              <Video size={27} />
+              <Video className="h-8 w-8 text-pink-300" />
             )}
           </div>
 
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-pink-300">
-            Moshi Live
+          <p className="text-xs font-bold uppercase tracking-[0.25em] text-pink-300">
+            MOSHI LIVE
           </p>
 
-          <h2 className="mt-2 text-2xl font-black">
-            {isMatch ? "MATCH !" : "Invitation au live"}
+          <h2 className="mt-2 text-2xl font-black text-white">
+            {isMatch ? "Défi Match !" : "Invitation au live"}
           </h2>
 
-          <p className="mt-2 text-sm text-white/65">
+          <p className="mt-2 text-sm leading-6 text-white/60">
             {isMatch
-              ? "Tu as reçu un défi. Es-tu prêt à relever le challenge ?"
-              : "On t'invite à rejoindre ce live."}
+              ? "Tu as reçu une invitation à participer à un Match."
+              : "Tu es invité(e) à rejoindre un live en tant qu'invité."}
           </p>
 
-          <div className="my-7 flex items-center justify-center gap-3">
-            <div className="flex w-24 flex-col items-center gap-2">
-              <div className="relative h-[76px] w-[76px] overflow-hidden rounded-full border-[3px] border-pink-400 bg-white/10 shadow-lg shadow-pink-500/20">
-                {avatar ? (
+          <div className="my-6 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="flex items-center justify-center gap-4">
+              <div className="relative h-[68px] w-[68px] shrink-0 overflow-hidden rounded-full border-2 border-pink-400 bg-gradient-to-br from-pink-500 to-violet-600">
+                {details.avatarUrl ? (
                   <Image
-                    src={avatar}
-                    alt={inviterName}
+                    src={details.avatarUrl}
+                    alt={details.username}
                     fill
-                    unoptimized
+                    sizes="68px"
                     className="object-cover"
+                    unoptimized
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-2xl font-black">
-                    {inviterName.charAt(0).toUpperCase()}
+                  <div className="flex h-full w-full items-center justify-center text-2xl font-black text-white">
+                    {details.username.charAt(0).toUpperCase()}
                   </div>
                 )}
               </div>
-              <p className="max-w-full truncate text-xs font-bold">
-                {inviterName}
-              </p>
-            </div>
 
-            <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-purple-300/30 bg-gradient-to-br from-pink-500 to-purple-700 shadow-lg shadow-purple-500/30">
-              {isMatch ? (
-                <Swords size={28} />
-              ) : (
-                <Sparkles size={27} />
-              )}
-              <span className="absolute -bottom-2 rounded-full bg-[#160D25] px-2 text-[9px] font-black text-pink-200">
-                VS
-              </span>
-            </div>
-
-            <div className="flex w-24 flex-col items-center gap-2">
-              <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full border-[3px] border-purple-400 bg-white/5 text-2xl font-black text-purple-200">
-                ?
+              <div className="min-w-0 text-left">
+                <p className="text-xs text-white/45">
+                  {isMatch ? "Ton adversaire t'invite" : "Invitation envoyée par"}
+                </p>
+                <p className="mt-1 truncate font-bold text-white">
+                  {details.username}
+                </p>
+                <p className="mt-1 truncate text-xs text-white/50">
+                  {details.liveTitle}
+                </p>
               </div>
-              <p className="text-xs font-bold text-white/70">
-                Toi
-              </p>
             </div>
+
+            {isMatch && (
+              <div className="mt-5 flex items-center justify-center gap-3">
+                <div className="h-px flex-1 bg-gradient-to-r from-transparent to-pink-400/50" />
+                <span className="rounded-full border border-pink-400/30 bg-pink-500/10 px-4 py-1.5 text-sm font-black tracking-widest text-pink-300">
+                  VS
+                </span>
+                <div className="h-px flex-1 bg-gradient-to-l from-transparent to-violet-400/50" />
+              </div>
+            )}
           </div>
 
-          {invitation.live?.title && (
-            <p className="mb-4 truncate rounded-xl bg-white/5 px-3 py-2 text-xs text-white/60">
-              {invitation.live.title}
-            </p>
-          )}
-
           {error && (
-            <p className="mb-4 rounded-xl bg-red-500/15 p-3 text-xs text-red-300">
+            <p className="mb-4 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
               {error}
             </p>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => void respond("declined")}
-              disabled={processing}
-              className="rounded-full border border-white/10 bg-white/10 py-3.5 text-sm font-bold disabled:opacity-50"
+              disabled={loading}
+              className="flex h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 font-bold text-white/75 transition hover:bg-white/10 disabled:opacity-50"
             >
+              <X size={17} />
               Refuser
             </button>
 
             <button
+              type="button"
               onClick={() => void respond("accepted")}
-              disabled={processing}
-              className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 py-3.5 text-sm font-black shadow-lg shadow-purple-900/30 disabled:opacity-50"
+              disabled={loading}
+              className="flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 font-bold text-white shadow-lg shadow-pink-500/20 transition hover:brightness-110 disabled:opacity-50"
             >
-              {processing ? (
-                <Loader2 size={17} className="animate-spin" />
+              {loading ? (
+                <Loader2 size={18} className="animate-spin" />
               ) : (
-                <Check size={17} />
+                <Check size={18} />
               )}
-              {isMatch ? "Accepter le Match" : "Rejoindre"}
+              Accepter
             </button>
           </div>
         </div>
