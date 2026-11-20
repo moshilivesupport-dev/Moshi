@@ -15,8 +15,6 @@ import {
   Heart,
   MessageCircle,
   Share2,
-  Volume2,
-  VolumeX,
   Radio,
   Bookmark,
   Pause,
@@ -62,15 +60,11 @@ function formatNumber(num: number) {
 
 function FeedVideo({
   item,
-  muted,
-  onToggleMute,
   onQualifiedView,
   onDoubleTap,
   children,
 }: {
   item: FeedItem;
-  muted: boolean;
-  onToggleMute: (video: HTMLVideoElement) => void;
   onQualifiedView: (videoId: string) => void;
   onDoubleTap: () => void;
   children?: ReactNode;
@@ -125,12 +119,13 @@ function FeedVideo({
     };
   }, [isVisible, item.id, onQualifiedView]);
 
-  // Lecture automatique et pause manuelle.
+  // Lecture automatique dès que la vidéo est visible.
+  // Le son reste désactivé par défaut.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    video.muted = muted;
+    video.muted = true;
 
     if (!isVisible || isPaused) {
       video.pause();
@@ -159,7 +154,7 @@ function FeedVideo({
       cancelled = true;
       video.pause();
     };
-  }, [isVisible, isPaused, muted]);
+  }, [isVisible, isPaused]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -182,10 +177,8 @@ function FeedVideo({
       ref={sectionRef}
       className="moshi-video relative w-full overflow-hidden bg-black"
       onClick={(event) => {
-        // Les boutons et les liens gardent leur propre action.
         if ((event.target as HTMLElement).closest("button, a")) return;
 
-        // Deuxième toucher rapide : like.
         if (tapTimerRef.current) {
           clearTimeout(tapTimerRef.current);
           tapTimerRef.current = null;
@@ -193,7 +186,6 @@ function FeedVideo({
           return;
         }
 
-        // Un seul toucher : pause ou reprise.
         tapTimerRef.current = setTimeout(() => {
           setIsPaused((previous) => !previous);
           tapTimerRef.current = null;
@@ -211,8 +203,9 @@ function FeedVideo({
         src={item.url}
         className="absolute inset-0 h-full w-full object-cover"
         loop
-        muted={muted}
+        muted
         playsInline
+        autoPlay
         preload={isVisible ? "auto" : "metadata"}
         onError={(event) => {
           console.warn(
@@ -232,19 +225,6 @@ function FeedVideo({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          const video = videoRef.current;
-          if (video) onToggleMute(video);
-        }}
-        className="absolute right-4 top-5 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-lg"
-        aria-label={muted ? "Activer le son" : "Couper le son"}
-      >
-        {muted ? <VolumeX size={19} /> : <Volume2 size={19} />}
-      </button>
-
       {children}
     </section>
   );
@@ -257,7 +237,6 @@ export default function HomeFeed({
 
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [muted, setMuted] = useState(true);
 
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [pendingLikes, setPendingLikes] = useState<Record<string, boolean>>({});
@@ -280,7 +259,6 @@ export default function HomeFeed({
   const viewsInFlightRef = useRef<Set<string>>(new Set());
   const viewedVideosRef = useRef<Set<string>>(new Set());
 
-  // Récupération de l'utilisateur connecté.
   useEffect(() => {
     let cancelled = false;
 
@@ -314,7 +292,6 @@ export default function HomeFeed({
     };
   }, [supabase]);
 
-  // Enregistre une vue qualifiée dans Supabase.
   const registerVideoView = useCallback(
     async (videoId: string) => {
       if (!currentUser) return;
@@ -346,7 +323,6 @@ export default function HomeFeed({
     [supabase, currentUser, items]
   );
 
-  // Chargement du fil.
   const loadFeed = useCallback(async () => {
     if (!authLoaded) return;
 
@@ -466,8 +442,6 @@ export default function HomeFeed({
 
       if (requestId !== loadRequestRef.current) return;
 
-      // Mélange aléatoire des vidéos dans « Pour toi ».
-      // L'onglet « Suivis » conserve l'ordre chronologique.
       const feedVideos = mode === "forYou" ? [...videos] : videos;
 
       if (mode === "forYou") {
@@ -487,7 +461,6 @@ export default function HomeFeed({
         const videoIds = videos.map((video) => video.id);
 
         if (videoIds.length > 0) {
-          // Récupération des likes.
           const { data: likes, error } = await supabase
             .from("video_likes")
             .select("video_id")
@@ -506,7 +479,6 @@ export default function HomeFeed({
 
           setLiked(map);
 
-          // Récupération des favoris.
           const { data: saves, error: savesError } = await supabase
             .from("video_saves")
             .select("video_id")
@@ -561,7 +533,6 @@ export default function HomeFeed({
     };
   }, [loadFeed]);
 
-  // Synchronisation des compteurs depuis la table videos.
   useEffect(() => {
     const channel = supabase
       .channel(`moshi-feed-counts-${mode}`)
@@ -627,7 +598,6 @@ export default function HomeFeed({
     };
   }, [supabase, mode]);
 
-  // Synchronisation des likes de l'utilisateur connecté.
   useEffect(() => {
     if (!currentUser) return;
 
@@ -678,13 +648,6 @@ export default function HomeFeed({
     };
   }, [supabase, currentUser]);
 
-  const toggleMute = (video: HTMLVideoElement) => {
-    const next = !video.muted;
-    video.muted = next;
-    setMuted(next);
-  };
-
-  // Like optimiste avec restauration en cas d'erreur.
   const toggleLike = async (videoId: string) => {
     if (!currentUser || pendingLikes[videoId]) return;
 
@@ -762,7 +725,6 @@ export default function HomeFeed({
     }
   };
 
-  // Enregistre ou retire une vidéo des favoris du compte connecté.
   const toggleSave = async (videoId: string) => {
     if (!currentUser || pendingSaves[videoId]) return;
 
@@ -812,7 +774,6 @@ export default function HomeFeed({
     }
   };
 
-  // Recharge le vrai compteur de commentaires après un ajout.
   const handleCommentAdded = useCallback(
     async (videoId: string) => {
       const { data, error } = await supabase
@@ -931,29 +892,28 @@ export default function HomeFeed({
           <FeedVideo
             key={item.id}
             item={item}
-            muted={muted}
-            onToggleMute={toggleMute}
             onQualifiedView={registerVideoView}
             onDoubleTap={() => {
               if (!liked[item.id]) void toggleLike(item.id);
             }}
           >
-            <div className="absolute bottom-5 right-3 z-20 flex flex-col items-center gap-4">
+            {/* Colonne d'actions réduite */}
+            <div className="absolute bottom-5 right-3 z-20 flex flex-col items-center gap-3">
               <Link
                 href={`/profile/${item.user_id}`}
-                className="h-12 w-12 overflow-hidden rounded-full border-2 border-white bg-neutral-800"
+                className="h-10 w-10 overflow-hidden rounded-full border-2 border-white bg-neutral-800"
               >
                 {author?.avatar_url ? (
                   <Image
                     src={author.avatar_url}
                     alt={authorName}
-                    width={48}
-                    height={48}
+                    width={40}
+                    height={40}
                     className="h-full w-full object-cover"
                     unoptimized
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center font-bold text-white">
+                  <div className="flex h-full items-center justify-center text-sm font-bold text-white">
                     {authorName.charAt(0).toUpperCase()}
                   </div>
                 )}
@@ -971,10 +931,10 @@ export default function HomeFeed({
               >
                 <motion.div
                   whileTap={{ scale: 0.8 }}
-                  className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full"
+                  className="moshi-glass flex h-10 w-10 items-center justify-center rounded-full"
                 >
                   <Heart
-                    size={24}
+                    size={20}
                     className={
                       isLiked
                         ? "fill-[#FF8FB1] text-[#FF8FB1]"
@@ -983,7 +943,7 @@ export default function HomeFeed({
                   />
                 </motion.div>
 
-                <span className="text-xs font-semibold text-white">
+                <span className="text-[11px] font-semibold text-white">
                   {formatNumber(item.like_count)}
                 </span>
               </button>
@@ -995,11 +955,11 @@ export default function HomeFeed({
                 className="flex flex-col items-center gap-1"
                 aria-label="Voir les commentaires"
               >
-                <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
-                  <MessageCircle size={24} className="text-white" />
+                <div className="moshi-glass flex h-10 w-10 items-center justify-center rounded-full">
+                  <MessageCircle size={20} className="text-white" />
                 </div>
 
-                <span className="text-xs font-semibold text-white">
+                <span className="text-[11px] font-semibold text-white">
                   {formatNumber(item.comment_count)}
                 </span>
               </button>
@@ -1031,8 +991,8 @@ export default function HomeFeed({
                 }}
                 aria-label="Partager la vidéo"
               >
-                <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
-                  <Share2 size={22} className="text-white" />
+                <div className="moshi-glass flex h-10 w-10 items-center justify-center rounded-full">
+                  <Share2 size={19} className="text-white" />
                 </div>
               </button>
 
@@ -1048,9 +1008,9 @@ export default function HomeFeed({
                     : "Ajouter aux favoris"
                 }
               >
-                <div className="moshi-glass flex h-12 w-12 items-center justify-center rounded-full">
+                <div className="moshi-glass flex h-10 w-10 items-center justify-center rounded-full">
                   <Bookmark
-                    size={23}
+                    size={19}
                     className={
                       saved[item.id]
                         ? "fill-white text-white"
@@ -1059,13 +1019,13 @@ export default function HomeFeed({
                   />
                 </div>
 
-                <span className="text-xs font-semibold text-white">
+                <span className="text-[11px] font-semibold text-white">
                   Favori
                 </span>
               </button>
             </div>
 
-            <div className="absolute bottom-5 left-4 right-20 z-20 space-y-2">
+            <div className="absolute bottom-5 left-4 right-16 z-20 space-y-2">
               <Link
                 href={`/profile/${item.user_id}`}
                 className="text-base font-bold text-white drop-shadow-md hover:underline"
