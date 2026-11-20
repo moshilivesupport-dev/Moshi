@@ -22,11 +22,21 @@ interface Gift {
   category: "standard" | "premium" | "exclusif";
 }
 
+interface GiftRecipient {
+  id: string;
+  label: string;
+}
+
 interface GiftPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onSendGift: (gift: Gift, quantity?: number) => void | Promise<void>;
+  onSendGift: (
+    gift: Gift,
+    quantity?: number,
+    recipientId?: string
+  ) => void | Promise<void>;
   balance: number;
+  liveId?: string;
 }
 
 const CATEGORIES = [
@@ -40,6 +50,7 @@ export default function GiftPanel({
   onClose,
   onSendGift,
   balance,
+  liveId,
 }: GiftPanelProps) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -51,6 +62,8 @@ export default function GiftPanel({
     useState<Gift["category"]>("standard");
   const [selectedGift, setSelectedGift] = useState<Gift | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [recipients, setRecipients] = useState<GiftRecipient[]>([]);
+  const [selectedRecipientId, setSelectedRecipientId] = useState("");
 
   const loadGifts = useCallback(async () => {
     setLoading(true);
@@ -105,6 +118,83 @@ export default function GiftPanel({
     if (isOpen) void loadGifts();
   }, [isOpen, loadGifts]);
 
+  useEffect(() => {
+    if (!isOpen || !liveId) return;
+
+    let cancelled = false;
+
+    const loadRecipients = async () => {
+      const { data: live, error } = await supabase
+        .from("lives")
+        .select("host_id,opponent_id,match_status")
+        .eq("id", liveId)
+        .maybeSingle();
+
+      if (
+        cancelled ||
+        error ||
+        !live ||
+        live.match_status !== "active" ||
+        !live.opponent_id
+      ) {
+        if (!cancelled) {
+          setRecipients([]);
+          setSelectedRecipientId("");
+        }
+        return;
+      }
+
+      const ids = [live.host_id, live.opponent_id];
+
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id,username,full_name")
+        .in("id", ids);
+
+      if (cancelled) return;
+
+      const options = ids.map((id, index) => {
+        const profile = profiles?.find((item) => item.id === id);
+
+        return {
+          id,
+          label:
+            profile?.full_name ||
+            profile?.username ||
+            (index === 0 ? "Équipe A" : "Équipe B"),
+        };
+      });
+
+      setRecipients(options);
+      setSelectedRecipientId((current) =>
+        options.some((item) => item.id === current)
+          ? current
+          : options[0]?.id || ""
+      );
+    };
+
+    void loadRecipients();
+
+    const channel = supabase
+      .channel(`gift-match-target-${liveId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "lives",
+          filter: `id=eq.${liveId}`,
+        },
+        () => void loadRecipients()
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [isOpen, liveId, supabase]);
+
   const filteredGifts = gifts.filter(
     (gift) => gift.category === category
   );
@@ -128,7 +218,13 @@ export default function GiftPanel({
 
     try {
       setSending(true);
-      await onSendGift(selectedGift, quantity);
+
+      await onSendGift(
+        selectedGift,
+        quantity,
+        selectedRecipientId || undefined
+      );
+
       setSelectedGift(null);
       setQuantity(1);
       onClose();
@@ -183,10 +279,40 @@ export default function GiftPanel({
               </button>
             </div>
 
+            {recipients.length > 1 && (
+              <div className="border-b border-white/10 px-4 py-3">
+                <p className="mb-2 text-xs font-bold text-white/60">
+                  Soutenir une équipe
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {recipients.map((recipient, index) => (
+                    <button
+                      key={recipient.id}
+                      type="button"
+                      onClick={() => setSelectedRecipientId(recipient.id)}
+                      className={cn(
+                        "rounded-xl border px-3 py-2 text-xs font-bold",
+                        selectedRecipientId === recipient.id
+                          ? index === 0
+                            ? "border-pink-400 bg-pink-500/20 text-pink-200"
+                            : "border-purple-400 bg-purple-500/20 text-purple-200"
+                          : "border-white/10 bg-white/5 text-white/60"
+                      )}
+                    >
+                      {index === 0 ? "Équipe A · " : "Équipe B · "}
+                      {recipient.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between bg-white/[0.04] px-5 py-3">
               <span className="text-sm text-white/60">
                 Ton portefeuille
               </span>
+
               <div className="flex items-center gap-2 rounded-full bg-yellow-400/10 px-3 py-1.5">
                 <Coins size={15} className="text-yellow-400" />
                 <span className="font-bold text-yellow-400">
