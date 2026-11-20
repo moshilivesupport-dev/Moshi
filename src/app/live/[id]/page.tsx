@@ -8,6 +8,7 @@ import {
   useMemo,
   useCallback,
 } from "react";
+import LiveTapSync from "@/components/live/LiveTapSync";
 import type { MouseEvent } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useParams, useRouter } from "next/navigation";
