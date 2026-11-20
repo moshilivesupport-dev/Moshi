@@ -1,4 +1,5 @@
 
+import LiveInvitationListener from "@/components/live/LiveInvitationListener";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import BottomNav from "@/components/layout/BottomNav";
