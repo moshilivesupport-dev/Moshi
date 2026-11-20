@@ -123,8 +123,6 @@ function FeedVideo({
     const video = videoRef.current;
     if (!video) return;
 
-    video.muted = true;
-
     if (!isVisible || isPaused) {
       video.pause();
       return;
@@ -134,6 +132,8 @@ function FeedVideo({
 
     const play = async () => {
       try {
+        // Lecture avec le son activé.
+        video.muted = false;
         await video.play();
       } catch (error) {
         if (
@@ -141,7 +141,10 @@ function FeedVideo({
           error instanceof Error &&
           error.name !== "AbortError"
         ) {
-          console.warn("Lecture vidéo impossible :", error);
+          console.warn(
+            "Lecture vidéo avec son impossible :",
+            error
+          );
         }
       }
     };
@@ -201,7 +204,6 @@ function FeedVideo({
         src={item.url}
         className="absolute inset-0 h-full w-full object-cover"
         loop
-        muted
         playsInline
         autoPlay
         preload={isVisible ? "auto" : "metadata"}
@@ -253,7 +255,6 @@ export default function HomeFeed({
     useState<string | null>(null);
 
   const loadRequestRef = useRef(0);
-
   const viewsInFlightRef = useRef<Set<string>>(new Set());
   const viewedVideosRef = useRef<Set<string>>(new Set());
 
