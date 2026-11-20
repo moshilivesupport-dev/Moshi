@@ -1,9 +1,9 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Coins, Plus, Minus, Gift as GiftIcon } from "lucide-react";
+import { X, Coins, Plus, Minus, Gift as GiftIcon, RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +34,31 @@ function getGiftCategory(price: number): Gift["category"] {
   return "standard";
 }
 
+function normalizeGifts(rows: any[]): Gift[] {
+  return (rows || [])
+    .filter((gift) => {
+      return (
+        gift?.id &&
+        gift?.name &&
+        Number.isFinite(Number(gift.coin_cost)) &&
+        Number(gift.coin_cost) > 0 &&
+        gift.is_active !== false
+      );
+    })
+    .map((gift) => {
+      const price = Number(gift.coin_cost);
+
+      return {
+        id: String(gift.id),
+        name: String(gift.name),
+        icon: gift.icon ? String(gift.icon) : null,
+        price,
+        category: getGiftCategory(price),
+      };
+    })
+    .sort((a, b) => a.price - b.price);
+}
+
 export default function GiftPanel({
   isOpen,
   onClose,
@@ -44,73 +69,94 @@ export default function GiftPanel({
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [category, setCategory] = useState<Gift["category"]>("standard");
+  const [category, setCategory] =
+    useState<Gift["category"]>("standard");
   const [selectedGift, setSelectedGift] = useState<Gift | null>(null);
   const [quantity, setQuantity] = useState(1);
 
   const supabase = useMemo(() => createClient(), []);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const loadGifts = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
 
-    let cancelled = false;
+    try {
+      let rows: any[] | null = null;
 
-    async function loadGifts() {
-      setLoading(true);
-      setLoadError("");
-
-      const { data, error } = await supabase
+      const firstAttempt = await supabase
         .from("gifts")
         .select("id, name, icon, coin_cost, is_active")
         .eq("is_active", true)
         .order("coin_cost", { ascending: true });
 
-      if (cancelled) return;
-
-      if (error) {
-        console.error("Erreur chargement cadeaux:", error.message);
-        setLoadError("Impossible de charger les cadeaux.");
-        setGifts([]);
+      if (!firstAttempt.error) {
+        rows = firstAttempt.data || [];
       } else {
-        const validGifts: Gift[] = (data || [])
-          .filter(
-            (gift) =>
-              gift.id &&
-              gift.name &&
-              Number.isFinite(Number(gift.coin_cost)) &&
-              Number(gift.coin_cost) > 0
-          )
-          .map((gift) => {
-            const price = Number(gift.coin_cost);
-            return {
-              id: gift.id,
-              name: gift.name,
-              icon: gift.icon,
-              price,
-              category: getGiftCategory(price),
-            };
-          });
+        console.warn(
+          "Premier chargement des cadeaux échoué:",
+          firstAttempt.error
+        );
 
-        setGifts(validGifts);
+        // Deuxième tentative pour les bases où is_active
+        // n'existe pas encore ou dont le schéma diffère.
+        const secondAttempt = await supabase
+          .from("gifts")
+          .select("id, name, icon, coin_cost")
+          .order("coin_cost", { ascending: true });
+
+        if (secondAttempt.error) {
+          throw secondAttempt.error;
+        }
+
+        rows = secondAttempt.data || [];
       }
 
+      const normalized = normalizeGifts(rows);
+
+      setGifts(normalized);
+      setSelectedGift((current) =>
+        current
+          ? normalized.find((gift) => gift.id === current.id) || null
+          : null
+      );
+
+      if (normalized.length === 0) {
+        setLoadError(
+          "Aucun cadeau actif trouvé dans la base de données."
+        );
+      }
+    } catch (error: any) {
+      console.error("Erreur chargement cadeaux:", error);
+
+      setGifts([]);
+      setLoadError(
+        error?.message ||
+          error?.details ||
+          "Impossible de charger les cadeaux. Vérifie la connexion à la base de données."
+      );
+    } finally {
       setLoading(false);
     }
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     void loadGifts();
+  }, [isOpen, loadGifts]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, supabase]);
-
-  const filteredGifts = gifts.filter((gift) => gift.category === category);
+  const filteredGifts = gifts.filter(
+    (gift) => gift.category === category
+  );
 
   const safeBalance = Number.isFinite(Number(balance))
     ? Math.max(0, Number(balance))
     : 0;
 
-  const totalPrice = selectedGift ? selectedGift.price * quantity : 0;
+  const totalPrice = selectedGift
+    ? selectedGift.price * quantity
+    : 0;
+
   const canAfford =
     !!selectedGift &&
     Number.isFinite(totalPrice) &&
@@ -121,11 +167,19 @@ export default function GiftPanel({
     : 1;
 
   const handleSend = async () => {
-    if (!selectedGift || !canAfford || sending || quantity < 1) return;
+    if (
+      !selectedGift ||
+      !canAfford ||
+      sending ||
+      quantity < 1
+    ) {
+      return;
+    }
 
     try {
       setSending(true);
       await onSendGift(selectedGift, quantity);
+
       setSelectedGift(null);
       setQuantity(1);
       onClose();
@@ -156,16 +210,23 @@ export default function GiftPanel({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 230 }}
+            transition={{
+              type: "spring",
+              damping: 28,
+              stiffness: 230,
+            }}
             className="fixed bottom-0 left-0 right-0 z-[70] flex max-h-[82dvh] flex-col overflow-hidden rounded-t-[30px] border border-white/10 bg-[#160D25] pb-safe"
           >
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
               <div>
-                <h2 className="text-lg font-extrabold text-white">Cadeaux Moshi</h2>
+                <h2 className="text-lg font-extrabold text-white">
+                  Cadeaux Moshi
+                </h2>
                 <p className="text-xs text-white/45">
                   Fais plaisir à ton créateur préféré
                 </p>
               </div>
+
               <button
                 type="button"
                 onClick={handleClose}
@@ -178,7 +239,10 @@ export default function GiftPanel({
             </div>
 
             <div className="flex items-center justify-between bg-white/[0.04] px-5 py-3">
-              <span className="text-sm text-white/60">Ton portefeuille</span>
+              <span className="text-sm text-white/60">
+                Ton portefeuille
+              </span>
+
               <div className="flex items-center gap-2 rounded-full bg-yellow-400/10 px-3 py-1.5">
                 <Coins size={15} className="text-yellow-400" />
                 <span className="font-bold text-yellow-400">
@@ -215,12 +279,31 @@ export default function GiftPanel({
                   <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
                 </div>
               ) : loadError ? (
-                <div className="py-12 text-center">
-                  <p className="text-sm text-red-400">{loadError}</p>
+                <div className="flex flex-col items-center gap-3 py-10 text-center">
+                  <GiftIcon
+                    size={35}
+                    className="text-white/30"
+                  />
+
+                  <p className="max-w-[280px] text-sm text-red-400">
+                    {loadError}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => void loadGifts()}
+                    className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    <RefreshCw size={15} />
+                    Réessayer
+                  </button>
                 </div>
               ) : filteredGifts.length === 0 ? (
                 <div className="flex flex-col items-center py-12 text-center">
-                  <GiftIcon size={35} className="mb-3 text-white/30" />
+                  <GiftIcon
+                    size={35}
+                    className="mb-3 text-white/30"
+                  />
                   <p className="text-sm text-white/60">
                     Aucun cadeau dans cette catégorie.
                   </p>
@@ -243,10 +326,14 @@ export default function GiftPanel({
                           : "border-white/5 bg-white/[0.04]"
                       )}
                     >
-                      <span className="text-3xl">{gift.icon || "🎁"}</span>
+                      <span className="text-3xl">
+                        {gift.icon || "🎁"}
+                      </span>
+
                       <span className="w-full truncate text-center text-[10px] font-semibold text-white/90">
                         {gift.name}
                       </span>
+
                       <span className="text-[10px] font-bold text-yellow-400">
                         {gift.price.toLocaleString("fr-FR")}
                       </span>
@@ -260,9 +347,14 @@ export default function GiftPanel({
               <div className="border-t border-white/10 bg-[#10091B] p-4">
                 <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="text-4xl">{selectedGift.icon || "🎁"}</span>
+                    <span className="text-4xl">
+                      {selectedGift.icon || "🎁"}
+                    </span>
+
                     <div>
-                      <p className="font-bold text-white">{selectedGift.name}</p>
+                      <p className="font-bold text-white">
+                        {selectedGift.name}
+                      </p>
                       <p className="text-xs text-yellow-400">
                         {selectedGift.price.toLocaleString("fr-FR")} coins / unité
                       </p>
@@ -273,20 +365,30 @@ export default function GiftPanel({
                     <button
                       type="button"
                       disabled={sending || quantity <= 1}
-                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                      onClick={() =>
+                        setQuantity((q) => Math.max(1, q - 1))
+                      }
                       className="text-white disabled:opacity-30"
                       aria-label="Diminuer la quantité"
                     >
                       <Minus size={16} />
                     </button>
+
                     <span className="w-5 text-center font-bold text-white">
                       {quantity}
                     </span>
+
                     <button
                       type="button"
-                      disabled={sending || quantity >= maxQuantity}
+                      disabled={
+                        sending ||
+                        quantity >= maxQuantity ||
+                        maxQuantity < 1
+                      }
                       onClick={() =>
-                        setQuantity((q) => Math.min(maxQuantity, q + 1))
+                        setQuantity((q) =>
+                          Math.min(maxQuantity, q + 1)
+                        )
                       }
                       className="text-white disabled:opacity-30"
                       aria-label="Augmenter la quantité"
@@ -314,7 +416,9 @@ export default function GiftPanel({
                       Envoi en cours...
                     </>
                   ) : (
-                    <>Envoyer · {totalPrice.toLocaleString("fr-FR")} coins</>
+                    <>
+                      Envoyer · {totalPrice.toLocaleString("fr-FR")} coins
+                    </>
                   )}
                 </button>
               </div>
