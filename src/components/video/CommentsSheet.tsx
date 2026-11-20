@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -19,7 +18,6 @@ import {
   Mic,
   Square,
   Trash2,
-  Play,
   CornerUpLeft,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -102,7 +100,8 @@ export default function CommentsSheet({
   const callbackRef = useRef(onCommentAdded);
   const knownIdsRef = useRef<Set<string>>(new Set());
   const sendingRef = useRef(false);
-  const mountedRef = useRef(false);
+  const likingRef = useRef<Set<string>>(new Set());
+  const keyboardHeightRef = useRef(0);
 
   const [mounted, setMounted] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -121,23 +120,50 @@ export default function CommentsSheet({
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   const [voicePreview, setVoicePreview] = useState("");
   const [voiceUploading, setVoiceUploading] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     setMounted(true);
-    mountedRef.current = true;
 
     return () => {
-      mountedRef.current = false;
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      if (voicePreview) URL.revokeObjectURL(voicePreview);
+
+      if (voicePreview) {
+        URL.revokeObjectURL(voicePreview);
+      }
     };
-    // Le nettoyage du flux audio est géré à la fermeture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     callbackRef.current = onCommentAdded;
   }, [onCommentAdded]);
+
+  // Adaptation du panneau au clavier mobile, notamment sur iOS.
+  useEffect(() => {
+    if (!window.visualViewport) return;
+
+    const viewport = window.visualViewport;
+
+    const updateKeyboard = () => {
+      const height = Math.max(
+        0,
+        window.innerHeight - viewport.height - viewport.offsetTop
+      );
+
+      keyboardHeightRef.current = height;
+      setKeyboardHeight(height);
+    };
+
+    viewport.addEventListener("resize", updateKeyboard);
+    viewport.addEventListener("scroll", updateKeyboard);
+    updateKeyboard();
+
+    return () => {
+      viewport.removeEventListener("resize", updateKeyboard);
+      viewport.removeEventListener("scroll", updateKeyboard);
+    };
+  }, []);
 
   const notifyAdded = useCallback(() => {
     callbackRef.current?.(videoId);
@@ -147,132 +173,146 @@ export default function CommentsSheet({
     if (knownIdsRef.current.has(comment.id)) return false;
 
     knownIdsRef.current.add(comment.id);
+
     setComments((previous) => {
       if (previous.some((item) => item.id === comment.id)) {
         return previous;
       }
+
       return [...previous, comment];
     });
 
     return true;
   }, []);
 
-  const loadData = useCallback(async (cancelled: () => boolean) => {
-    setLoading(true);
-    setErrorMessage("");
+  const loadData = useCallback(
+    async (cancelled: () => boolean) => {
+      setLoading(true);
+      setErrorMessage("");
 
-    try {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      if (authError) throw authError;
-      if (cancelled()) return;
-
-      setCurrentUser(user?.id ?? null);
-      setAuthReady(true);
-
-      let ownProfile: CommentProfile | null = null;
-
-      if (user) {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("username, full_name, avatar_url")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-        ownProfile = data ?? null;
-      }
-
-      if (cancelled()) return;
-      setUserProfile(ownProfile);
-
-      const { data: rows, error: commentsError } = await supabase
-        .from("video_comments")
-        .select(
-          "id, content, created_at, user_id, parent_comment_id, voice_url"
-        )
-        .eq("video_id", videoId)
-        .order("created_at", { ascending: true });
-
-      if (commentsError) throw commentsError;
-      if (cancelled()) return;
-
-      const commentRows = rows ?? [];
-      const userIds = [...new Set(commentRows.map((row) => row.user_id))];
-      const profileMap: Record<string, CommentProfile> = {};
-
-      if (userIds.length) {
-        const { data: profiles, error } = await supabase
-          .from("profiles")
-          .select("id, username, full_name, avatar_url")
-          .in("id", userIds);
-
-        if (error) throw error;
-
-        for (const profile of profiles ?? []) {
-          profileMap[profile.id] = {
-            username: profile.username,
-            full_name: profile.full_name,
-            avatar_url: profile.avatar_url,
-          };
-        }
-      }
-
-      if (cancelled()) return;
-
-      const loaded: Comment[] = commentRows.map((row) => ({
-        ...row,
-        parent_comment_id: row.parent_comment_id ?? null,
-        voice_url: row.voice_url ?? null,
-        profiles: profileMap[row.user_id] ?? null,
-      }));
-
-      knownIdsRef.current = new Set(loaded.map((item) => item.id));
-      setComments(loaded);
-
-      const ids = loaded.map((item) => item.id);
-
-      if (ids.length) {
-        const { data: likeRows, error: likesError } = await supabase
-          .from("video_comment_likes")
-          .select("comment_id, user_id")
-          .in("comment_id", ids);
-
-        if (likesError) throw likesError;
+        if (authError) throw authError;
         if (cancelled()) return;
 
-        const counts: Record<string, number> = {};
-        const mine: Record<string, boolean> = {};
+        setCurrentUser(user?.id ?? null);
+        setAuthReady(true);
 
-        for (const like of (likeRows ?? []) as CommentLike[]) {
-          counts[like.comment_id] = (counts[like.comment_id] ?? 0) + 1;
+        let ownProfile: CommentProfile | null = null;
 
-          if (user && like.user_id === user.id) {
-            mine[like.comment_id] = true;
+        if (user) {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("username, full_name, avatar_url")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          if (error) throw error;
+          ownProfile = data ?? null;
+        }
+
+        if (cancelled()) return;
+        setUserProfile(ownProfile);
+
+        const { data: rows, error: commentsError } = await supabase
+          .from("video_comments")
+          .select(
+            "id, content, created_at, user_id, parent_comment_id, voice_url"
+          )
+          .eq("video_id", videoId)
+          .order("created_at", { ascending: true });
+
+        if (commentsError) throw commentsError;
+        if (cancelled()) return;
+
+        const commentRows = rows ?? [];
+        const userIds = [
+          ...new Set(commentRows.map((row) => row.user_id)),
+        ];
+
+        const profileMap: Record<string, CommentProfile> = {};
+
+        if (userIds.length) {
+          const { data: profiles, error } = await supabase
+            .from("profiles")
+            .select("id, username, full_name, avatar_url")
+            .in("id", userIds);
+
+          if (error) throw error;
+
+          for (const profile of profiles ?? []) {
+            profileMap[profile.id] = {
+              username: profile.username,
+              full_name: profile.full_name,
+              avatar_url: profile.avatar_url,
+            };
           }
         }
 
-        setLikes(counts);
-        setMyLikes(mine);
-      } else {
-        setLikes({});
-        setMyLikes({});
+        if (cancelled()) return;
+
+        const loaded: Comment[] = commentRows.map((row) => ({
+          ...row,
+          parent_comment_id: row.parent_comment_id ?? null,
+          voice_url: row.voice_url ?? null,
+          profiles: profileMap[row.user_id] ?? null,
+        }));
+
+        knownIdsRef.current = new Set(
+          loaded.map((item) => item.id)
+        );
+
+        setComments(loaded);
+
+        const ids = loaded.map((item) => item.id);
+
+        if (ids.length) {
+          const { data: likeRows, error: likesError } = await supabase
+            .from("video_comment_likes")
+            .select("comment_id, user_id")
+            .in("comment_id", ids);
+
+          if (likesError) throw likesError;
+          if (cancelled()) return;
+
+          const counts: Record<string, number> = {};
+          const mine: Record<string, boolean> = {};
+
+          for (const like of (likeRows ?? []) as CommentLike[]) {
+            counts[like.comment_id] =
+              (counts[like.comment_id] ?? 0) + 1;
+
+            if (user && like.user_id === user.id) {
+              mine[like.comment_id] = true;
+            }
+          }
+
+          setLikes(counts);
+          setMyLikes(mine);
+        } else {
+          setLikes({});
+          setMyLikes({});
+        }
+      } catch (error) {
+        if (cancelled()) return;
+
+        console.error("Chargement commentaires :", error);
+        setErrorMessage(errorText(error));
+        setAuthReady(true);
+      } finally {
+        if (!cancelled()) setLoading(false);
       }
-    } catch (error) {
-      if (cancelled()) return;
-      console.error("Chargement commentaires :", error);
-      setErrorMessage(errorText(error));
-      setAuthReady(true);
-    } finally {
-      if (!cancelled()) setLoading(false);
-    }
-  }, [supabase, videoId]);
+    },
+    [supabase, videoId]
+  );
 
   useEffect(() => {
     let cancelled = false;
+
     void loadData(() => cancelled);
 
     return () => {
@@ -280,7 +320,7 @@ export default function CommentsSheet({
     };
   }, [loadData]);
 
-  // Realtime : nouveaux commentaires et likes.
+  // Synchronisation temps réel des commentaires et des likes.
   useEffect(() => {
     let active = true;
 
@@ -325,22 +365,26 @@ export default function CommentsSheet({
           event: "INSERT",
           schema: "public",
           table: "video_comment_likes",
+          filter: `video_id=eq.${videoId}`,
         },
         (payload) => {
           const row = payload.new as CommentLike;
+
           if (!active) return;
 
-          setLikes((previous) => ({
-            ...previous,
-            [row.comment_id]: (previous[row.comment_id] ?? 0) + 1,
-          }));
-
+          // Le changement de notre propre compte est déjà optimiste.
           if (row.user_id === currentUser) {
             setMyLikes((previous) => ({
               ...previous,
               [row.comment_id]: true,
             }));
+            return;
           }
+
+          setLikes((previous) => ({
+            ...previous,
+            [row.comment_id]: (previous[row.comment_id] ?? 0) + 1,
+          }));
         }
       )
       .on(
@@ -349,10 +393,20 @@ export default function CommentsSheet({
           event: "DELETE",
           schema: "public",
           table: "video_comment_likes",
+          filter: `video_id=eq.${videoId}`,
         },
         (payload) => {
           const row = payload.old as CommentLike;
+
           if (!active) return;
+
+          if (row.user_id === currentUser) {
+            setMyLikes((previous) => ({
+              ...previous,
+              [row.comment_id]: false,
+            }));
+            return;
+          }
 
           setLikes((previous) => ({
             ...previous,
@@ -361,18 +415,14 @@ export default function CommentsSheet({
               (previous[row.comment_id] ?? 0) - 1
             ),
           }));
-
-          if (row.user_id === currentUser) {
-            setMyLikes((previous) => ({
-              ...previous,
-              [row.comment_id]: false,
-            }));
-          }
         }
       )
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn("Realtime commentaires indisponible :", status);
+          console.warn(
+            "Realtime commentaires indisponible :",
+            status
+          );
         }
       });
 
@@ -380,7 +430,13 @@ export default function CommentsSheet({
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, videoId, currentUser, addComment, notifyAdded]);
+  }, [
+    supabase,
+    videoId,
+    currentUser,
+    addComment,
+    notifyAdded,
+  ]);
 
   const sendComment = async (
     content: string,
@@ -404,6 +460,7 @@ export default function CommentsSheet({
       } = await supabase.auth.getUser();
 
       if (authError) throw authError;
+
       if (!user || user.id !== currentUser) {
         throw new Error("Ta session a expiré. Reconnecte-toi.");
       }
@@ -459,9 +516,14 @@ export default function CommentsSheet({
 
   const toggleCommentLike = async (commentId: string) => {
     if (!currentUser) {
-      setErrorMessage("Connecte-toi pour aimer un commentaire.");
+      setErrorMessage(
+        "Connecte-toi pour aimer un commentaire."
+      );
       return;
     }
+
+    if (likingRef.current.has(commentId)) return;
+    likingRef.current.add(commentId);
 
     const wasLiked = !!myLikes[commentId];
 
@@ -493,16 +555,19 @@ export default function CommentsSheet({
           .insert({
             comment_id: commentId,
             user_id: currentUser,
+            video_id: videoId,
           });
 
         if (error) throw error;
       }
     } catch (error) {
       console.error("Like commentaire :", error);
+
       setMyLikes((previous) => ({
         ...previous,
         [commentId]: wasLiked,
       }));
+
       setLikes((previous) => ({
         ...previous,
         [commentId]: Math.max(
@@ -510,7 +575,10 @@ export default function CommentsSheet({
           (previous[commentId] ?? 0) + (wasLiked ? 1 : -1)
         ),
       }));
+
       setErrorMessage(errorText(error));
+    } finally {
+      likingRef.current.delete(commentId);
     }
   };
 
@@ -520,7 +588,10 @@ export default function CommentsSheet({
     setErrorMessage("");
 
     try {
-      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      if (
+        !navigator.mediaDevices?.getUserMedia ||
+        !window.MediaRecorder
+      ) {
         throw new Error(
           "L'enregistrement vocal n'est pas pris en charge par ce navigateur."
         );
@@ -579,8 +650,10 @@ export default function CommentsSheet({
     } catch (error) {
       console.error("Enregistrement vocal :", error);
       setErrorMessage(errorText(error));
+
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
+
       setRecording(false);
     }
   };
@@ -598,7 +671,9 @@ export default function CommentsSheet({
   const discardVoice = () => {
     if (recording) stopRecording();
 
-    if (voicePreview) URL.revokeObjectURL(voicePreview);
+    if (voicePreview) {
+      URL.revokeObjectURL(voicePreview);
+    }
 
     setVoiceBlob(null);
     setVoicePreview("");
@@ -641,12 +716,19 @@ export default function CommentsSheet({
     }
   };
 
-  const roots = comments.filter((comment) => !comment.parent_comment_id);
+  const roots = comments.filter(
+    (comment) => !comment.parent_comment_id
+  );
 
   const repliesFor = (commentId: string) =>
-    comments.filter((comment) => comment.parent_comment_id === commentId);
+    comments.filter(
+      (comment) => comment.parent_comment_id === commentId
+    );
 
-  const renderComment = (comment: Comment, isReply = false) => {
+  const renderComment = (
+    comment: Comment,
+    isReply = false
+  ) => {
     const name =
       comment.profiles?.username ||
       comment.profiles?.full_name ||
@@ -658,7 +740,9 @@ export default function CommentsSheet({
     return (
       <div
         key={comment.id}
-        className={`flex gap-3 ${isReply ? "ml-11 mt-3" : "mt-5"}`}
+        className={`flex gap-3 ${
+          isReply ? "ml-11 mt-3" : "mt-5"
+        }`}
       >
         <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100">
           {comment.profiles?.avatar_url ? (
@@ -682,6 +766,7 @@ export default function CommentsSheet({
             <span className="text-xs font-bold text-gray-600">
               @{name}
             </span>
+
             <span className="text-[10px] text-gray-400">
               {formatDate(comment.created_at)}
             </span>
@@ -706,7 +791,9 @@ export default function CommentsSheet({
           <div className="mt-2 flex items-center gap-5">
             <button
               type="button"
-              onClick={() => void toggleCommentLike(comment.id)}
+              onClick={() =>
+                void toggleCommentLike(comment.id)
+              }
               className={`flex items-center gap-1 text-xs ${
                 myLikes[comment.id]
                   ? "font-semibold text-pink-500"
@@ -716,7 +803,11 @@ export default function CommentsSheet({
             >
               <Heart
                 size={15}
-                fill={myLikes[comment.id] ? "currentColor" : "none"}
+                fill={
+                  myLikes[comment.id]
+                    ? "currentColor"
+                    : "none"
+                }
               />
               {likes[comment.id] ?? 0}
             </button>
@@ -751,11 +842,15 @@ export default function CommentsSheet({
               >
                 {isExpanded
                   ? "Masquer les réponses"
-                  : `Voir les ${replies.length} réponse${replies.length > 1 ? "s" : ""}`}
+                  : `Voir les ${replies.length} réponse${
+                      replies.length > 1 ? "s" : ""
+                    }`}
               </button>
 
               {isExpanded &&
-                replies.map((reply) => renderComment(reply, true))}
+                replies.map((reply) =>
+                  renderComment(reply, true)
+                )}
             </div>
           )}
         </div>
@@ -780,18 +875,21 @@ export default function CommentsSheet({
         aria-label="Commentaires"
         onClick={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
-        className="fixed bottom-0 left-0 right-0 z-[9999] flex flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl"
+        className="fixed left-0 right-0 z-[9999] flex flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl"
         style={{
-          height: "min(78dvh, 760px)",
+          bottom: keyboardHeight,
+          height: `min(calc(78dvh - ${keyboardHeight}px), 760px)`,
           paddingBottom: "env(safe-area-inset-bottom)",
           overscrollBehavior: "contain",
         }}
       >
         <header className="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-3">
           <div className="w-10" />
+
           <h2 className="font-bold text-moshi-text">
             {comments.length} commentaires
           </h2>
+
           <button
             type="button"
             onClick={onClose}
@@ -817,6 +915,7 @@ export default function CommentsSheet({
           ) : roots.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-gray-400">
               <MessageCircle size={34} />
+
               <p className="text-center text-sm">
                 Sois le premier à commenter !
               </p>
@@ -826,7 +925,7 @@ export default function CommentsSheet({
           )}
         </div>
 
-        <footer className="shrink-0 border-t border-gray-100 bg-white px-3 pt-3 pb-2">
+        <footer className="shrink-0 border-t border-gray-100 bg-white px-3 pb-2 pt-3">
           {errorMessage && (
             <div className="mb-2 break-words rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">
               {errorMessage}
@@ -836,8 +935,12 @@ export default function CommentsSheet({
           {replyTo && (
             <div className="mb-2 flex items-center justify-between rounded-xl bg-purple-50 px-3 py-2">
               <span className="truncate text-xs text-purple-700">
-                Réponse à @{replyTo.profiles?.username || replyTo.profiles?.full_name || "Utilisateur"}
+                Réponse à @
+                {replyTo.profiles?.username ||
+                  replyTo.profiles?.full_name ||
+                  "Utilisateur"}
               </span>
+
               <button
                 type="button"
                 onClick={() => setReplyTo(null)}
@@ -856,6 +959,7 @@ export default function CommentsSheet({
                 src={voicePreview}
                 className="h-9 min-w-0 flex-1"
               />
+
               <button
                 type="button"
                 onClick={discardVoice}
@@ -864,6 +968,7 @@ export default function CommentsSheet({
               >
                 <Trash2 size={18} />
               </button>
+
               <button
                 type="button"
                 disabled={voiceUploading || sending}
@@ -872,7 +977,10 @@ export default function CommentsSheet({
                 className="rounded-full p-2 text-moshi-purple disabled:opacity-40"
               >
                 {voiceUploading || sending ? (
-                  <Loader2 size={20} className="animate-spin" />
+                  <Loader2
+                    size={20}
+                    className="animate-spin"
+                  />
                 ) : (
                   <Send size={20} />
                 )}
@@ -882,7 +990,10 @@ export default function CommentsSheet({
 
           {!authReady ? (
             <div className="flex justify-center py-2">
-              <Loader2 size={18} className="animate-spin text-moshi-purple" />
+              <Loader2
+                size={18}
+                className="animate-spin text-moshi-purple"
+              />
             </div>
           ) : !currentUser ? (
             <p className="py-2 text-center text-sm text-gray-500">
@@ -900,17 +1011,36 @@ export default function CommentsSheet({
               <div className="flex items-center gap-2 rounded-full bg-gray-100 px-3 py-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (recording) stopRecording();
-                    else void startRecording();
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    void startRecording();
                   }}
-                  disabled={sending || voiceUploading || !!voicePreview}
-                  aria-label={recording ? "Arrêter le vocal" : "Enregistrer un vocal"}
+                  onPointerUp={() => {
+                    if (recording) stopRecording();
+                  }}
+                  onPointerLeave={() => {
+                    if (recording) stopRecording();
+                  }}
+                  onPointerCancel={() => {
+                    if (recording) stopRecording();
+                  }}
+                  disabled={
+                    sending ||
+                    voiceUploading ||
+                    !!voicePreview
+                  }
+                  aria-label="Maintenir pour enregistrer un vocal"
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                    recording ? "bg-red-500 text-white" : "text-moshi-purple"
+                    recording
+                      ? "bg-red-500 text-white"
+                      : "text-moshi-purple"
                   } disabled:opacity-40`}
                 >
-                  {recording ? <Square size={17} /> : <Mic size={19} />}
+                  {recording ? (
+                    <Square size={17} />
+                  ) : (
+                    <Mic size={19} />
+                  )}
                 </button>
 
                 <input
@@ -928,10 +1058,18 @@ export default function CommentsSheet({
                       : "Ajouter un commentaire..."
                   }
                   value={newComment}
-                  disabled={sending || recording || !!voicePreview}
-                  onChange={(event) => setNewComment(event.target.value)}
-                  onClick={(event) => event.stopPropagation()}
-                  onTouchStart={(event) => event.stopPropagation()}
+                  disabled={
+                    sending || recording || !!voicePreview
+                  }
+                  onChange={(event) =>
+                    setNewComment(event.target.value)
+                  }
+                  onClick={(event) =>
+                    event.stopPropagation()
+                  }
+                  onTouchStart={(event) =>
+                    event.stopPropagation()
+                  }
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
@@ -943,13 +1081,22 @@ export default function CommentsSheet({
 
                 <button
                   type="button"
-                  onClick={() => void sendComment(newComment)}
-                  disabled={sending || !newComment.trim() || recording}
+                  onClick={() =>
+                    void sendComment(newComment)
+                  }
+                  disabled={
+                    sending ||
+                    !newComment.trim() ||
+                    recording
+                  }
                   aria-label="Envoyer le commentaire"
                   className="flex h-9 w-9 shrink-0 items-center justify-center text-moshi-purple disabled:opacity-40"
                 >
                   {sending ? (
-                    <Loader2 size={20} className="animate-spin" />
+                    <Loader2
+                      size={20}
+                      className="animate-spin"
+                    />
                   ) : (
                     <Send size={20} />
                   )}
