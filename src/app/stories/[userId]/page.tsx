@@ -10,6 +10,8 @@ import {
   Loader2,
   Trash2,
   X,
+  Users,
+  Clock3,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -31,6 +33,12 @@ interface Profile {
   avatar_url: string | null;
 }
 
+interface StoryViewer {
+  viewer_id: string;
+  viewed_at: string | null;
+  profile: Profile | null;
+}
+
 export default function StoryViewerPage() {
   const params = useParams();
   const router = useRouter();
@@ -47,6 +55,10 @@ export default function StoryViewerPage() {
   const [deleting, setDeleting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [viewsCount, setViewsCount] = useState(0);
+
+  const [viewers, setViewers] = useState<StoryViewer[]>([]);
+  const [viewersOpen, setViewersOpen] = useState(false);
+  const [loadingViewers, setLoadingViewers] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -97,7 +109,7 @@ export default function StoryViewerPage() {
     setIndex((previous) => previous - 1);
   }, [index, resetProgress, stopTimer]);
 
-  // Chargement du profil et des stories actives.
+  // Charger le profil et les stories actives.
   useEffect(() => {
     let active = true;
 
@@ -154,10 +166,8 @@ export default function StoryViewerPage() {
     };
   }, [supabase, userId]);
 
-  // Enregistrer une vue pour chaque spectateur, sans compter le propriétaire.
+  // Enregistrer une vue sans compter le propriétaire.
   useEffect(() => {
-    let active = true;
-
     async function registerView() {
       if (!currentStory || !currentUserId || isOwner) return;
 
@@ -180,13 +190,9 @@ export default function StoryViewerPage() {
     }
 
     registerView();
-
-    return () => {
-      active = false;
-    };
   }, [currentStory?.id, currentUserId, isOwner, supabase]);
 
-  // Charger le nombre de vues pour le propriétaire.
+  // Charger le compteur pour le propriétaire.
   useEffect(() => {
     let active = true;
 
@@ -219,19 +225,69 @@ export default function StoryViewerPage() {
     };
   }, [currentStory?.id, currentStory?.views_count, isOwner, supabase]);
 
-  // Réinitialiser la progression lors du changement de story.
+  // Afficher la liste des spectateurs.
+  const openViewers = async () => {
+    if (!currentStory || !isOwner || loadingViewers) return;
+
+    setViewersOpen(true);
+    setLoadingViewers(true);
+    setViewers([]);
+
+    const { data: viewRows, error: viewsError } = await supabase
+      .from("story_views")
+      .select("viewer_id, viewed_at")
+      .eq("story_id", currentStory.id)
+      .order("viewed_at", { ascending: false });
+
+    if (viewsError) {
+      console.error("Erreur de chargement des spectateurs :", viewsError);
+      setLoadingViewers(false);
+      return;
+    }
+
+    const rows = viewRows || [];
+    const viewerIds = [...new Set(rows.map((row) => row.viewer_id))];
+
+    let profilesMap: Record<string, Profile> = {};
+
+    if (viewerIds.length > 0) {
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, username, avatar_url")
+        .in("id", viewerIds);
+
+      if (profilesError) {
+        console.error("Erreur de chargement des profils :", profilesError);
+      }
+
+      (profilesData || []).forEach((item) => {
+        profilesMap[item.id] = item;
+      });
+    }
+
+    setViewers(
+      rows.map((row) => ({
+        viewer_id: row.viewer_id,
+        viewed_at: row.viewed_at,
+        profile: profilesMap[row.viewer_id] || null,
+      }))
+    );
+
+    setLoadingViewers(false);
+  };
+
+  // Réinitialiser la progression au changement de story.
   useEffect(() => {
     resetProgress();
     setPaused(false);
+    setViewersOpen(false);
   }, [currentStory?.id, resetProgress]);
 
   // Chronomètre des photos avec reprise après pause.
   useEffect(() => {
     stopTimer();
 
-    if (!currentStory || isVideo || paused) {
-      return;
-    }
+    if (!currentStory || isVideo || paused) return;
 
     const duration = Math.max(3, currentStory.duration || 5);
     const startTime =
@@ -270,7 +326,7 @@ export default function StoryViewerPage() {
     return () => stopTimer();
   }, [stopTimer]);
 
-  // Suppression d'une story par son propriétaire.
+  // Supprimer une story.
   const handleDelete = async () => {
     if (!currentStory || !isOwner || deleting) return;
 
@@ -309,6 +365,17 @@ export default function StoryViewerPage() {
     setDeleting(false);
   };
 
+  const formatViewedAt = (date: string | null) => {
+    if (!date) return "";
+
+    return new Intl.DateTimeFormat("fr-FR", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(date));
+  };
+
   const avatar =
     profile?.avatar_url || "https://i.pravatar.cc/150?img=0";
 
@@ -324,11 +391,9 @@ export default function StoryViewerPage() {
     return (
       <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-black px-6 text-center text-white">
         <p className="text-lg font-bold">Aucune story disponible</p>
-
         <p className="text-sm text-white/60">
           Cette story a peut-être expiré ou a été supprimée.
         </p>
-
         <button
           onClick={goBack}
           className="rounded-full bg-white px-6 py-3 font-bold text-black"
@@ -342,7 +407,7 @@ export default function StoryViewerPage() {
   return (
     <main className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white">
       <div className="relative flex h-full w-full max-w-3xl flex-col justify-center">
-        {/* Barre de progression et profil */}
+        {/* Progression et profil */}
         <div className="absolute left-0 right-0 top-0 z-30 px-3 pt-[max(env(safe-area-inset-top),12px)]">
           <div className="mb-3 flex gap-1">
             {stories.map((story, storyIndex) => (
@@ -381,7 +446,6 @@ export default function StoryViewerPage() {
                 <p className="text-sm font-bold">
                   {profile?.username || "Utilisateur"}
                 </p>
-
                 <p className="text-[11px] text-white/70">
                   {index + 1} / {stories.length}
                 </p>
@@ -391,10 +455,16 @@ export default function StoryViewerPage() {
             <div className="flex items-center gap-3">
               {isOwner && (
                 <>
-                  <div className="flex items-center gap-1 rounded-full bg-black/40 px-3 py-2 text-sm">
+                  <button
+                    type="button"
+                    onClick={openViewers}
+                    className="flex items-center gap-2 rounded-full bg-black/50 px-3 py-2 text-sm transition hover:bg-white/20"
+                    aria-label="Voir les spectateurs"
+                  >
                     <Eye size={17} />
                     <span>{viewsCount}</span>
-                  </div>
+                    <Users size={16} />
+                  </button>
 
                   <button
                     onClick={handleDelete}
@@ -457,21 +527,18 @@ export default function StoryViewerPage() {
             />
           )}
 
-          {/* Zone gauche : story précédente */}
           <button
             aria-label="Story précédente"
             onClick={previousStory}
             className="absolute bottom-0 left-0 top-0 z-10 w-1/4"
           />
 
-          {/* Zone droite : story suivante */}
           <button
             aria-label="Story suivante"
             onClick={nextStory}
             className="absolute bottom-0 right-0 top-0 z-10 w-1/4"
           />
 
-          {/* Zone centrale : pause et reprise */}
           <button
             aria-label={paused ? "Reprendre" : "Mettre en pause"}
             onClick={() => setPaused((value) => !value)}
@@ -503,6 +570,87 @@ export default function StoryViewerPage() {
           </button>
         </div>
       </div>
+
+      {/* Fenêtre des spectateurs */}
+      {viewersOpen && isOwner && (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center">
+          <div className="flex max-h-[75vh] w-full max-w-lg flex-col rounded-t-3xl border border-white/10 bg-[#151515] sm:rounded-3xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-bold">Spectateurs</h2>
+                <p className="text-xs text-white/50">
+                  {viewers.length} personne(s) enregistrée(s)
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setViewersOpen(false)}
+                aria-label="Fermer la liste"
+                className="rounded-full bg-white/10 p-2"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto px-4 py-3">
+              {loadingViewers ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-white/60">
+                  <Loader2 size={20} className="animate-spin" />
+                  Chargement des spectateurs...
+                </div>
+              ) : viewers.length === 0 ? (
+                <div className="py-10 text-center">
+                  <Eye className="mx-auto mb-3 text-white/40" size={30} />
+                  <p className="text-sm font-semibold">
+                    Aucun spectateur pour le moment
+                  </p>
+                  <p className="mt-1 text-xs text-white/50">
+                    Les personnes qui regarderont cette story apparaîtront ici.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {viewers.map((viewer) => (
+                    <div
+                      key={viewer.viewer_id}
+                      className="flex items-center gap-3 rounded-xl px-2 py-3"
+                    >
+                      <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-white/10">
+                        {viewer.profile?.avatar_url ? (
+                          <Image
+                            src={viewer.profile.avatar_url}
+                            alt="Avatar"
+                            fill
+                            unoptimized
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-lg font-bold">
+                            {(viewer.profile?.username || "U")
+                              .charAt(0)
+                              .toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">
+                          {viewer.profile?.username || "Utilisateur"}
+                        </p>
+                        <p className="mt-1 flex items-center gap-1 text-xs text-white/50">
+                          <Clock3 size={12} />
+                          {formatViewedAt(viewer.viewed_at)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
