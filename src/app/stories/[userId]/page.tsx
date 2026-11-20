@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   ArrowLeft,
+  Eye,
   Loader2,
   Trash2,
   X,
@@ -21,6 +22,7 @@ interface Story {
   created_at: string | null;
   duration: number | null;
   caption: string | null;
+  views_count: number | null;
 }
 
 interface Profile {
@@ -44,6 +46,7 @@ export default function StoryViewerPage() {
   const [paused, setPaused] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [viewsCount, setViewsCount] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -94,6 +97,7 @@ export default function StoryViewerPage() {
     setIndex((previous) => previous - 1);
   }, [index, resetProgress, stopTimer]);
 
+  // Chargement du profil et des stories actives.
   useEffect(() => {
     let active = true;
 
@@ -105,6 +109,7 @@ export default function StoryViewerPage() {
       } = await supabase.auth.getUser();
 
       if (!active) return;
+
       setCurrentUserId(user?.id || null);
 
       const { data: profileData } = await supabase
@@ -114,12 +119,13 @@ export default function StoryViewerPage() {
         .maybeSingle();
 
       if (!active) return;
+
       setProfile(profileData);
 
       const { data, error } = await supabase
         .from("stories")
         .select(
-          "id, user_id, media_url, media_type, expires_at, created_at, duration, caption"
+          "id, user_id, media_url, media_type, expires_at, created_at, duration, caption, views_count"
         )
         .eq("user_id", userId)
         .gt("expires_at", new Date().toISOString())
@@ -148,13 +154,78 @@ export default function StoryViewerPage() {
     };
   }, [supabase, userId]);
 
-  // Remettre la progression à zéro uniquement lors d'un changement de story.
+  // Enregistrer une vue pour chaque spectateur, sans compter le propriétaire.
+  useEffect(() => {
+    let active = true;
+
+    async function registerView() {
+      if (!currentStory || !currentUserId || isOwner) return;
+
+      const { error } = await supabase
+        .from("story_views")
+        .upsert(
+          {
+            story_id: currentStory.id,
+            viewer_id: currentUserId,
+          },
+          {
+            onConflict: "story_id,viewer_id",
+            ignoreDuplicates: true,
+          }
+        );
+
+      if (error) {
+        console.error("Impossible d'enregistrer la vue :", error);
+      }
+    }
+
+    registerView();
+
+    return () => {
+      active = false;
+    };
+  }, [currentStory?.id, currentUserId, isOwner, supabase]);
+
+  // Charger le nombre de vues pour le propriétaire.
+  useEffect(() => {
+    let active = true;
+
+    async function loadViewsCount() {
+      if (!currentStory || !isOwner) {
+        setViewsCount(0);
+        return;
+      }
+
+      const { count, error } = await supabase
+        .from("story_views")
+        .select("*", { count: "exact", head: true })
+        .eq("story_id", currentStory.id);
+
+      if (!active) return;
+
+      if (error) {
+        console.error("Erreur compteur de vues :", error);
+        setViewsCount(currentStory.views_count || 0);
+        return;
+      }
+
+      setViewsCount(count || 0);
+    }
+
+    loadViewsCount();
+
+    return () => {
+      active = false;
+    };
+  }, [currentStory?.id, currentStory?.views_count, isOwner, supabase]);
+
+  // Réinitialiser la progression lors du changement de story.
   useEffect(() => {
     resetProgress();
     setPaused(false);
   }, [currentStory?.id, resetProgress]);
 
-  // Chronomètre des photos : conserve la progression pendant une pause.
+  // Chronomètre des photos avec reprise après pause.
   useEffect(() => {
     stopTimer();
 
@@ -163,9 +234,8 @@ export default function StoryViewerPage() {
     }
 
     const duration = Math.max(3, currentStory.duration || 5);
-    const initialProgress = progressRef.current;
     const startTime =
-      Date.now() - (initialProgress / 100) * duration * 1000;
+      Date.now() - (progressRef.current / 100) * duration * 1000;
 
     timerRef.current = setInterval(() => {
       const elapsed = (Date.now() - startTime) / 1000;
@@ -200,6 +270,7 @@ export default function StoryViewerPage() {
     return () => stopTimer();
   }, [stopTimer]);
 
+  // Suppression d'une story par son propriétaire.
   const handleDelete = async () => {
     if (!currentStory || !isOwner || deleting) return;
 
@@ -253,9 +324,11 @@ export default function StoryViewerPage() {
     return (
       <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-black px-6 text-center text-white">
         <p className="text-lg font-bold">Aucune story disponible</p>
+
         <p className="text-sm text-white/60">
           Cette story a peut-être expiré ou a été supprimée.
         </p>
+
         <button
           onClick={goBack}
           className="rounded-full bg-white px-6 py-3 font-bold text-black"
@@ -269,6 +342,7 @@ export default function StoryViewerPage() {
   return (
     <main className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white">
       <div className="relative flex h-full w-full max-w-3xl flex-col justify-center">
+        {/* Barre de progression et profil */}
         <div className="absolute left-0 right-0 top-0 z-30 px-3 pt-[max(env(safe-area-inset-top),12px)]">
           <div className="mb-3 flex gap-1">
             {stories.map((story, storyIndex) => (
@@ -307,6 +381,7 @@ export default function StoryViewerPage() {
                 <p className="text-sm font-bold">
                   {profile?.username || "Utilisateur"}
                 </p>
+
                 <p className="text-[11px] text-white/70">
                   {index + 1} / {stories.length}
                 </p>
@@ -315,18 +390,25 @@ export default function StoryViewerPage() {
 
             <div className="flex items-center gap-3">
               {isOwner && (
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  aria-label="Supprimer la story"
-                  className="rounded-full bg-black/30 p-2"
-                >
-                  {deleting ? (
-                    <Loader2 size={19} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={19} />
-                  )}
-                </button>
+                <>
+                  <div className="flex items-center gap-1 rounded-full bg-black/40 px-3 py-2 text-sm">
+                    <Eye size={17} />
+                    <span>{viewsCount}</span>
+                  </div>
+
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    aria-label="Supprimer la story"
+                    className="rounded-full bg-black/30 p-2"
+                  >
+                    {deleting ? (
+                      <Loader2 size={19} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={19} />
+                    )}
+                  </button>
+                </>
               )}
 
               <button
@@ -340,6 +422,7 @@ export default function StoryViewerPage() {
           </div>
         </div>
 
+        {/* Média au format 16:9 */}
         <div className="relative mx-auto aspect-video w-full overflow-hidden bg-black">
           {isVideo ? (
             <video
@@ -374,18 +457,21 @@ export default function StoryViewerPage() {
             />
           )}
 
+          {/* Zone gauche : story précédente */}
           <button
             aria-label="Story précédente"
             onClick={previousStory}
             className="absolute bottom-0 left-0 top-0 z-10 w-1/4"
           />
 
+          {/* Zone droite : story suivante */}
           <button
             aria-label="Story suivante"
             onClick={nextStory}
             className="absolute bottom-0 right-0 top-0 z-10 w-1/4"
           />
 
+          {/* Zone centrale : pause et reprise */}
           <button
             aria-label={paused ? "Reprendre" : "Mettre en pause"}
             onClick={() => setPaused((value) => !value)}
