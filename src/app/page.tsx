@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Search, Gift } from "lucide-react";
+import { Search } from "lucide-react";
 import HomeFeed from "@/components/home/HomeFeed";
 import MoshiLiveFeed from "@/components/home/MoshiLiveFeed";
 import { cn } from "@/lib/utils";
@@ -35,15 +35,6 @@ export default function HomePage() {
               className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white backdrop-blur-md"
             >
               <Search size={18} />
-            </button>
-
-            <button
-              type="button"
-              aria-label="Cadeaux"
-              className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white backdrop-blur-md"
-            >
-              <Gift size={18} />
-              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
             </button>
           </div>
         </div>
