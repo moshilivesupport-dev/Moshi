@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Grid3X3,
   Play,
@@ -18,6 +18,8 @@ import {
   Video,
   BadgeCheck,
   Settings,
+  MessageCircle,
+  Loader2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import FollowListModal from "@/components/profile/FollowListModal";
@@ -52,15 +54,11 @@ interface ProfileViewProps {
 
 function formatNumber(num: number): string {
   if (num >= 1_000_000) {
-    return (
-      (num / 1_000_000).toFixed(1).replace(".0", "") + "M"
-    );
+    return (num / 1_000_000).toFixed(1).replace(".0", "") + "M";
   }
 
   if (num >= 1_000) {
-    return (
-      (num / 1_000).toFixed(1).replace(".0", "") + "K"
-    );
+    return (num / 1_000).toFixed(1).replace(".0", "") + "K";
   }
 
   return num.toString();
@@ -71,6 +69,7 @@ export default function ProfileView({
   isOwnProfile,
 }: ProfileViewProps) {
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const returnToLiveId = searchParams.get("returnToLive");
@@ -90,6 +89,7 @@ export default function ProfileView({
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [messageLoading, setMessageLoading] = useState(false);
 
   const [followListType, setFollowListType] =
     useState<FollowListType | null>(null);
@@ -117,14 +117,9 @@ export default function ProfileView({
 
         const { data, error } = await supabase
           .from("videos")
-          .select(
-            "id, url, view_count, like_count, caption, status, user_id"
-          )
+          .select("id, url, view_count, like_count, caption, status, user_id")
           .eq("user_id", profile.id)
-          .eq(
-            "status",
-            activeTab === "private" ? "hidden" : "published"
-          )
+          .eq("status", activeTab === "private" ? "hidden" : "published")
           .order("created_at", { ascending: false })
           .limit(60);
 
@@ -170,9 +165,7 @@ export default function ProfileView({
       ) {
         const { data, error } = await supabase
           .from("videos")
-          .select(
-            "id, url, view_count, like_count, caption, status, user_id"
-          )
+          .select("id, url, view_count, like_count, caption, status, user_id")
           .in("id", videoIds)
           .eq("status", "published");
 
@@ -187,18 +180,14 @@ export default function ProfileView({
 
         loadedVideos = videoIds
           .map((id) => videoMap.get(id))
-          .filter(
-            (video): video is VideoData => Boolean(video)
-          );
+          .filter((video): video is VideoData => Boolean(video));
       }
 
       setVideos(loadedVideos);
     } catch (error) {
       console.error("Erreur chargement vidéos du profil :", error);
       setVideos([]);
-      setErrorMessage(
-        "Impossible de charger ce contenu pour le moment."
-      );
+      setErrorMessage("Impossible de charger ce contenu pour le moment.");
     } finally {
       setLoading(false);
     }
@@ -276,10 +265,7 @@ export default function ProfileView({
       .maybeSingle();
 
     if (error) {
-      console.error(
-        "Erreur vérification abonnement :",
-        error
-      );
+      console.error("Erreur vérification abonnement :", error);
       return;
     }
 
@@ -301,6 +287,7 @@ export default function ProfileView({
 
     if (!currentUserId) {
       alert("Connectez-vous pour suivre ce profil.");
+      router.push("/auth/login");
       return;
     }
 
@@ -322,10 +309,7 @@ export default function ProfileView({
 
         setStats((current) => ({
           ...current,
-          followers_count: Math.max(
-            0,
-            current.followers_count - 1
-          ),
+          followers_count: Math.max(0, current.followers_count - 1),
         }));
       } else {
         const { error } = await supabase
@@ -353,19 +337,96 @@ export default function ProfileView({
       }
     } catch (error) {
       console.error("Erreur abonnement :", error);
-      alert(
-        "Impossible de modifier votre abonnement pour le moment."
-      );
+      alert("Impossible de modifier votre abonnement pour le moment.");
     } finally {
       setFollowLoading(false);
     }
   };
 
+  // Ouvrir une conversation existante ou en créer une nouvelle
+  const handleSendMessage = async () => {
+    if (messageLoading) return;
+
+    setMessageLoading(true);
+
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+
+      if (!user) {
+        router.push("/auth/login");
+        return;
+      }
+
+      if (user.id === profile.id) {
+        return;
+      }
+
+      // Récupérer les conversations auxquelles l'utilisateur actuel participe.
+      const { data: myMemberships, error: myMembershipError } =
+        await supabase
+          .from("conversation_members")
+          .select("conversation_id")
+          .eq("user_id", user.id);
+
+      if (myMembershipError) throw myMembershipError;
+
+      const myConversationIds = (myMemberships ?? []).map(
+        (item) => item.conversation_id
+      );
+
+      // Rechercher une conversation commune avec le profil visité.
+      if (myConversationIds.length > 0) {
+        const { data: targetMemberships, error: targetMembershipError } =
+          await supabase
+            .from("conversation_members")
+            .select("conversation_id")
+            .eq("user_id", profile.id)
+            .in("conversation_id", myConversationIds);
+
+        if (targetMembershipError) throw targetMembershipError;
+
+        const existingConversation = targetMemberships?.[0];
+
+        if (existingConversation) {
+          router.push(`/messages/${existingConversation.conversation_id}`);
+          return;
+        }
+      }
+
+      // Aucune conversation commune : créer la conversation à deux.
+      const { data: conversationId, error: rpcError } =
+        await supabase.rpc("create_conversation", {
+          participant_ids: [user.id, profile.id],
+        });
+
+      if (rpcError) throw rpcError;
+
+      if (!conversationId) {
+        throw new Error("La conversation n'a pas été créée.");
+      }
+
+      router.push(`/messages/${conversationId}`);
+    } catch (error) {
+      console.error("Erreur ouverture conversation :", error);
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Impossible d'ouvrir cette conversation pour le moment."
+      );
+    } finally {
+      setMessageLoading(false);
+    }
+  };
+
   // Suppression d'une vidéo
   const handleDeleteVideo = async (videoId: string) => {
-    if (
-      !confirm("Supprimer cette vidéo définitivement ?")
-    ) {
+    if (!confirm("Supprimer cette vidéo définitivement ?")) {
       return;
     }
 
@@ -411,14 +472,8 @@ export default function ProfileView({
 
       setMenuOpenId(null);
     } catch (error) {
-      console.error(
-        "Erreur modification visibilité :",
-        error
-      );
-
-      alert(
-        "Impossible de modifier la visibilité de cette vidéo."
-      );
+      console.error("Erreur modification visibilité :", error);
+      alert("Impossible de modifier la visibilité de cette vidéo.");
     }
   };
 
@@ -440,22 +495,16 @@ export default function ProfileView({
       setMenuOpenId(null);
     } catch (error) {
       console.error("Erreur retrait favori :", error);
-      alert(
-        "Impossible de retirer cette vidéo des favoris."
-      );
+      alert("Impossible de retirer cette vidéo des favoris.");
     }
   };
 
-  const name =
-    profile.full_name || profile.username || "Utilisateur";
+  const name = profile.full_name || profile.username || "Utilisateur";
 
-  const handle = profile.username
-    ? `@${profile.username}`
-    : "";
+  const handle = profile.username ? `@${profile.username}` : "";
 
   const isVendeur =
-    profile.role === "vendeur" ||
-    profile.role === "seller";
+    profile.role === "vendeur" || profile.role === "seller";
 
   const isVerified = profile.is_verified === true;
 
@@ -531,12 +580,8 @@ export default function ProfileView({
                       url: window.location.href,
                     })
                     .catch(() => undefined);
-                } else if (
-                  typeof navigator !== "undefined"
-                ) {
-                  void navigator.clipboard
-                    ?.writeText(window.location.href);
-
+                } else if (typeof navigator !== "undefined") {
+                  void navigator.clipboard?.writeText(window.location.href);
                   alert("Lien du profil copié.");
                 }
               }}
@@ -567,9 +612,7 @@ export default function ProfileView({
               )}
             </div>
 
-            <p className="text-sm text-moshi-text/60">
-              {handle}
-            </p>
+            <p className="text-sm text-moshi-text/60">{handle}</p>
           </div>
 
           <div className="w-20 h-20 rounded-full p-[3px] bg-gradient-to-br from-[#FF8FB1] via-[#9D7BEA] to-[#60A5FA]">
@@ -603,9 +646,7 @@ export default function ProfileView({
             <p className="text-lg font-bold">
               {formatNumber(stats.following_count)}
             </p>
-            <p className="text-xs text-moshi-text/60">
-              Suivis
-            </p>
+            <p className="text-xs text-moshi-text/60">Suivis</p>
           </button>
 
           <button
@@ -617,18 +658,14 @@ export default function ProfileView({
             <p className="text-lg font-bold">
               {formatNumber(stats.followers_count)}
             </p>
-            <p className="text-xs text-moshi-text/60">
-              Followers
-            </p>
+            <p className="text-xs text-moshi-text/60">Followers</p>
           </button>
 
           <div className="text-center">
             <p className="text-lg font-bold">
               {formatNumber(stats.total_likes)}
             </p>
-            <p className="text-xs text-moshi-text/60">
-              J'aime
-            </p>
+            <p className="text-xs text-moshi-text/60">J'aime</p>
           </div>
         </div>
 
@@ -638,13 +675,14 @@ export default function ProfileView({
           </p>
         )}
 
+        {/* Actions visibles uniquement sur le profil d'un autre utilisateur */}
         {!isOwnProfile && (
-          <div className="px-4 mb-4">
+          <div className="px-4 mb-4 flex gap-3">
             <button
               type="button"
               onClick={() => void handleToggleFollow()}
               disabled={followLoading}
-              className={`w-full rounded-full py-3 text-sm font-bold transition-all disabled:opacity-60 ${
+              className={`flex-1 rounded-full py-3 text-sm font-bold transition-all disabled:opacity-60 ${
                 isFollowing
                   ? "bg-gray-100 text-gray-800 border border-gray-300"
                   : "moshi-gradient text-white shadow-sm"
@@ -655,6 +693,20 @@ export default function ProfileView({
                 : isFollowing
                   ? "Abonné ✓"
                   : "Suivre"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleSendMessage()}
+              disabled={messageLoading}
+              className="flex-1 rounded-full py-3 text-sm font-bold border border-moshi-purple text-moshi-purple bg-white flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {messageLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <MessageCircle className="w-4 h-4" />
+              )}
+              {messageLoading ? "Ouverture..." : "Message"}
             </button>
           </div>
         )}
@@ -773,9 +825,7 @@ export default function ProfileView({
                       type="button"
                       onClick={() =>
                         setMenuOpenId(
-                          menuOpenId === video.id
-                            ? null
-                            : video.id
+                          menuOpenId === video.id ? null : video.id
                         )
                       }
                       aria-label="Options vidéo"
@@ -798,9 +848,7 @@ export default function ProfileView({
                             activeTab === "private") && (
                             <button
                               type="button"
-                              onClick={() =>
-                                void handleTogglePrivate(video)
-                              }
+                              onClick={() => void handleTogglePrivate(video)}
                               className="flex items-center gap-2 px-4 py-3 text-gray-700 hover:bg-gray-50 w-full text-left text-xs font-semibold"
                             >
                               <Lock size={14} />
@@ -813,9 +861,7 @@ export default function ProfileView({
                           {activeTab === "saved" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                void handleUnsaveVideo(video.id)
-                              }
+                              onClick={() => void handleUnsaveVideo(video.id)}
                               className="flex items-center gap-2 px-4 py-3 text-gray-700 hover:bg-gray-50 w-full text-left text-xs font-semibold"
                             >
                               <Bookmark size={14} />
@@ -827,9 +873,7 @@ export default function ProfileView({
                             activeTab === "private") && (
                             <button
                               type="button"
-                              onClick={() =>
-                                void handleDeleteVideo(video.id)
-                              }
+                              onClick={() => void handleDeleteVideo(video.id)}
                               className="flex items-center gap-2 px-4 py-3 text-red-500 hover:bg-red-50 w-full text-left text-xs font-semibold"
                             >
                               <Trash2 size={14} />
