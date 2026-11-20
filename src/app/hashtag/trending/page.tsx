@@ -11,6 +11,8 @@ import {
   TrendingUp,
   Flame,
   Video,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -38,9 +40,7 @@ export default function TrendingHashtagsPage() {
     try {
       const { data, error: queryError } = await supabase
         .from("trending_hashtags")
-        .select(
-          "id, tag, usage_count, recent_video_count, last_used_at"
-        )
+        .select("id, tag, usage_count, recent_video_count, last_used_at")
         .gt("usage_count", 0)
         .order("recent_video_count", { ascending: false })
         .order("usage_count", { ascending: false })
@@ -140,6 +140,7 @@ export default function TrendingHashtagsPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Rechercher un hashtag..."
+            aria-label="Rechercher un hashtag"
             className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35"
           />
 
@@ -147,9 +148,10 @@ export default function TrendingHashtagsPage() {
             <button
               type="button"
               onClick={() => setSearch("")}
-              className="text-xs font-bold text-purple-300"
+              aria-label="Effacer la recherche"
+              className="text-white/50 transition hover:text-white"
             >
-              Effacer
+              <X size={18} />
             </button>
           )}
         </div>
@@ -217,7 +219,7 @@ export default function TrendingHashtagsPage() {
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/45">
                       <span className="flex items-center gap-1">
                         <Video size={12} />
-                        {formatCount(item.usage_count)} vidéos
+                        {formatCount(item.usage_count)} vidéos au total
                       </span>
 
                       <span className="flex items-center gap-1 text-emerald-300">
@@ -232,11 +234,32 @@ export default function TrendingHashtagsPage() {
                       TOP {index + 1}
                     </span>
                   )}
+
+                  <ChevronRight
+                    size={18}
+                    className="shrink-0 text-white/30"
+                  />
                 </Link>
               ))}
             </div>
           </section>
         )}
+
+        <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="flex items-center gap-2 text-sm font-bold text-white/80">
+            <TrendingUp size={17} className="text-purple-400" />
+            Comment fonctionne le classement ?
+          </div>
+
+          <p className="mt-2 text-xs leading-relaxed text-white/45">
+            Les hashtags sont classés selon le nombre de vidéos
+            associées pendant les sept derniers jours. Ce classement
+            mesure l'activité récente, pas une accélération réelle
+            de popularité. Une tendance plus avancée pourra intégrer
+            les vues, les likes, les commentaires et comparer
+            plusieurs périodes.
+          </p>
+        </div>
       </div>
     </main>
   );
