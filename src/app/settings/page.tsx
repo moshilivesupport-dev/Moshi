@@ -19,6 +19,7 @@ import {
   Languages,
   Check,
   Coins,
+  Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -79,7 +80,6 @@ export default function SettingsPage() {
           .maybeSingle();
 
         if (profileError) throw profileError;
-
         if (!active) return;
 
         const savedLanguage = LANGUAGES.find(
@@ -183,45 +183,92 @@ export default function SettingsPage() {
     }
   }
 
+  const sections = [
+    {
+      title: "Notifications",
+      items: [
+        {
+          href: "/notifications",
+          title: "Mes notifications",
+          description: "Consulter les nouveautés et les alertes",
+          icon: Bell,
+          iconStyle: "bg-amber-50 text-amber-600",
+        },
+      ],
+    },
+    {
+      title: "Assistance",
+      items: [
+        {
+          href: "/support/report-problem",
+          title: "Signaler un problème",
+          description: "Contacter l’équipe Moshi et suivre tes demandes",
+          icon: MessageCircle,
+          iconStyle: "bg-orange-50 text-orange-600",
+        },
+      ],
+    },
+    {
+      title: "Finances",
+      items: [
+        {
+          href: "/wallet",
+          title: "Mon portefeuille",
+          description: "Consulter mon portefeuille Moshi",
+          icon: Wallet,
+          iconStyle: "bg-pink-50 text-pink-600",
+        },
+      ],
+    },
+  ];
+
   return (
-    <main className="min-h-[100dvh] bg-gray-50 pb-10">
-      <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-gray-100 bg-white px-4 py-4">
+    <main className="min-h-[100dvh] bg-moshi-bg pb-12">
+      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-gray-100 bg-white/95 px-4 py-4 shadow-sm backdrop-blur">
         <button
           type="button"
           onClick={() => router.push("/profile/me")}
           aria-label="Retour au profil"
-          className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-gray-100"
+          className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-gray-100"
         >
           <ArrowLeft className="h-5 w-5 text-gray-800" />
         </button>
 
         <div className="flex items-center gap-2">
-          <Settings className="h-5 w-5 text-purple-600" />
-          <h1 className="text-lg font-bold text-gray-900">Paramètres</h1>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
+            <Settings className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Paramètres</h1>
+            <p className="text-xs text-gray-500">Gère ton compte Moshi</p>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
+      <div className="mx-auto max-w-xl space-y-6 px-4 py-6">
         {error && (
-          <div className="flex items-center gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-700">
-            <AlertCircle className="h-5 w-5 shrink-0" />
+          <div className="flex items-start gap-2 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {success && (
-          <div className="flex items-center gap-2 rounded-xl bg-green-50 p-3 text-sm text-green-700">
-            <Check className="h-5 w-5 shrink-0" />
+          <div className="flex items-start gap-2 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
+            <Check className="mt-0.5 h-5 w-5 shrink-0" />
             <span>{success}</span>
           </div>
         )}
 
         <section>
-          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
-            Mon compte
-          </h2>
+          <div className="mb-3 flex items-center gap-2 px-1">
+            <UserRound className="h-4 w-4 text-moshi-purple" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+              Mon compte
+            </h2>
+          </div>
 
-          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
             <Link
               href="/profile/edit"
               className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
@@ -235,7 +282,7 @@ export default function SettingsPage() {
                   Modifier mon profil
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Photo, nom, identifiant et biographie
+                  Photo, nom, identifiant, biographie et réseaux sociaux
                 </p>
               </div>
 
@@ -267,11 +314,14 @@ export default function SettingsPage() {
         </section>
 
         <section>
-          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
-            Préférences
-          </h2>
+          <div className="mb-3 flex items-center gap-2 px-1">
+            <Sparkles className="h-4 w-4 text-moshi-purple" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+              Préférences
+            </h2>
+          </div>
 
-          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
             <div className="flex items-center gap-3 p-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
                 <Languages className="h-5 w-5" />
@@ -285,7 +335,7 @@ export default function SettingsPage() {
               </div>
 
               {loadingPreferences ? (
-                <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
+                <Loader2 className="h-5 w-5 animate-spin text-moshi-purple" />
               ) : (
                 <select
                   aria-label="Choisir la langue"
@@ -297,7 +347,7 @@ export default function SettingsPage() {
                       currency
                     )
                   }
-                  className="max-w-[145px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-purple-500 disabled:opacity-50"
+                  className="max-w-[145px] rounded-xl border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-moshi-purple disabled:opacity-50"
                 >
                   {LANGUAGES.map((item) => (
                     <option key={item.value} value={item.value}>
@@ -323,7 +373,7 @@ export default function SettingsPage() {
               </div>
 
               {loadingPreferences ? (
-                <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
+                <Loader2 className="h-5 w-5 animate-spin text-moshi-purple" />
               ) : (
                 <select
                   aria-label="Choisir la devise"
@@ -335,7 +385,7 @@ export default function SettingsPage() {
                       event.target.value as Currency
                     )
                   }
-                  className="max-w-[165px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-purple-500 disabled:opacity-50"
+                  className="max-w-[165px] rounded-xl border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-moshi-purple disabled:opacity-50"
                 >
                   {CURRENCIES.map((item) => (
                     <option key={item.value} value={item.value}>
@@ -348,107 +398,62 @@ export default function SettingsPage() {
 
             {savingPreferences && (
               <div className="flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-500">
-                <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
+                <Loader2 className="h-4 w-4 animate-spin text-moshi-purple" />
                 Enregistrement des préférences...
               </div>
             )}
           </div>
 
           <p className="mt-2 px-1 text-xs text-gray-400">
-            Ces choix sont enregistrés dans ton profil Moshi.
+            Tes choix sont enregistrés dans ton profil Moshi.
           </p>
         </section>
 
-        <section>
-          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
-            Notifications
-          </h2>
+        {sections.map((section) => (
+          <section key={section.title}>
+            <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-500">
+              {section.title}
+            </h2>
 
-          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-            <Link
-              href="/notifications"
-              className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
-            >
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                <Bell className="h-5 w-5" />
-              </div>
+            <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
+              {section.items.map((item) => {
+                const Icon = item.icon;
 
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">
-                  Mes notifications
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Consulter les nouveautés et les alertes
-                </p>
-              </div>
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
+                  >
+                    <div
+                      className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.iconStyle}`}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </div>
 
-              <ChevronRight className="h-5 w-5 text-gray-400" />
-            </Link>
-          </div>
-        </section>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-900">
+                        {item.title}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {item.description}
+                      </p>
+                    </div>
 
-        <section>
-          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
-            Assistance
-          </h2>
-
-          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-            <Link
-              href="/support/report-problem"
-              className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
-            >
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                <MessageCircle className="h-5 w-5" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">
-                  Signaler un problème
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Contacter l’équipe Moshi et suivre tes demandes
-                </p>
-              </div>
-
-              <ChevronRight className="h-5 w-5 text-gray-400" />
-            </Link>
-          </div>
-        </section>
+                    <ChevronRight className="h-5 w-5 text-gray-400" />
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        ))}
 
         <section>
-          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
-            Finances
-          </h2>
-
-          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-            <Link
-              href="/wallet"
-              className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
-            >
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-pink-50 text-pink-600">
-                <Wallet className="h-5 w-5" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">
-                  Mon portefeuille
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Consulter mon portefeuille Moshi
-                </p>
-              </div>
-
-              <ChevronRight className="h-5 w-5 text-gray-400" />
-            </Link>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
+          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-500">
             Session
           </h2>
 
-          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-3xl border border-red-100 bg-white shadow-sm">
             <button
               type="button"
               onClick={handleLogout}
@@ -479,7 +484,7 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <p className="pt-4 text-center text-xs text-gray-400">
+        <p className="pt-3 text-center text-xs text-gray-400">
           Moshi · Paramètres de ton compte
         </p>
       </div>
