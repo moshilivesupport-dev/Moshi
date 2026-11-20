@@ -204,7 +204,7 @@ export default function LiveRoomPage() {
   }, [id, supabase]);
 
   // GESTION DES J'AIME
-  const handleScreenTap = (e: MouseEvent<HTMLDivElement>) => {
+  const handleScreenTap = (e: MouseEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;
 
     if (
@@ -238,7 +238,7 @@ export default function LiveRoomPage() {
 
     setHearts((previous) => [...previous, heart]);
 
-    // L'animation reste locale, mais le compteur est enregistré en base.
+    // Le compteur est enregistré dans Supabase.
     if (currentUser && id) {
       void supabase
         .rpc("increment_live_like", {
@@ -683,7 +683,6 @@ export default function LiveRoomPage() {
         payload: giftMessage,
       });
 
-      // Actualisation immédiate du classement pour l'expéditeur.
       await loadTopDonors();
     } catch (error: any) {
       console.error("Erreur cadeau :", error);
@@ -754,7 +753,11 @@ export default function LiveRoomPage() {
     <main
       className="fixed inset-0 z-[100] h-[100dvh] w-full overflow-hidden bg-black text-white"
       onClick={handleScreenTap}
+      data-live-tap-area
     >
+      {/* Synchronisation des cœurs entre les spectateurs */}
+      <LiveTapSync liveId={live.id} />
+
       <LiveKitRoomComponent
         roomName={`live-${live.id}`}
         participantName={userName}
