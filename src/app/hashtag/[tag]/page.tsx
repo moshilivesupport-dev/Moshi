@@ -14,7 +14,6 @@ import {
   Hash,
   Heart,
   MessageCircle,
-  Play,
   TrendingUp,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -27,6 +26,11 @@ interface VideoRow {
   comment_count: number | null;
   user_id: string;
   created_at: string;
+}
+
+interface VideoHashtagRelation {
+  video_id: string;
+  videos: VideoRow | VideoRow[] | null;
 }
 
 interface VideoItem extends VideoRow {
@@ -84,7 +88,9 @@ export default function HashtagPage() {
         .eq("tag", tag)
         .maybeSingle();
 
-      if (hashtagError) throw hashtagError;
+      if (hashtagError) {
+        throw hashtagError;
+      }
 
       if (!hashtagData) {
         setHashtag(null);
@@ -119,17 +125,20 @@ export default function HashtagPage() {
         })
         .limit(100);
 
-      if (relationsError) throw relationsError;
+      if (relationsError) {
+        throw relationsError;
+      }
 
-      const videoRows: VideoRow[] = (
-        relations || []
-      )
-        .map((relation: any) => {
+      const typedRelations =
+        (relations || []) as unknown as VideoHashtagRelation[];
+
+      const videoRows: VideoRow[] = typedRelations
+        .map((relation) => {
           const video = Array.isArray(relation.videos)
             ? relation.videos[0]
             : relation.videos;
 
-          return video as VideoRow | null;
+          return video ?? null;
         })
         .filter(
           (video): video is VideoRow =>
@@ -140,7 +149,7 @@ export default function HashtagPage() {
         ...new Set(videoRows.map((video) => video.user_id)),
       ];
 
-      let profileMap: Record<
+      const profileMap: Record<
         string,
         VideoItem["profile"]
       > = {};
@@ -154,7 +163,9 @@ export default function HashtagPage() {
           .select("id, username, avatar_url")
           .in("id", uniqueUserIds);
 
-        if (profilesError) throw profilesError;
+        if (profilesError) {
+          throw profilesError;
+        }
 
         (profiles || []).forEach((profile) => {
           profileMap[profile.id] = {
@@ -172,6 +183,7 @@ export default function HashtagPage() {
       );
     } catch (err) {
       console.error("Erreur hashtag :", err);
+
       setError(
         "Impossible de charger les vidéos de ce hashtag."
       );
@@ -203,6 +215,7 @@ export default function HashtagPage() {
                 size={21}
                 className="text-purple-400"
               />
+
               <h1 className="truncate text-lg font-extrabold">
                 {tag}
               </h1>
@@ -222,7 +235,9 @@ export default function HashtagPage() {
           </div>
         ) : error ? (
           <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-center">
-            <p className="text-sm text-red-300">{error}</p>
+            <p className="text-sm text-red-300">
+              {error}
+            </p>
 
             <button
               type="button"
@@ -235,7 +250,10 @@ export default function HashtagPage() {
         ) : !hashtag || videos.length === 0 ? (
           <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-purple-500/10">
-              <Hash size={36} className="text-purple-400" />
+              <Hash
+                size={36}
+                className="text-purple-400"
+              />
             </div>
 
             <h2 className="text-xl font-bold">
@@ -252,6 +270,7 @@ export default function HashtagPage() {
             <section className="mb-7 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
               <div className="flex items-center gap-2 text-purple-300">
                 <TrendingUp size={20} />
+
                 <span className="text-xs font-bold uppercase tracking-wider">
                   Hashtag Moshi
                 </span>
