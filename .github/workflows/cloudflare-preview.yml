@@ -1,0 +1,55 @@
+
+name: Moshi Cloudflare Preview Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Tester Moshi sur le runtime Cloudflare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Télécharger le dépôt
+        uses: actions/checkout@v5
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier TypeScript
+        run: npm run typecheck
+
+      - name: Construire et démarrer le Worker
+        run: |
+          npm run preview > preview.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill $PREVIEW_PID 2>/dev/null || true' EXIT
+
+          for i in {1..60}; do
+            if curl --silent --fail http://127.0.0.1:8787/ -o /tmp/moshi-home.html; then
+              echo "Moshi répond correctement sur le runtime Cloudflare."
+              exit 0
+            fi
+
+            if ! kill -0 "$PREVIEW_PID" 2>/dev/null; then
+              echo "Le serveur Preview s'est arrêté."
+              cat preview.log
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          echo "Le serveur n'a pas répondu dans le délai prévu."
+          cat preview.log
+          exit 1
