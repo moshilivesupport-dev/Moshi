@@ -24,6 +24,11 @@ import { getFlag } from "@/lib/utils";
 import CommentsSheet from "@/components/video/CommentsSheet";
 import VideoActionsMenu from "@/components/video/VideoActionsMenu";
 
+// Safari peut refuser l'autoplay sonore avant un geste utilisateur.
+// Une fois l'interaction effectuée, les vidéos suivantes retentent
+// automatiquement la lecture avec le son.
+let moshiAudioUnlocked = false;
+
 interface FeedItem {
   id: string;
   type: "video" | "live";
@@ -59,6 +64,30 @@ function formatNumber(num: number) {
   return String(safeNumber);
 }
 
+// Transforme les hashtags en liens cliquables.
+function renderCaption(caption: string): ReactNode[] {
+  const parts = caption.split(/(#[\p{L}\p{N}_]+)/gu);
+
+  return parts.map((part, index) => {
+    if (/^#[\p{L}\p{N}_]+$/u.test(part)) {
+      const tag = part.slice(1);
+
+      return (
+        <Link
+          key={`${tag}-${index}`}
+          href={`/hashtag/${encodeURIComponent(tag.toLocaleLowerCase())}`}
+          onClick={(event) => event.stopPropagation()}
+          className="font-bold text-[#D8A4FF] hover:text-white"
+        >
+          {part}
+        </Link>
+      );
+    }
+
+    return <span key={`text-${index}`}>{part}</span>;
+  });
+}
+
 function FeedVideo({
   item,
   onQualifiedView,
@@ -74,6 +103,7 @@ function FeedVideo({
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firstGestureRef = useRef(false);
 
   const [isVisible, setIsVisible] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -119,6 +149,7 @@ function FeedVideo({
     };
   }, [isVisible, item.id, onQualifiedView]);
 
+  // Lecture automatique avec son lorsque le navigateur l'autorise.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -132,7 +163,6 @@ function FeedVideo({
 
     const play = async () => {
       try {
-        // Lecture avec le son activé.
         video.muted = false;
         await video.play();
       } catch (error) {
@@ -141,9 +171,8 @@ function FeedVideo({
           error instanceof Error &&
           error.name !== "AbortError"
         ) {
-          console.warn(
-            "Lecture vidéo avec son impossible :",
-            error
+          console.info(
+            "Le navigateur attend une interaction pour autoriser le son."
           );
         }
       }
@@ -173,25 +202,62 @@ function FeedVideo({
     };
   }, []);
 
+  // Premier toucher : déverrouille la lecture sonore.
+  // On ne met pas immédiatement la vidéo en pause.
+  const handlePointerDown = (
+    event: React.PointerEvent<HTMLElement>
+  ) => {
+    if ((event.target as HTMLElement).closest("button, a")) return;
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (!moshiAudioUnlocked) {
+      moshiAudioUnlocked = true;
+      firstGestureRef.current = true;
+
+      video.muted = false;
+
+      if (isVisible) {
+        void video.play().catch((error) => {
+          console.info("Lecture sonore non autorisée :", error);
+        });
+      }
+    }
+  };
+
+  const handleVideoClick = (
+    event: React.MouseEvent<HTMLElement>
+  ) => {
+    if ((event.target as HTMLElement).closest("button, a")) return;
+
+    // Le premier toucher sert uniquement à autoriser le son.
+    if (firstGestureRef.current) {
+      firstGestureRef.current = false;
+      return;
+    }
+
+    // Double toucher : J'aime.
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = null;
+      onDoubleTap();
+      return;
+    }
+
+    // Toucher simple : pause / reprise.
+    tapTimerRef.current = setTimeout(() => {
+      setIsPaused((previous) => !previous);
+      tapTimerRef.current = null;
+    }, 250);
+  };
+
   return (
     <section
       ref={sectionRef}
       className="moshi-video relative w-full overflow-hidden bg-black"
-      onClick={(event) => {
-        if ((event.target as HTMLElement).closest("button, a")) return;
-
-        if (tapTimerRef.current) {
-          clearTimeout(tapTimerRef.current);
-          tapTimerRef.current = null;
-          onDoubleTap();
-          return;
-        }
-
-        tapTimerRef.current = setTimeout(() => {
-          setIsPaused((previous) => !previous);
-          tapTimerRef.current = null;
-        }, 250);
-      }}
+      onPointerDown={handlePointerDown}
+      onClick={handleVideoClick}
       style={{
         height: "100%",
         minHeight: "100%",
@@ -215,7 +281,10 @@ function FeedVideo({
         }}
       />
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+      {/* Le dégradé ne couvre plus toute la vidéo. */}
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[42%] bg-gradient-to-t from-black/85 via-black/30 to-transparent"
+      />
 
       {isPaused && isVisible && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
@@ -1010,8 +1079,8 @@ export default function HomeFeed({
               </Link>
 
               {item.caption && (
-                <p className="line-clamp-2 text-sm text-white/90 drop-shadow-md">
-                  {item.caption}
+                <p className="line-clamp-3 text-sm text-white drop-shadow-md">
+                  {renderCaption(item.caption)}
                 </p>
               )}
             </div>
