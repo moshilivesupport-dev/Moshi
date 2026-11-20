@@ -1,7 +1,13 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   Swords,
@@ -56,6 +62,7 @@ export default function LiveMatchPanel({
   isHost,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
+  const autoFinishStarted = useRef(false);
 
   const [live, setLive] = useState<LiveMatch | null>(null);
   const [guests, setGuests] = useState<AcceptedGuest[]>([]);
@@ -67,6 +74,7 @@ export default function LiveMatchPanel({
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
 
+  // Charger les informations du live et du match
   const loadLive = useCallback(async () => {
     const { data, error: queryError } = await supabase
       .from("lives")
@@ -77,14 +85,21 @@ export default function LiveMatchPanel({
       .maybeSingle();
 
     if (queryError) {
-      console.error("Chargement Match Live:", queryError);
+      console.error("Chargement Match Live :", queryError);
+      setError(queryError.message);
+      setLoading(false);
       return;
     }
 
-    if (data) setLive(data as LiveMatch);
+    if (data) {
+      setLive(data as LiveMatch);
+      setError("");
+    }
+
     setLoading(false);
   }, [liveId, supabase]);
 
+  // Charger les invités ayant accepté l'invitation
   const loadAcceptedGuests = useCallback(async () => {
     if (!currentUserId || !isHost) return;
 
@@ -96,7 +111,7 @@ export default function LiveMatchPanel({
       .eq("status", "accepted");
 
     if (queryError) {
-      console.error("Invités acceptés:", queryError);
+      console.error("Invités acceptés :", queryError);
       return;
     }
 
@@ -104,25 +119,42 @@ export default function LiveMatchPanel({
 
     if (!invitations.length) {
       setGuests([]);
+      setSelectedGuest("");
       return;
     }
 
     const userIds = invitations.map((item) => item.invitee_id);
 
-    const { data: profiles } = await supabase
+    const { data: profiles, error: profileError } = await supabase
       .from("profiles")
       .select("id,username,full_name,avatar_url")
       .in("id", userIds);
 
-    setGuests(
-      invitations.map((item) => ({
-        ...item,
-        profile:
-          profiles?.find((profile) => profile.id === item.invitee_id) || null,
-      }))
-    );
+    if (profileError) {
+      console.error("Profils des invités :", profileError);
+    }
+
+    const acceptedGuests = invitations.map((item) => ({
+      ...item,
+      profile:
+        profiles?.find((profile) => profile.id === item.invitee_id) || null,
+    }));
+
+    setGuests(acceptedGuests);
+
+    setSelectedGuest((current) => {
+      if (
+        current &&
+        acceptedGuests.some((guest) => guest.invitee_id === current)
+      ) {
+        return current;
+      }
+
+      return "";
+    });
   }, [currentUserId, isHost, liveId, supabase]);
 
+  // Synchronisation Realtime
   useEffect(() => {
     void loadLive();
     void loadAcceptedGuests();
@@ -153,31 +185,101 @@ export default function LiveMatchPanel({
           void loadAcceptedGuests();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error("Erreur de synchronisation Match Live :", status);
+        }
+      });
 
     return () => {
       void supabase.removeChannel(channel);
     };
   }, [liveId, supabase, loadLive, loadAcceptedGuests]);
 
+  // Calcul du compte à rebours à partir de l'heure serveur enregistrée
   useEffect(() => {
-    if (!live || live.match_status !== "active" || !live.match_ends_at) {
+    if (
+      !live ||
+      live.match_status !== "active" ||
+      !live.match_ends_at
+    ) {
       setRemaining(0);
       return;
     }
 
-    const update = () => {
+    const updateRemaining = () => {
       const end = new Date(live.match_ends_at!).getTime();
-      const seconds = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+      const seconds = Math.max(
+        0,
+        Math.ceil((end - Date.now()) / 1000)
+      );
+
       setRemaining(seconds);
     };
 
-    update();
-    const interval = window.setInterval(update, 1000);
+    updateRemaining();
+
+    const interval = window.setInterval(updateRemaining, 1000);
 
     return () => window.clearInterval(interval);
   }, [live?.match_status, live?.match_ends_at]);
 
+  // Terminer le match : cette fonction est sécurisée côté Supabase
+  const finishMatch = useCallback(
+    async (automatic = false) => {
+      if (processing || !isHost) return;
+
+      setProcessing(true);
+      setError("");
+
+      try {
+        const { error: rpcError } = await supabase.rpc(
+          "finish_live_match",
+          {
+            p_live_id: liveId,
+          }
+        );
+
+        if (rpcError) throw rpcError;
+
+        await loadLive();
+      } catch (err) {
+        console.error("Fin du Match Live :", err);
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Impossible de terminer le duel."
+        );
+
+        if (automatic) {
+          autoFinishStarted.current = false;
+        }
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [isHost, liveId, loadLive, processing, supabase]
+  );
+
+  // Fin automatique lorsque le compte à rebours arrive à zéro
+  useEffect(() => {
+    if (
+      !isHost ||
+      !live ||
+      live.match_status !== "active" ||
+      remaining > 0 ||
+      processing ||
+      autoFinishStarted.current
+    ) {
+      return;
+    }
+
+    autoFinishStarted.current = true;
+    void finishMatch(true);
+  }, [isHost, live, remaining, processing, finishMatch]);
+
+  // Démarrer un Match Live
   const startMatch = async () => {
     if (!selectedGuest || processing) return;
 
@@ -185,17 +287,24 @@ export default function LiveMatchPanel({
     setError("");
 
     try {
-      const { error: rpcError } = await supabase.rpc("start_live_match", {
-        p_live_id: liveId,
-        p_opponent_id: selectedGuest,
-        p_duration_seconds: duration,
-      });
+      const { error: rpcError } = await supabase.rpc(
+        "start_live_match",
+        {
+          p_live_id: liveId,
+          p_opponent_id: selectedGuest,
+          p_duration_seconds: duration,
+        }
+      );
 
       if (rpcError) throw rpcError;
+
+      autoFinishStarted.current = false;
 
       await loadLive();
       setOpen(false);
     } catch (err) {
+      console.error("Démarrage Match Live :", err);
+
       setError(
         err instanceof Error
           ? err.message
@@ -206,34 +315,18 @@ export default function LiveMatchPanel({
     }
   };
 
-  const finishMatch = async () => {
-    if (processing) return;
+  if (loading || !live) {
+    if (loading) return null;
 
-    setProcessing(true);
-    setError("");
-
-    try {
-      const { error: rpcError } = await supabase.rpc("finish_live_match", {
-        p_live_id: liveId,
-      });
-
-      if (rpcError) throw rpcError;
-
-      await loadLive();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Impossible de terminer le duel."
-      );
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  if (loading || !live) return null;
+    return (
+      <div className="pointer-events-auto fixed left-3 right-3 top-[76px] z-40 mx-auto max-w-md rounded-xl bg-black/80 p-3 text-xs text-red-300">
+        {error || "Impossible de charger le Match Live."}
+      </div>
+    );
+  }
 
   const active = live.match_status === "active";
+
   const opponent = guests.find(
     (guest) => guest.invitee_id === live.opponent_id
   );
@@ -246,6 +339,13 @@ export default function LiveMatchPanel({
   const hostScore = Number(live.team_a_score || 0);
   const opponentScore = Number(live.team_b_score || 0);
 
+  const winner =
+    hostScore > opponentScore
+      ? "Équipe A"
+      : opponentScore > hostScore
+      ? opponentName
+      : "Égalité";
+
   return (
     <div className="pointer-events-auto fixed left-3 right-3 top-[76px] z-40 mx-auto max-w-md">
       {active ? (
@@ -253,12 +353,19 @@ export default function LiveMatchPanel({
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Swords className="text-pink-400" size={19} />
+
               <span className="text-xs font-extrabold uppercase tracking-wider">
                 Match Live
               </span>
             </div>
 
-            <div className="flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-1 text-xs font-bold text-red-300">
+            <div
+              className={`flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${
+                remaining === 0
+                  ? "bg-red-500/20 text-red-300"
+                  : "bg-red-500/15 text-red-300"
+              }`}
+            >
               <Clock3 size={13} />
               {formatTime(remaining)}
             </div>
@@ -267,40 +374,52 @@ export default function LiveMatchPanel({
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
             <div className="text-center">
               <p className="truncate text-xs font-bold">Équipe A</p>
+
               <p className="text-2xl font-black text-pink-400">
                 {hostScore.toLocaleString("fr-FR")}
               </p>
             </div>
 
-            <span className="text-xs font-black text-white/40">VS</span>
+            <span className="text-xs font-black text-white/40">
+              VS
+            </span>
 
             <div className="text-center">
-              <p className="truncate text-xs font-bold">{opponentName}</p>
+              <p className="truncate text-xs font-bold">
+                {opponentName}
+              </p>
+
               <p className="text-2xl font-black text-purple-400">
                 {opponentScore.toLocaleString("fr-FR")}
               </p>
             </div>
           </div>
 
-          {remaining === 0 && isHost && (
-            <button
-              type="button"
-              onClick={() => void finishMatch()}
-              disabled={processing}
-              className="mt-3 w-full rounded-xl bg-pink-600 py-2 text-xs font-bold disabled:opacity-50"
-            >
-              Terminer le duel
-            </button>
+          {remaining === 0 && (
+            <p className="mt-2 text-center text-[11px] font-semibold text-yellow-300">
+              Temps écoulé — fin du duel en cours
+            </p>
           )}
 
-          {isHost && remaining > 0 && (
+          {error && (
+            <p className="mt-2 rounded-lg bg-red-500/10 p-2 text-xs text-red-300">
+              {error}
+            </p>
+          )}
+
+          {isHost && (
             <button
               type="button"
-              onClick={() => void finishMatch()}
+              onClick={() => void finishMatch(false)}
               disabled={processing}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-white/10 py-2 text-xs font-bold disabled:opacity-50"
             >
-              <Square size={13} />
+              {processing ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Square size={13} />
+              )}
+
               Terminer maintenant
             </button>
           )}
@@ -323,7 +442,10 @@ export default function LiveMatchPanel({
       {open && isHost && !active && (
         <div className="mt-2 rounded-2xl border border-white/10 bg-[#160D25] p-4 text-white shadow-2xl">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-extrabold">Démarrer un duel</h3>
+            <h3 className="font-extrabold">
+              Démarrer un duel
+            </h3>
+
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -346,6 +468,7 @@ export default function LiveMatchPanel({
             <option value="" className="bg-[#160D25]">
               Choisir un adversaire
             </option>
+
             {guests.map((guest) => (
               <option
                 key={guest.id}
@@ -404,15 +527,46 @@ export default function LiveMatchPanel({
             ) : (
               <Play size={17} />
             )}
+
             Lancer le Match Live
           </button>
         </div>
       )}
 
       {live.match_status === "finished" && (
-        <div className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-black/70 p-2 text-xs font-bold text-white backdrop-blur">
-          <Trophy size={15} className="text-yellow-400" />
-          Dernier Match terminé
+        <div className="mt-2 rounded-xl bg-black/80 p-3 text-white shadow-xl backdrop-blur">
+          <div className="mb-2 flex items-center justify-center gap-2 text-xs font-bold">
+            <Trophy size={16} className="text-yellow-400" />
+            Match Live terminé
+          </div>
+
+          <div className="grid grid-cols-3 items-center text-center">
+            <div>
+              <p className="text-[10px] text-white/60">Équipe A</p>
+              <p className="text-lg font-black text-pink-400">
+                {hostScore}
+              </p>
+            </div>
+
+            <div className="text-[10px] font-bold text-white/50">
+              VS
+            </div>
+
+            <div>
+              <p className="truncate text-[10px] text-white/60">
+                {opponentName}
+              </p>
+              <p className="text-lg font-black text-purple-400">
+                {opponentScore}
+              </p>
+            </div>
+          </div>
+
+          <p className="mt-2 text-center text-xs font-bold text-yellow-300">
+            {winner === "Égalité"
+              ? "Match nul"
+              : `Vainqueur : ${winner}`}
+          </p>
         </div>
       )}
     </div>
