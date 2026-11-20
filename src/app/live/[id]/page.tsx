@@ -149,6 +149,60 @@ export default function LiveRoomPage() {
     setGiftQueue((previous) => previous.slice(1));
   }, []);
 
+  // CHARGEMENT DU CLASSEMENT DES DONATEURS
+  const loadTopDonors = useCallback(async () => {
+    if (!id) return;
+
+    try {
+      const { data: giftsData, error: giftsError } = await supabase
+        .from("live_gifts")
+        .select("sender_id, total_price")
+        .eq("live_id", id);
+
+      if (giftsError) throw giftsError;
+
+      const totals: Record<string, number> = {};
+
+      (giftsData || []).forEach((gift) => {
+        if (!gift.sender_id) return;
+
+        totals[gift.sender_id] =
+          (totals[gift.sender_id] || 0) +
+          Number(gift.total_price || 0);
+      });
+
+      const topIds = Object.entries(totals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([userId]) => userId);
+
+      if (topIds.length === 0) {
+        setTopDonors([]);
+        return;
+      }
+
+      const { data: donors, error: donorsError } = await supabase
+        .from("profiles")
+        .select("id, username, avatar_url, full_name")
+        .in("id", topIds);
+
+      if (donorsError) throw donorsError;
+
+      const donorMap = new Map(
+        (donors || []).map((donor) => [donor.id, donor])
+      );
+
+      const orderedDonors = topIds
+        .map((userId) => donorMap.get(userId))
+        .filter(Boolean);
+
+      setTopDonors(orderedDonors);
+    } catch (error) {
+      console.error("Erreur classement donateurs :", error);
+    }
+  }, [id, supabase]);
+
+  // GESTION DES J'AIME
   const handleScreenTap = (e: MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
 
@@ -182,7 +236,22 @@ export default function LiveRoomPage() {
     };
 
     setHearts((previous) => [...previous, heart]);
-    setLikeCount((previous) => previous + 1);
+
+    // L'animation reste locale, mais le compteur est enregistré en base.
+    if (currentUser && id) {
+      void supabase
+        .rpc("increment_live_like", {
+          p_live_id: id,
+        })
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("Erreur enregistrement J'aime :", error);
+            return;
+          }
+
+          setLikeCount(Number(data || 0));
+        });
+    }
 
     window.setTimeout(() => {
       setHearts((previous) =>
@@ -281,40 +350,7 @@ export default function LiveRoomPage() {
           }
         }
 
-        const { data: giftsData } = await supabase
-          .from("live_gifts")
-          .select("sender_id, total_price")
-          .eq("live_id", id);
-
-        if (cancelled) return;
-
-        if (giftsData?.length) {
-          const totals: Record<string, number> = {};
-
-          giftsData.forEach((gift) => {
-            if (!gift.sender_id) return;
-
-            totals[gift.sender_id] =
-              (totals[gift.sender_id] || 0) +
-              Number(gift.total_price || 0);
-          });
-
-          const topIds = Object.entries(totals)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(([userId]) => userId);
-
-          if (topIds.length) {
-            const { data: donors } = await supabase
-              .from("profiles")
-              .select("id, username, avatar_url, full_name")
-              .in("id", topIds);
-
-            if (!cancelled) {
-              setTopDonors(donors || []);
-            }
-          }
-        }
+        await loadTopDonors();
       } catch (error) {
         console.error("Erreur chargement live :", error);
 
@@ -335,7 +371,61 @@ export default function LiveRoomPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, router, supabase]);
+  }, [id, router, supabase, loadTopDonors]);
+
+  // SYNCHRONISATION DES J'AIME EN TEMPS RÉEL
+  useEffect(() => {
+    if (!id) return;
+
+    const channel = supabase
+      .channel(`live-like-count-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "lives",
+          filter: `id=eq.${id}`,
+        },
+        (payload) => {
+          const updatedLive = payload.new as {
+            like_count?: number;
+          };
+
+          setLikeCount(Number(updatedLive.like_count || 0));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [id, supabase]);
+
+  // ACTUALISATION DU TOP DONATEURS EN TEMPS RÉEL
+  useEffect(() => {
+    if (!id) return;
+
+    const channel = supabase
+      .channel(`live-top-donors-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "live_gifts",
+          filter: `live_id=eq.${id}`,
+        },
+        () => {
+          void loadTopDonors();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [id, supabase, loadTopDonors]);
 
   // CHAT EN TEMPS RÉEL
   useEffect(() => {
@@ -591,6 +681,9 @@ export default function LiveRoomPage() {
         event: "message",
         payload: giftMessage,
       });
+
+      // Actualisation immédiate du classement pour l'expéditeur.
+      await loadTopDonors();
     } catch (error: any) {
       console.error("Erreur cadeau :", error);
       alert(error?.message || "Impossible d'envoyer le cadeau.");
