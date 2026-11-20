@@ -3,7 +3,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Coins, Plus, Minus, Gift as GiftIcon, RefreshCw } from "lucide-react";
+import {
+  X,
+  Coins,
+  Plus,
+  Minus,
+  Gift as GiftIcon,
+  RefreshCw,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -28,43 +35,14 @@ const CATEGORIES = [
   { id: "exclusif", label: "Exclusif" },
 ] as const;
 
-function getGiftCategory(price: number): Gift["category"] {
-  if (price >= 500) return "exclusif";
-  if (price >= 200) return "premium";
-  return "standard";
-}
-
-function normalizeGifts(rows: any[]): Gift[] {
-  return (rows || [])
-    .filter((gift) => {
-      return (
-        gift?.id &&
-        gift?.name &&
-        Number.isFinite(Number(gift.coin_cost)) &&
-        Number(gift.coin_cost) > 0 &&
-        gift.is_active !== false
-      );
-    })
-    .map((gift) => {
-      const price = Number(gift.coin_cost);
-
-      return {
-        id: String(gift.id),
-        name: String(gift.name),
-        icon: gift.icon ? String(gift.icon) : null,
-        price,
-        category: getGiftCategory(price),
-      };
-    })
-    .sort((a, b) => a.price - b.price);
-}
-
 export default function GiftPanel({
   isOpen,
   onClose,
   onSendGift,
   balance,
 }: GiftPanelProps) {
+  const supabase = useMemo(() => createClient(), []);
+
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -74,112 +52,83 @@ export default function GiftPanel({
   const [selectedGift, setSelectedGift] = useState<Gift | null>(null);
   const [quantity, setQuantity] = useState(1);
 
-  const supabase = useMemo(() => createClient(), []);
-
   const loadGifts = useCallback(async () => {
     setLoading(true);
     setLoadError("");
 
-    try {
-      let rows: any[] | null = null;
+    const { data, error } = await supabase
+      .from("gifts")
+      .select("id,name,icon,price,category")
+      .order("price", { ascending: true });
 
-      const firstAttempt = await supabase
-        .from("gifts")
-        .select("id, name, icon, coin_cost, is_active")
-        .eq("is_active", true)
-        .order("coin_cost", { ascending: true });
-
-      if (!firstAttempt.error) {
-        rows = firstAttempt.data || [];
-      } else {
-        console.warn(
-          "Premier chargement des cadeaux échoué:",
-          firstAttempt.error
-        );
-
-        // Deuxième tentative pour les bases où is_active
-        // n'existe pas encore ou dont le schéma diffère.
-        const secondAttempt = await supabase
-          .from("gifts")
-          .select("id, name, icon, coin_cost")
-          .order("coin_cost", { ascending: true });
-
-        if (secondAttempt.error) {
-          throw secondAttempt.error;
-        }
-
-        rows = secondAttempt.data || [];
-      }
-
-      const normalized = normalizeGifts(rows);
-
-      setGifts(normalized);
-      setSelectedGift((current) =>
-        current
-          ? normalized.find((gift) => gift.id === current.id) || null
-          : null
-      );
-
-      if (normalized.length === 0) {
-        setLoadError(
-          "Aucun cadeau actif trouvé dans la base de données."
-        );
-      }
-    } catch (error: any) {
-      console.error("Erreur chargement cadeaux:", error);
-
+    if (error) {
+      console.error("Chargement cadeaux:", error);
       setGifts([]);
-      setLoadError(
-        error?.message ||
-          error?.details ||
-          "Impossible de charger les cadeaux. Vérifie la connexion à la base de données."
-      );
-    } finally {
+      setLoadError(error.message || "Impossible de charger les cadeaux.");
       setLoading(false);
+      return;
     }
+
+    const normalized: Gift[] = (data || [])
+      .filter((item) => item.id && item.name && Number(item.price) > 0)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        icon: item.icon || null,
+        price: Number(item.price),
+        category: (
+          ["standard", "premium", "exclusif"].includes(item.category)
+            ? item.category
+            : Number(item.price) >= 500
+              ? "exclusif"
+              : Number(item.price) >= 200
+                ? "premium"
+                : "standard"
+        ) as Gift["category"],
+      }));
+
+    setGifts(normalized);
+    setSelectedGift((current) =>
+      current
+        ? normalized.find((gift) => gift.id === current.id) || null
+        : null
+    );
+
+    if (!normalized.length) {
+      setLoadError("Aucun cadeau disponible.");
+    }
+
+    setLoading(false);
   }, [supabase]);
 
   useEffect(() => {
-    if (!isOpen) return;
-
-    void loadGifts();
+    if (isOpen) void loadGifts();
   }, [isOpen, loadGifts]);
 
   const filteredGifts = gifts.filter(
     (gift) => gift.category === category
   );
 
-  const safeBalance = Number.isFinite(Number(balance))
-    ? Math.max(0, Number(balance))
-    : 0;
-
+  const safeBalance = Math.max(0, Number(balance) || 0);
   const totalPrice = selectedGift
     ? selectedGift.price * quantity
     : 0;
-
-  const canAfford =
-    !!selectedGift &&
-    Number.isFinite(totalPrice) &&
-    totalPrice <= safeBalance;
 
   const maxQuantity = selectedGift
     ? Math.floor(safeBalance / selectedGift.price)
     : 1;
 
+  const canAfford =
+    !!selectedGift &&
+    maxQuantity >= quantity &&
+    totalPrice <= safeBalance;
+
   const handleSend = async () => {
-    if (
-      !selectedGift ||
-      !canAfford ||
-      sending ||
-      quantity < 1
-    ) {
-      return;
-    }
+    if (!selectedGift || !canAfford || sending) return;
 
     try {
       setSending(true);
       await onSendGift(selectedGift, quantity);
-
       setSelectedGift(null);
       setQuantity(1);
       onClose();
@@ -210,11 +159,7 @@ export default function GiftPanel({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{
-              type: "spring",
-              damping: 28,
-              stiffness: 230,
-            }}
+            transition={{ type: "spring", damping: 28, stiffness: 230 }}
             className="fixed bottom-0 left-0 right-0 z-[70] flex max-h-[82dvh] flex-col overflow-hidden rounded-t-[30px] border border-white/10 bg-[#160D25] pb-safe"
           >
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
@@ -232,7 +177,7 @@ export default function GiftPanel({
                 onClick={handleClose}
                 disabled={sending}
                 aria-label="Fermer"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white disabled:opacity-40"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white"
               >
                 <X size={19} />
               </button>
@@ -242,7 +187,6 @@ export default function GiftPanel({
               <span className="text-sm text-white/60">
                 Ton portefeuille
               </span>
-
               <div className="flex items-center gap-2 rounded-full bg-yellow-400/10 px-3 py-1.5">
                 <Coins size={15} className="text-yellow-400" />
                 <span className="font-bold text-yellow-400">
@@ -252,23 +196,23 @@ export default function GiftPanel({
             </div>
 
             <div className="flex gap-2 overflow-x-auto border-b border-white/10 px-4 py-3">
-              {CATEGORIES.map((cat) => (
+              {CATEGORIES.map((item) => (
                 <button
-                  key={cat.id}
+                  key={item.id}
                   type="button"
                   onClick={() => {
-                    setCategory(cat.id);
+                    setCategory(item.id);
                     setSelectedGift(null);
                     setQuantity(1);
                   }}
                   className={cn(
-                    "shrink-0 rounded-full px-5 py-2 text-xs font-bold transition",
-                    category === cat.id
+                    "shrink-0 rounded-full px-5 py-2 text-xs font-bold",
+                    category === item.id
                       ? "moshi-gradient text-white shadow-lg"
                       : "bg-white/10 text-white/60"
                   )}
                 >
-                  {cat.label}
+                  {item.label}
                 </button>
               ))}
             </div>
@@ -280,15 +224,10 @@ export default function GiftPanel({
                 </div>
               ) : loadError ? (
                 <div className="flex flex-col items-center gap-3 py-10 text-center">
-                  <GiftIcon
-                    size={35}
-                    className="text-white/30"
-                  />
-
+                  <GiftIcon size={35} className="text-white/30" />
                   <p className="max-w-[280px] text-sm text-red-400">
                     {loadError}
                   </p>
-
                   <button
                     type="button"
                     onClick={() => void loadGifts()}
@@ -300,10 +239,7 @@ export default function GiftPanel({
                 </div>
               ) : filteredGifts.length === 0 ? (
                 <div className="flex flex-col items-center py-12 text-center">
-                  <GiftIcon
-                    size={35}
-                    className="mb-3 text-white/30"
-                  />
+                  <GiftIcon size={35} className="mb-3 text-white/30" />
                   <p className="text-sm text-white/60">
                     Aucun cadeau dans cette catégorie.
                   </p>
@@ -320,7 +256,7 @@ export default function GiftPanel({
                         setQuantity(1);
                       }}
                       className={cn(
-                        "flex min-w-0 flex-col items-center gap-1 rounded-2xl border p-2 transition disabled:opacity-50",
+                        "flex min-w-0 flex-col items-center gap-1 rounded-2xl border p-2",
                         selectedGift?.id === gift.id
                           ? "border-pink-400 bg-pink-500/15"
                           : "border-white/5 bg-white/[0.04]"
@@ -329,11 +265,9 @@ export default function GiftPanel({
                       <span className="text-3xl">
                         {gift.icon || "🎁"}
                       </span>
-
                       <span className="w-full truncate text-center text-[10px] font-semibold text-white/90">
                         {gift.name}
                       </span>
-
                       <span className="text-[10px] font-bold text-yellow-400">
                         {gift.price.toLocaleString("fr-FR")}
                       </span>
@@ -350,7 +284,6 @@ export default function GiftPanel({
                     <span className="text-4xl">
                       {selectedGift.icon || "🎁"}
                     </span>
-
                     <div>
                       <p className="font-bold text-white">
                         {selectedGift.name}
@@ -365,11 +298,9 @@ export default function GiftPanel({
                     <button
                       type="button"
                       disabled={sending || quantity <= 1}
-                      onClick={() =>
-                        setQuantity((q) => Math.max(1, q - 1))
-                      }
-                      className="text-white disabled:opacity-30"
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                       aria-label="Diminuer la quantité"
+                      className="text-white disabled:opacity-30"
                     >
                       <Minus size={16} />
                     </button>
@@ -380,18 +311,12 @@ export default function GiftPanel({
 
                     <button
                       type="button"
-                      disabled={
-                        sending ||
-                        quantity >= maxQuantity ||
-                        maxQuantity < 1
-                      }
+                      disabled={sending || quantity >= maxQuantity}
                       onClick={() =>
-                        setQuantity((q) =>
-                          Math.min(maxQuantity, q + 1)
-                        )
+                        setQuantity((q) => Math.min(maxQuantity, q + 1))
                       }
-                      className="text-white disabled:opacity-30"
                       aria-label="Augmenter la quantité"
+                      className="text-white disabled:opacity-30"
                     >
                       <Plus size={16} />
                     </button>
@@ -408,7 +333,7 @@ export default function GiftPanel({
                   type="button"
                   onClick={() => void handleSend()}
                   disabled={!canAfford || sending}
-                  className="moshi-gradient flex w-full items-center justify-center gap-2 rounded-xl py-3.5 font-extrabold text-white shadow-lg transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="moshi-gradient flex w-full items-center justify-center gap-2 rounded-xl py-3.5 font-extrabold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {sending ? (
                     <>
@@ -416,9 +341,7 @@ export default function GiftPanel({
                       Envoi en cours...
                     </>
                   ) : (
-                    <>
-                      Envoyer · {totalPrice.toLocaleString("fr-FR")} coins
-                    </>
+                    `Envoyer · ${totalPrice.toLocaleString("fr-FR")} coins`
                   )}
                 </button>
               </div>
