@@ -14,7 +14,6 @@ import Image from "next/image";
 import {
   Heart,
   MessageCircle,
-  Share2,
   Radio,
   Bookmark,
   Pause,
@@ -23,6 +22,7 @@ import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { getFlag } from "@/lib/utils";
 import CommentsSheet from "@/components/video/CommentsSheet";
+import VideoActionsMenu from "@/components/video/VideoActionsMenu";
 
 interface FeedItem {
   id: string;
@@ -31,6 +31,7 @@ interface FeedItem {
   caption: string | null;
   like_count: number;
   comment_count: number;
+  allow_download: boolean;
   user_id: string;
   profiles: {
     username: string | null;
@@ -97,7 +98,6 @@ function FeedVideo({
     return () => observer.disconnect();
   }, []);
 
-  // Comptabilisation après 1,5 seconde de visibilité réelle.
   useEffect(() => {
     if (viewTimerRef.current) {
       clearTimeout(viewTimerRef.current);
@@ -119,8 +119,6 @@ function FeedVideo({
     };
   }, [isVisible, item.id, onQualifiedView]);
 
-  // Lecture automatique dès que la vidéo est visible.
-  // Le son reste désactivé par défaut.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -370,7 +368,7 @@ export default function HomeFeed({
       let videosQuery = supabase
         .from("videos")
         .select(
-          "id, url, caption, like_count, comment_count, user_id, created_at"
+          "id, url, caption, like_count, comment_count, user_id, created_at, allow_download"
         )
         .eq("status", "published")
         .order("created_at", { ascending: false })
@@ -425,6 +423,7 @@ export default function HomeFeed({
         caption: video.caption,
         like_count: video.like_count || 0,
         comment_count: video.comment_count || 0,
+        allow_download: video.allow_download === true,
         user_id: video.user_id,
         profiles: profilesMap[video.user_id] || null,
       }));
@@ -436,6 +435,7 @@ export default function HomeFeed({
         caption: live.title,
         like_count: 0,
         comment_count: 0,
+        allow_download: false,
         user_id: live.host_id,
         profiles: profilesMap[live.host_id] || null,
       }));
@@ -897,7 +897,6 @@ export default function HomeFeed({
               if (!liked[item.id]) void toggleLike(item.id);
             }}
           >
-            {/* Colonne d'actions réduite */}
             <div className="absolute bottom-5 right-3 z-20 flex flex-col items-center gap-3">
               <Link
                 href={`/profile/${item.user_id}`}
@@ -964,37 +963,12 @@ export default function HomeFeed({
                 </span>
               </button>
 
-              <button
-                type="button"
-                className="flex flex-col items-center gap-1"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={async () => {
-                  const url = `${window.location.origin}/videos/${item.id}`;
-
-                  try {
-                    if (navigator.share) {
-                      await navigator.share({
-                        title: "Vidéo Moshi",
-                        url,
-                      });
-                    } else {
-                      await navigator.clipboard.writeText(url);
-                    }
-                  } catch (error) {
-                    if (
-                      error instanceof Error &&
-                      error.name !== "AbortError"
-                    ) {
-                      console.error("Erreur partage :", error);
-                    }
-                  }
-                }}
-                aria-label="Partager la vidéo"
-              >
-                <div className="moshi-glass flex h-10 w-10 items-center justify-center rounded-full">
-                  <Share2 size={19} className="text-white" />
-                </div>
-              </button>
+              <VideoActionsMenu
+                videoId={item.id}
+                videoUrl={item.url}
+                creatorUsername={authorName}
+                allowDownload={item.allow_download}
+              />
 
               <button
                 type="button"
