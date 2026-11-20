@@ -1,14 +1,25 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, Hash, Play } from "lucide-react";
+import {
+  ArrowLeft,
+  Hash,
+  Heart,
+  MessageCircle,
+  Play,
+  TrendingUp,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-interface HashtagVideo {
+interface VideoRow {
   id: string;
   url: string;
   caption: string | null;
@@ -16,171 +27,327 @@ interface HashtagVideo {
   comment_count: number | null;
   user_id: string;
   created_at: string;
-  profiles?: {
+}
+
+interface VideoItem extends VideoRow {
+  profile: {
     username: string | null;
     avatar_url: string | null;
   } | null;
 }
 
-function extractHashtags(caption: string | null) {
-  return (caption || "").match(/#[\p{L}\p{N}_]+/gu) || [];
+interface HashtagInfo {
+  id: string;
+  tag: string;
+  usage_count: number;
 }
 
 export default function HashtagPage() {
   const params = useParams<{ tag: string }>();
   const router = useRouter();
+
   const supabase = useMemo(() => createClient(), []);
 
-  const tag = decodeURIComponent(params.tag || "")
-    .replace(/^#/, "")
-    .trim()
-    .toLocaleLowerCase();
+  const tag = useMemo(() => {
+    try {
+      return decodeURIComponent(params.tag || "")
+        .replace(/^#/, "")
+        .trim()
+        .toLocaleLowerCase();
+    } catch {
+      return "";
+    }
+  }, [params.tag]);
 
-  const [videos, setVideos] = useState<HashtagVideo[]>([]);
+  const [hashtag, setHashtag] = useState<HashtagInfo | null>(null);
+  const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
-  const loadVideos = useCallback(async () => {
+  const loadHashtag = useCallback(async () => {
     if (!tag) {
-      setVideos([]);
+      setError("Hashtag invalide.");
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    setError(null);
+    setError("");
 
     try {
-      const { data, error: queryError } = await supabase
-        .from("videos")
+      const {
+        data: hashtagData,
+        error: hashtagError,
+      } = await supabase
+        .from("hashtags")
+        .select("id, tag, usage_count")
+        .eq("tag", tag)
+        .maybeSingle();
+
+      if (hashtagError) throw hashtagError;
+
+      if (!hashtagData) {
+        setHashtag(null);
+        setVideos([]);
+        setLoading(false);
+        return;
+      }
+
+      setHashtag(hashtagData as HashtagInfo);
+
+      const {
+        data: relations,
+        error: relationsError,
+      } = await supabase
+        .from("video_hashtags")
         .select(`
-          id,
-          url,
-          caption,
-          like_count,
-          comment_count,
-          user_id,
-          created_at,
-          profiles (
-            username,
-            avatar_url
+          video_id,
+          videos!inner (
+            id,
+            url,
+            caption,
+            like_count,
+            comment_count,
+            user_id,
+            created_at
           )
         `)
-        .eq("status", "published")
-        .ilike("caption", `%#${tag}%`)
-        .order("created_at", { ascending: false })
+        .eq("hashtag_id", hashtagData.id)
+        .order("created_at", {
+          ascending: false,
+          referencedTable: "videos",
+        })
         .limit(100);
 
-      if (queryError) throw queryError;
+      if (relationsError) throw relationsError;
 
-      const matchingVideos = ((data || []) as unknown as HashtagVideo[])
-        .filter((video) =>
-          extractHashtags(video.caption).some(
-            (hashtag) =>
-              hashtag.slice(1).toLocaleLowerCase() === tag
-          )
+      const videoRows: VideoRow[] = (
+        relations || []
+      )
+        .map((relation: any) => {
+          const video = Array.isArray(relation.videos)
+            ? relation.videos[0]
+            : relation.videos;
+
+          return video as VideoRow | null;
+        })
+        .filter(
+          (video): video is VideoRow =>
+            !!video && !!video.id && !!video.url
         );
 
-      setVideos(matchingVideos);
+      const uniqueUserIds = [
+        ...new Set(videoRows.map((video) => video.user_id)),
+      ];
+
+      let profileMap: Record<
+        string,
+        VideoItem["profile"]
+      > = {};
+
+      if (uniqueUserIds.length > 0) {
+        const {
+          data: profiles,
+          error: profilesError,
+        } = await supabase
+          .from("profiles")
+          .select("id, username, avatar_url")
+          .in("id", uniqueUserIds);
+
+        if (profilesError) throw profilesError;
+
+        (profiles || []).forEach((profile) => {
+          profileMap[profile.id] = {
+            username: profile.username,
+            avatar_url: profile.avatar_url,
+          };
+        });
+      }
+
+      setVideos(
+        videoRows.map((video) => ({
+          ...video,
+          profile: profileMap[video.user_id] || null,
+        }))
+      );
     } catch (err) {
-      console.error("Erreur chargement hashtag :", err);
-      setError("Impossible de charger les vidéos de ce hashtag.");
+      console.error("Erreur hashtag :", err);
+      setError(
+        "Impossible de charger les vidéos de ce hashtag."
+      );
     } finally {
       setLoading(false);
     }
   }, [supabase, tag]);
 
   useEffect(() => {
-    void loadVideos();
-  }, [loadVideos]);
+    void loadHashtag();
+  }, [loadHashtag]);
 
   return (
-    <main className="min-h-[100dvh] bg-black text-white">
-      <header className="sticky top-0 z-30 flex items-center gap-4 border-b border-white/10 bg-black/90 px-4 py-4 backdrop-blur-xl">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          aria-label="Retour"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10"
-        >
-          <ArrowLeft size={21} />
-        </button>
+    <main className="min-h-[100dvh] bg-[#09090B] text-white">
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#09090B]/95 px-4 py-4 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-5xl items-center gap-4">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            aria-label="Retour"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
+          >
+            <ArrowLeft size={21} />
+          </button>
 
-        <div>
-          <div className="flex items-center gap-1">
-            <Hash size={20} className="text-[#C084FC]" />
-            <h1 className="text-lg font-extrabold">{tag}</h1>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <Hash
+                size={21}
+                className="text-purple-400"
+              />
+              <h1 className="truncate text-lg font-extrabold">
+                {tag}
+              </h1>
+            </div>
+
+            <p className="text-xs text-white/50">
+              Découvre les vidéos publiées avec ce hashtag
+            </p>
           </div>
-          <p className="text-xs text-white/55">
-            {videos.length} vidéo{videos.length > 1 ? "s" : ""}
-          </p>
         </div>
       </header>
 
-      {loading ? (
-        <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-9 w-9 animate-spin rounded-full border-4 border-[#9D7BEA] border-t-transparent" />
-        </div>
-      ) : error ? (
-        <div className="px-6 py-16 text-center text-sm text-red-300">
-          {error}
-          <button
-            type="button"
-            onClick={() => void loadVideos()}
-            className="mt-4 block w-full font-bold text-white"
-          >
-            Réessayer
-          </button>
-        </div>
-      ) : videos.length === 0 ? (
-        <div className="flex min-h-[55vh] flex-col items-center justify-center px-6 text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
-            <Hash size={30} className="text-[#C084FC]" />
+      <div className="mx-auto max-w-5xl px-4 py-6">
+        {loading ? (
+          <div className="flex min-h-[45vh] items-center justify-center">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-500 border-t-transparent" />
           </div>
-          <h2 className="text-lg font-bold">Aucune vidéo pour #{tag}</h2>
-          <p className="mt-2 max-w-xs text-sm text-white/55">
-            Les vidéos publiées avec ce hashtag apparaîtront ici.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-1 p-1">
-          {videos.map((video) => (
-            <Link
-              key={video.id}
-              href={`/videos/${video.id}`}
-              className="relative aspect-[3/4] overflow-hidden rounded-md bg-neutral-900"
+        ) : error ? (
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-center">
+            <p className="text-sm text-red-300">{error}</p>
+
+            <button
+              type="button"
+              onClick={() => void loadHashtag()}
+              className="mt-4 rounded-full bg-white px-5 py-2 text-sm font-bold text-black"
             >
-              <video
-                src={video.url}
-                className="h-full w-full object-cover"
-                muted
-                playsInline
-                preload="metadata"
-              />
+              Réessayer
+            </button>
+          </div>
+        ) : !hashtag || videos.length === 0 ? (
+          <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
+            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-purple-500/10">
+              <Hash size={36} className="text-purple-400" />
+            </div>
 
-              <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-transparent" />
+            <h2 className="text-xl font-bold">
+              #{tag}
+            </h2>
 
-              <div className="absolute bottom-2 left-2 flex items-center gap-1 text-xs font-semibold text-white">
-                <Play size={13} fill="currentColor" />
-                {video.like_count || 0}
+            <p className="mt-2 max-w-xs text-sm text-white/50">
+              Aucune vidéo n'est encore associée à ce hashtag.
+              Sois parmi les premiers à l'utiliser !
+            </p>
+          </div>
+        ) : (
+          <>
+            <section className="mb-7 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+              <div className="flex items-center gap-2 text-purple-300">
+                <TrendingUp size={20} />
+                <span className="text-xs font-bold uppercase tracking-wider">
+                  Hashtag Moshi
+                </span>
               </div>
 
-              {video.profiles?.avatar_url && (
-                <div className="absolute right-2 top-2 h-7 w-7 overflow-hidden rounded-full border border-white">
-                  <Image
-                    src={video.profiles.avatar_url}
-                    alt={video.profiles.username || "Créateur"}
-                    width={28}
-                    height={28}
-                    className="h-full w-full object-cover"
-                    unoptimized
-                  />
-                </div>
-              )}
-            </Link>
-          ))}
-        </div>
-      )}
+              <h2 className="mt-3 text-2xl font-black">
+                #{hashtag.tag}
+              </h2>
+
+              <p className="mt-2 text-sm text-white/55">
+                {hashtag.usage_count} vidéo
+                {hashtag.usage_count > 1 ? "s" : ""} publiée
+                {hashtag.usage_count > 1 ? "s" : ""} avec ce hashtag
+              </p>
+            </section>
+
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-bold">
+                Vidéos
+              </h3>
+
+              <span className="text-xs text-white/45">
+                {videos.length} résultat
+                {videos.length > 1 ? "s" : ""}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {videos.map((video) => (
+                <article
+                  key={video.id}
+                  className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]"
+                >
+                  <div className="relative aspect-[3/4] overflow-hidden bg-black">
+                    <video
+                      src={video.url}
+                      className="h-full w-full object-cover"
+                      controls
+                      playsInline
+                      preload="metadata"
+                    />
+
+                    <div className="pointer-events-none absolute bottom-2 left-2 flex items-center gap-3 text-xs font-bold text-white drop-shadow-lg">
+                      <span className="flex items-center gap-1">
+                        <Heart size={13} />
+                        {video.like_count || 0}
+                      </span>
+
+                      <span className="flex items-center gap-1">
+                        <MessageCircle size={13} />
+                        {video.comment_count || 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {video.profile?.avatar_url ? (
+                        <Image
+                          src={video.profile.avatar_url}
+                          alt={
+                            video.profile.username || "Créateur"
+                          }
+                          width={30}
+                          height={30}
+                          className="h-[30px] w-[30px] shrink-0 rounded-full object-cover"
+                          unoptimized
+                        />
+                      ) : (
+                        <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-purple-600 text-xs font-bold">
+                          {(video.profile?.username || "M")
+                            .charAt(0)
+                            .toUpperCase()}
+                        </div>
+                      )}
+
+                      <a
+                        href={`/profile/${video.user_id}`}
+                        className="truncate text-xs font-bold text-white/90"
+                      >
+                        @{video.profile?.username || "utilisateur"}
+                      </a>
+                    </div>
+
+                    {video.caption && (
+                      <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-white/55">
+                        {video.caption}
+                      </p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </main>
   );
 }
