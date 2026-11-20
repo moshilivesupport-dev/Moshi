@@ -1,6 +1,7 @@
 
 "use client";
 
+import FollowListModal from "@/components/profile/FollowListModal";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
