@@ -1,130 +1,162 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-type Heart = {
+type TapHeart = {
   id: string;
   x: number;
   y: number;
   color: string;
 };
 
-type Props = {
+type LiveTapSyncProps = {
   liveId: string;
 };
 
-const COLORS = ["#FF39B8", "#B026FF", "#FF58D0", "#A855F7"];
-
-export default function LiveTapSync({ liveId }: Props) {
-  const supabase = useMemo(() => createClient(), []);
-  const [hearts, setHearts] = useState<Heart[]>([]);
+export default function LiveTapSync({ liveId }: LiveTapSyncProps) {
+  const [hearts, setHearts] = useState<TapHeart[]>([]);
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
 
   useEffect(() => {
     if (!liveId) return;
 
+    const supabase = createClient();
+    supabaseRef.current = supabase;
+
     const channel = supabase.channel(`live-taps-${liveId}`, {
       config: {
-        broadcast: { self: false },
+        broadcast: {
+          self: false,
+        },
       },
     });
 
+    const addHeart = (heart: TapHeart) => {
+      setHearts((current) => [...current, heart]);
+
+      window.setTimeout(() => {
+        setHearts((current) =>
+          current.filter((item) => item.id !== heart.id)
+        );
+      }, 2200);
+    };
+
     channel
       .on("broadcast", { event: "tap-heart" }, ({ payload }) => {
-        const tap = payload as {
-          x?: number;
-          y?: number;
-          color?: string;
-          id?: string;
-        };
-
         if (
-          typeof tap.x !== "number" ||
-          typeof tap.y !== "number"
+          typeof payload?.x !== "number" ||
+          typeof payload?.y !== "number"
         ) {
           return;
         }
 
-        const heart: Heart = {
-          id: tap.id || `${Date.now()}-${Math.random()}`,
-          x: Math.max(0, Math.min(1, tap.x)),
-          y: Math.max(0, Math.min(1, tap.y)),
-          color: tap.color || COLORS[0],
-        };
+        const x = Math.max(0, Math.min(1, payload.x));
+        const y = Math.max(0, Math.min(1, payload.y));
 
-        setHearts((previous) => [...previous, heart]);
-
-        window.setTimeout(() => {
-          setHearts((previous) =>
-            previous.filter((item) => item.id !== heart.id)
-          );
-        }, 2200);
+        addHeart({
+          id: `${Date.now()}-${Math.random()}`,
+          x: x * window.innerWidth,
+          y: y * window.innerHeight,
+          color:
+            typeof payload.color === "string"
+              ? payload.color
+              : "#F472B6",
+        });
       })
       .subscribe();
 
-    const handleTap = (event: PointerEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
 
-      if (!(target instanceof HTMLElement)) return;
+      if (!(target instanceof Element)) return;
 
+      // Les cœurs ne sont diffusés que depuis la zone du live.
+      if (!target.closest("[data-live-tap-area]")) return;
+
+      // Ne pas compter les clics sur les commandes ou les champs.
       if (
-        target.closest("button") ||
-        target.closest("input") ||
-        target.closest("textarea") ||
-        target.closest("a") ||
-        target.closest("select") ||
-        target.closest("[data-no-heart]")
+        target.closest(
+          "button, input, textarea, a, select, [data-no-heart]"
+        )
       ) {
         return;
       }
 
-      const color =
-        COLORS[Math.floor(Math.random() * COLORS.length)];
+      const x = event.clientX / window.innerWidth;
+      const y = event.clientY / window.innerHeight;
 
       void channel.send({
         type: "broadcast",
         event: "tap-heart",
         payload: {
-          id: `${Date.now()}-${Math.random()}`,
-          x: event.clientX / Math.max(window.innerWidth, 1),
-          y: event.clientY / Math.max(window.innerHeight, 1),
-          color,
+          x,
+          y,
+          color: "#F472B6",
         },
       });
     };
 
-    document.addEventListener("pointerdown", handleTap);
+    document.addEventListener("pointerdown", handlePointerDown);
 
     return () => {
-      document.removeEventListener("pointerdown", handleTap);
+      document.removeEventListener("pointerdown", handlePointerDown);
       void supabase.removeChannel(channel);
+      supabaseRef.current = null;
     };
-  }, [liveId, supabase]);
+  }, [liveId]);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[120] overflow-hidden">
+    <div
+      className="pointer-events-none fixed inset-0 z-[90] overflow-hidden"
+      aria-hidden="true"
+    >
       {hearts.map((heart) => (
         <div
           key={heart.id}
-          className="absolute animate-float-heart"
+          className="absolute"
           style={{
-            left: `${heart.x * 100}%`,
-            top: `${heart.y * 100}%`,
-            transform: "translate(-50%, -50%)",
-            filter: `drop-shadow(0 0 9px ${heart.color})`,
+            left: heart.x,
+            top: heart.y,
+            animation: "moshi-live-heart 2.2s ease-out forwards",
           }}
         >
           <svg
-            width="38"
-            height="38"
+            width="42"
+            height="42"
             viewBox="0 0 24 24"
             fill={heart.color}
+            xmlns="http://www.w3.org/2000/svg"
+            style={{
+              filter: "drop-shadow(0 2px 8px rgba(236,72,153,0.55))",
+            }}
           >
-            <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" />
+            <path d="M12 21.35 10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09A6 6 0 0 1 16.5 3C19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z" />
           </svg>
         </div>
       ))}
+
+      <style jsx>{`
+        @keyframes moshi-live-heart {
+          0% {
+            opacity: 0;
+            transform: translate(-50%, -20%) scale(0.35) rotate(-12deg);
+          }
+          15% {
+            opacity: 1;
+            transform: translate(-50%, -60%) scale(1.15) rotate(8deg);
+          }
+          75% {
+            opacity: 1;
+            transform: translate(-50%, -190%) scale(1) rotate(-5deg);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(-50%, -260%) scale(0.8) rotate(10deg);
+          }
+        }
+      `}</style>
     </div>
   );
 }
