@@ -479,7 +479,11 @@ export default function LiveRoomPage() {
   };
 
   // ENVOYER UN CADEAU
-  const handleSendGift = async (gift: GiftItem, quantity = 1) => {
+  const handleSendGift = async (
+    gift: GiftItem,
+    quantity = 1,
+    recipientId?: string
+  ) => {
     if (!currentUser || !live) {
       alert("Connecte-toi pour envoyer un cadeau.");
       return;
@@ -511,6 +515,7 @@ export default function LiveRoomPage() {
           p_live_id: live.id,
           p_gift_id: gift.id,
           p_quantity: safeQuantity,
+          p_recipient_id: recipientId ?? null,
         }
       );
 
@@ -1081,10 +1086,15 @@ export default function LiveRoomPage() {
       <GiftPanel
         isOpen={isGiftPanelOpen}
         onClose={() => setIsGiftPanelOpen(false)}
-        onSendGift={(gift, quantity) =>
-          handleSendGift(gift as unknown as GiftItem, quantity)
+        onSendGift={(gift, quantity, recipientId) =>
+          handleSendGift(
+            gift as unknown as GiftItem,
+            quantity,
+            recipientId
+          )
         }
         balance={walletBalance}
+        liveId={live.id}
       />
 
       <Soundboard
