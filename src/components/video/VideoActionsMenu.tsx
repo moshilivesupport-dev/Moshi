@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   MoreHorizontal,
   Repeat2,
@@ -10,6 +10,7 @@ import {
   BookOpen,
   Loader2,
   Lock,
+  Check,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -28,9 +29,7 @@ async function downloadWithWatermark(
     typeof MediaRecorder === "undefined" ||
     typeof HTMLCanvasElement.prototype.captureStream !== "function"
   ) {
-    throw new Error(
-      "Ton navigateur ne permet pas encore le téléchargement filigrané."
-    );
+    throw new Error("Ton navigateur ne permet pas le téléchargement filigrané.");
   }
 
   const response = await fetch(videoUrl);
@@ -41,8 +40,8 @@ async function downloadWithWatermark(
 
   const originalBlob = await response.blob();
   const objectUrl = URL.createObjectURL(originalBlob);
-
   const video = document.createElement("video");
+
   video.src = objectUrl;
   video.playsInline = true;
   video.muted = false;
@@ -51,14 +50,13 @@ async function downloadWithWatermark(
   try {
     await new Promise<void>((resolve, reject) => {
       video.onloadedmetadata = () => resolve();
-      video.onerror = () =>
-        reject(new Error("Impossible de lire cette vidéo."));
+      video.onerror = () => reject(new Error("Impossible de lire cette vidéo."));
     });
 
     const width = video.videoWidth || 720;
     const height = video.videoHeight || 1280;
-
     const canvas = document.createElement("canvas");
+
     canvas.width = width;
     canvas.height = height;
 
@@ -70,21 +68,16 @@ async function downloadWithWatermark(
 
     const canvasStream = canvas.captureStream(30);
 
-    // Récupération de l'audio lorsque le navigateur le permet.
-    const captureStream = (
-      video as HTMLVideoElement & {
-        captureStream?: () => MediaStream;
-        mozCaptureStream?: () => MediaStream;
-      }
-    ).captureStream ||
-      (
-        video as HTMLVideoElement & {
-          mozCaptureStream?: () => MediaStream;
-        }
-      ).mozCaptureStream;
+    const videoWithCapture = video as HTMLVideoElement & {
+      captureStream?: () => MediaStream;
+      mozCaptureStream?: () => MediaStream;
+    };
 
-    if (captureStream) {
-      const originalStream = captureStream.call(video);
+    const capture = videoWithCapture.captureStream ||
+      videoWithCapture.mozCaptureStream;
+
+    if (capture) {
+      const originalStream = capture.call(video);
 
       originalStream.getAudioTracks().forEach((track) => {
         canvasStream.addTrack(track);
@@ -103,9 +96,7 @@ async function downloadWithWatermark(
     );
 
     if (!mimeType) {
-      throw new Error(
-        "Ce navigateur ne prend pas en charge l'export vidéo nécessaire."
-      );
+      throw new Error("Format vidéo non pris en charge par ce navigateur.");
     }
 
     const recorder = new MediaRecorder(canvasStream, {
@@ -116,60 +107,50 @@ async function downloadWithWatermark(
     const chunks: BlobPart[] = [];
 
     recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        chunks.push(event.data);
-      }
+      if (event.data.size > 0) chunks.push(event.data);
     };
 
     const recordingFinished = new Promise<Blob>((resolve, reject) => {
       recorder.onstop = () => {
-        resolve(
-          new Blob(chunks, {
-            type: recorder.mimeType || mimeType,
-          })
-        );
+        resolve(new Blob(chunks, {
+          type: recorder.mimeType || mimeType,
+        }));
       };
 
-      recorder.onerror = () => {
-        reject(new Error("Le téléchargement a échoué."));
-      };
+      recorder.onerror = () => reject(new Error("Le téléchargement a échoué."));
     });
+
+    let animationFrame = 0;
 
     const drawFrame = () => {
       if (video.ended || video.paused) return;
 
       context.drawImage(video, 0, 0, width, height);
 
-      // Filigrane discret en bas à droite.
       const padding = Math.max(18, Math.round(width * 0.025));
       const fontSize = Math.max(20, Math.round(width * 0.035));
-
-      context.save();
-      context.font = `bold ${fontSize}px Arial`;
-      context.textAlign = "right";
-      context.textBaseline = "bottom";
-
-      const watermark = "MOSHI";
-      const creator = `@${creatorUsername}`;
-
       const watermarkY = height - padding * 2;
 
+      context.save();
+      context.textAlign = "right";
+      context.textBaseline = "bottom";
       context.shadowColor = "rgba(0,0,0,0.85)";
       context.shadowBlur = 7;
       context.fillStyle = "#ffffff";
+      context.font = `bold ${fontSize}px Arial`;
 
-      context.fillText(watermark, width - padding, watermarkY);
+      context.fillText("MOSHI", width - padding, watermarkY);
 
       context.font = `${Math.max(13, Math.round(fontSize * 0.65))}px Arial`;
       context.fillText(
-        creator,
+        `@${creatorUsername}`,
         width - padding,
         watermarkY - fontSize * 1.15
       );
 
       context.restore();
 
-      requestAnimationFrame(drawFrame);
+      animationFrame = requestAnimationFrame(drawFrame);
     };
 
     video.currentTime = 0;
@@ -182,31 +163,28 @@ async function downloadWithWatermark(
       video.onended = () => resolve();
     });
 
-    if (recorder.state !== "inactive") {
-      recorder.stop();
-    }
+    cancelAnimationFrame(animationFrame);
+
+    if (recorder.state !== "inactive") recorder.stop();
 
     const finalBlob = await recordingFinished;
 
-    if (finalBlob.size === 0) {
+    if (!finalBlob.size) {
       throw new Error("Le fichier téléchargé est vide.");
     }
 
     const extension = mimeType.includes("mp4") ? "mp4" : "webm";
     const downloadUrl = URL.createObjectURL(finalBlob);
-
     const anchor = document.createElement("a");
+
     anchor.href = downloadUrl;
-    anchor.download = `moshi-${creatorUsername}-${videoUrl
-      .split("/")
-      .pop()
-      ?.split("?")[0] || "video"}.${extension}`;
+    anchor.download = `moshi-${creatorUsername}-video.${extension}`;
 
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
 
-    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 30_000);
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 30000);
   } finally {
     video.pause();
     video.removeAttribute("src");
@@ -223,8 +201,53 @@ export default function VideoActionsMenu({
 }: VideoActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [hasReposted, setHasReposted] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const supabase = createClient();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRepostStatus = async () => {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        if (!cancelled) {
+          setUserId(null);
+          setHasReposted(false);
+        }
+        return;
+      }
+
+      if (!cancelled) setUserId(user.id);
+
+      const { data, error } = await supabase
+        .from("video_reposts")
+        .select("id")
+        .eq("video_id", videoId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error("Vérification republication :", error);
+        return;
+      }
+
+      setHasReposted(!!data);
+    };
+
+    void loadRepostStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, videoId]);
 
   const getUser = async () => {
     const {
@@ -245,28 +268,47 @@ export default function VideoActionsMenu({
 
       const user = await getUser();
 
-      const { error } = await supabase
-        .from("video_reposts")
-        .upsert(
-          {
+      if (hasReposted) {
+        const { error } = await supabase
+          .from("video_reposts")
+          .delete()
+          .eq("video_id", videoId)
+          .eq("user_id", user.id);
+
+        if (error) throw error;
+
+        setHasReposted(false);
+        window.dispatchEvent(new CustomEvent("moshi:reposts-updated"));
+
+        alert("Republication annulée.");
+      } else {
+        const { error } = await supabase
+          .from("video_reposts")
+          .insert({
             video_id: videoId,
             user_id: user.id,
-          },
-          {
-            onConflict: "video_id,user_id",
-            ignoreDuplicates: true,
+          });
+
+        if (error) {
+          if (error.code === "23505") {
+            setHasReposted(true);
+            return;
           }
-        );
+          throw error;
+        }
 
-      if (error) throw error;
+        setHasReposted(true);
+        window.dispatchEvent(new CustomEvent("moshi:reposts-updated"));
 
-      alert("Vidéo republiée !");
+        alert("Vidéo republiée !");
+      }
+
       setOpen(false);
     } catch (error) {
       alert(
         error instanceof Error
           ? error.message
-          : "Impossible de republier cette vidéo."
+          : "Impossible de modifier cette republication."
       );
     } finally {
       setBusy(null);
@@ -281,9 +323,7 @@ export default function VideoActionsMenu({
 
     try {
       setBusy("download");
-
       await downloadWithWatermark(videoUrl, creatorUsername);
-
       setOpen(false);
     } catch (error) {
       alert(
@@ -351,10 +391,6 @@ export default function VideoActionsMenu({
     }
   };
 
-  const closeMenu = () => {
-    if (!busy) setOpen(false);
-  };
-
   return (
     <div className="relative flex flex-col items-center">
       <button
@@ -373,26 +409,29 @@ export default function VideoActionsMenu({
           <button
             type="button"
             aria-label="Fermer le menu"
-            onClick={closeMenu}
+            onClick={() => !busy && setOpen(false)}
             className="fixed inset-0 z-[80] cursor-default"
           />
 
           <div
             onPointerDown={(event) => event.stopPropagation()}
-            className="absolute bottom-12 right-0 z-[90] w-[235px] overflow-hidden rounded-2xl border border-white/15 bg-[#17151d]/95 p-2 text-white shadow-2xl backdrop-blur-xl"
+            className="absolute bottom-12 right-0 z-[90] w-[245px] overflow-hidden rounded-2xl border border-white/15 bg-[#17151d]/95 p-2 text-white shadow-2xl backdrop-blur-xl"
           >
             <button
               type="button"
-              disabled={!!busy}
+              disabled={!!busy || !userId}
               onClick={() => void handleRepost()}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition hover:bg-white/10 disabled:opacity-50"
             >
               {busy === "repost" ? (
                 <Loader2 size={19} className="animate-spin" />
+              ) : hasReposted ? (
+                <Check size={19} />
               ) : (
                 <Repeat2 size={19} />
               )}
-              Republier la vidéo
+
+              {hasReposted ? "Annuler la republication" : "Republier la vidéo"}
             </button>
 
             <button
@@ -412,9 +451,7 @@ export default function VideoActionsMenu({
               <span className="flex-1">Télécharger</span>
 
               {!allowDownload && (
-                <span className="text-[10px] text-white/45">
-                  Désactivé
-                </span>
+                <span className="text-[10px] text-white/45">Désactivé</span>
               )}
             </button>
 
