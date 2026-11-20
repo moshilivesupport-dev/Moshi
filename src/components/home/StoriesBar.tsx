@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   Plus,
@@ -19,84 +19,172 @@ interface Story {
   user_id: string;
   media_url: string;
   media_type: "image" | "video";
-  expires_at: string | null;
-  profiles: {
-    username: string | null;
-    avatar_url: string | null;
-  } | null;
+  expires_at: string;
+  created_at: string | null;
 }
 
+interface StoryGroup {
+  user_id: string;
+  username: string;
+  avatar_url: string | null;
+  stories: Story[];
+}
+
+interface Profile {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+}
+
+const MAX_FILE_SIZE = 30 * 1024 * 1024;
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
+const ALLOWED_VIDEO_TYPES = [
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+];
+
 export default function StoriesBar() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [stories, setStories] = useState<Story[]>([]);
+  const [stories, setStories] = useState<StoryGroup[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [currentProfile, setCurrentProfile] = useState<any>(null);
+  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedType, setSelectedType] = useState<"image" | "video">("image");
 
+  const loadStories = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    setCurrentUser(user);
+
+    if (!user) {
+      setCurrentProfile(null);
+    }
+
+    let followedIds: string[] = [];
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, username, avatar_url")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      setCurrentProfile(profile);
+
+      const { data: followsData } = await supabase
+        .from("follows")
+        .select("following_id")
+        .eq("follower_id", user.id);
+
+      followedIds = (followsData || []).map(
+        (follow) => follow.following_id
+      );
+    }
+
+    const visibleUserIds = user
+      ? [...new Set([user.id, ...followedIds])]
+      : [];
+
+    if (visibleUserIds.length === 0) {
+      setStories([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("stories")
+      .select("id, user_id, media_url, media_type, expires_at, created_at")
+      .in("user_id", visibleUserIds)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Erreur de chargement des stories :", error);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      setStories([]);
+      return;
+    }
+
+    const userIds = [...new Set(data.map((story) => story.user_id))];
+
+    const { data: profilesData } = await supabase
+      .from("profiles")
+      .select("id, username, avatar_url")
+      .in("id", userIds);
+
+    const profilesMap: Record<string, Profile> = {};
+
+    (profilesData || []).forEach((profile) => {
+      profilesMap[profile.id] = profile;
+    });
+
+    const grouped: Record<string, StoryGroup> = {};
+
+    data.forEach((story) => {
+      const ownerId = story.user_id;
+
+      if (!grouped[ownerId]) {
+        const profile = profilesMap[ownerId];
+
+        grouped[ownerId] = {
+          user_id: ownerId,
+          username: profile?.username || "Utilisateur",
+          avatar_url: profile?.avatar_url || null,
+          stories: [],
+        };
+      }
+
+      grouped[ownerId].stories.push({
+        ...story,
+        media_type: story.media_type === "video" ? "video" : "image",
+      });
+    });
+
+    const groups = Object.values(grouped);
+
+    // Afficher sa propre story en premier, puis les autres.
+    groups.sort((a, b) => {
+      if (a.user_id === user.id) return -1;
+      if (b.user_id === user.id) return 1;
+
+      const aLatest = a.stories[a.stories.length - 1]?.created_at || "";
+      const bLatest = b.stories[b.stories.length - 1]?.created_at || "";
+
+      return bLatest.localeCompare(aLatest);
+    });
+
+    setStories(groups);
+  }, [supabase]);
+
   useEffect(() => {
     let mounted = true;
 
-    const loadStories = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!mounted) return;
-      setCurrentUser(user);
-
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("username, avatar_url")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (mounted) setCurrentProfile(profile);
-      }
-
-      const { data, error } = await supabase
-        .from("stories")
-        .select("id, user_id, media_url, media_type, expires_at")
-        .gt("expires_at", new Date().toISOString())
-        .order("created_at", { ascending: false });
-
-      if (error || !data || !mounted) return;
-
-      const userIds = [...new Set(data.map((story) => story.user_id))];
-
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("id, username, avatar_url")
-        .in("id", userIds);
-
-      if (!mounted) return;
-
-      const profilesMap: Record<string, any> = {};
-
-      (profilesData || []).forEach((profile) => {
-        profilesMap[profile.id] = profile;
-      });
-
-      setStories(
-        data.map((story) => ({
-          ...story,
-          media_type: story.media_type || "image",
-          profiles: profilesMap[story.user_id] || null,
-        }))
-      );
+    const run = async () => {
+      await loadStories();
     };
 
-    loadStories();
+    if (mounted) run();
 
     return () => {
       mounted = false;
     };
-  }, [supabase]);
+  }, [loadStories]);
 
   const openFilePicker = (type: "image" | "video") => {
     setSelectedType(type);
@@ -104,7 +192,10 @@ export default function StoriesBar() {
 
     if (fileInputRef.current) {
       fileInputRef.current.accept =
-        type === "image" ? "image/*" : "video/*";
+        type === "image"
+          ? ALLOWED_IMAGE_TYPES.join(",")
+          : ALLOWED_VIDEO_TYPES.join(",");
+
       fileInputRef.current.click();
     }
   };
@@ -114,39 +205,41 @@ export default function StoriesBar() {
   ) => {
     const file = event.target.files?.[0];
 
-    if (!file || !currentUser) return;
+    if (!file) return;
 
-    const isImage = file.type.startsWith("image/");
-    const isVideo = file.type.startsWith("video/");
-
-    if (
-      (selectedType === "image" && !isImage) ||
-      (selectedType === "video" && !isVideo)
-    ) {
-      alert("Le fichier sélectionné ne correspond pas au type choisi.");
+    if (!currentUser) {
+      alert("Connecte-toi pour publier une story.");
       event.target.value = "";
       return;
     }
 
-    const maxSize = selectedType === "video"
-      ? 100 * 1024 * 1024
-      : 15 * 1024 * 1024;
+    const validTypes =
+      selectedType === "image"
+        ? ALLOWED_IMAGE_TYPES
+        : ALLOWED_VIDEO_TYPES;
 
-    if (file.size > maxSize) {
+    if (!validTypes.includes(file.type)) {
       alert(
-        selectedType === "video"
-          ? "La vidéo ne doit pas dépasser 100 Mo."
-          : "La photo ne doit pas dépasser 15 Mo."
+        selectedType === "image"
+          ? "Format accepté : JPG, PNG ou WEBP."
+          : "Format accepté : MP4, WEBM ou MOV."
       );
+
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      alert("Une story ne peut pas dépasser 30 Mo.");
       event.target.value = "";
       return;
     }
 
     setUploading(true);
 
-    const extension = file.name.split(".").pop()?.toLowerCase() || (
-      selectedType === "video" ? "mp4" : "jpg"
-    );
+    const extension =
+      file.name.split(".").pop()?.toLowerCase() ||
+      (selectedType === "video" ? "mp4" : "jpg");
 
     const filePath = `${currentUser.id}/${crypto.randomUUID()}.${extension}`;
 
@@ -161,30 +254,40 @@ export default function StoriesBar() {
 
       if (uploadError) throw uploadError;
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("stories").getPublicUrl(filePath);
+      const { data: publicData } = supabase.storage
+        .from("stories")
+        .getPublicUrl(filePath);
 
       const { error: insertError } = await supabase
         .from("stories")
         .insert({
           user_id: currentUser.id,
-          media_url: publicUrl,
+          media_url: publicData.publicUrl,
           media_type: selectedType,
           expires_at: new Date(
             Date.now() + 24 * 60 * 60 * 1000
           ).toISOString(),
+          duration: 5,
         });
 
       if (insertError) {
-        await supabase.storage.from("stories").remove([filePath]);
+        await supabase.storage
+          .from("stories")
+          .remove([filePath]);
+
         throw insertError;
       }
 
-      alert("Story publiée !");
-      window.location.reload();
+      alert("Story publiée avec succès !");
+
+      await loadStories();
     } catch (error: any) {
-      alert("Erreur : " + (error?.message || "Publication impossible."));
+      console.error("Erreur de publication :", error);
+
+      alert(
+        "Erreur : " +
+          (error?.message || "Publication impossible.")
+      );
     } finally {
       setUploading(false);
       event.target.value = "";
@@ -201,62 +304,80 @@ export default function StoriesBar() {
       <div className="flex items-start gap-4 overflow-x-auto scrollbar-hide py-2 pointer-events-auto">
         {currentUser && (
           <button
+            type="button"
             onClick={() => setIsMenuOpen(true)}
-            className="flex flex-col items-center gap-1 shrink-0"
+            className="flex shrink-0 flex-col items-center gap-1"
           >
-            <div className="w-16 h-16 rounded-full border-2 border-dashed border-gray-400 p-1">
-              <div className="w-full h-full rounded-full bg-gray-200 overflow-hidden relative">
+            <div className="h-16 w-16 rounded-full border-2 border-dashed border-gray-400 p-1">
+              <div className="relative h-full w-full overflow-hidden rounded-full bg-gray-200">
                 <Image
                   src={avatar}
                   alt="Ma story"
                   width={64}
                   height={64}
-                  className="w-full h-full object-cover"
+                  className="h-full w-full object-cover"
                   unoptimized
                 />
-                <div className="absolute bottom-0 right-0 w-5 h-5 rounded-full moshi-gradient flex items-center justify-center border-2 border-white">
-                  <Plus size={12} className="text-white" strokeWidth={3} />
+
+                <div className="moshi-gradient absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white">
+                  <Plus
+                    size={12}
+                    className="text-white"
+                    strokeWidth={3}
+                  />
                 </div>
               </div>
             </div>
-            <span className="text-[10px] font-semibold max-w-[64px] truncate">
+
+            <span className="max-w-[64px] truncate text-[10px] font-semibold text-white">
               Votre story
             </span>
           </button>
         )}
 
-        {stories.map((story) => {
-          const name = story.profiles?.username || "Utilisateur";
+        {stories.map((group) => {
+          const isMine = group.user_id === currentUser?.id;
+
+          const lastStory =
+            group.stories[group.stories.length - 1];
 
           return (
             <button
-              key={story.id}
-              onClick={() => router.push(`/stories/${story.user_id}`)}
-              className="flex flex-col items-center gap-1 shrink-0"
+              type="button"
+              key={group.user_id}
+              onClick={() =>
+                router.push(`/stories/${group.user_id}`)
+              }
+              className="flex shrink-0 flex-col items-center gap-1"
             >
-              <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-moshi-pink via-moshi-purple to-moshi-blue">
-                <div className="w-full h-full rounded-full overflow-hidden border-2 border-white relative">
-                  {story.media_type === "video" ? (
+              <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-moshi-pink via-moshi-purple to-moshi-blue p-[2px]">
+                <div className="relative h-full w-full overflow-hidden rounded-full border-2 border-black">
+                  {group.avatar_url ? (
+                    <Image
+                      src={group.avatar_url}
+                      alt={group.username}
+                      width={64}
+                      height={64}
+                      className="h-full w-full object-cover"
+                      unoptimized
+                    />
+                  ) : lastStory.media_type === "video" ? (
                     <video
-                      src={story.media_url}
-                      className="w-full h-full object-cover"
+                      src={lastStory.media_url}
+                      className="h-full w-full object-cover"
                       muted
                       playsInline
                     />
                   ) : (
-                    <Image
-                      src={story.media_url}
-                      alt={name}
-                      width={64}
-                      height={64}
-                      className="w-full h-full object-cover"
-                      unoptimized
-                    />
+                    <div className="flex h-full w-full items-center justify-center bg-gray-700 text-xl font-bold text-white">
+                      {group.username.charAt(0).toUpperCase()}
+                    </div>
                   )}
                 </div>
               </div>
-              <span className="text-[10px] font-semibold max-w-[64px] truncate">
-                {name}
+
+              <span className="max-w-[64px] truncate text-[10px] font-semibold text-white">
+                {isMine ? "Votre story" : group.username}
               </span>
             </button>
           );
@@ -271,24 +392,29 @@ export default function StoriesBar() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsMenuOpen(false)}
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60]"
+              className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm"
             />
 
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-[32px] p-6 pb-safe"
+              transition={{
+                type: "spring",
+                damping: 25,
+                stiffness: 200,
+              }}
+              className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-[32px] bg-white p-6 pb-safe"
             >
-              <div className="flex items-center justify-between mb-6">
+              <div className="mb-6 flex items-center justify-between">
                 <h2 className="text-xl font-extrabold text-moshi-text">
                   Nouvelle Story
                 </h2>
 
                 <button
+                  type="button"
                   onClick={() => setIsMenuOpen(false)}
-                  className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100"
                 >
                   <X size={20} />
                 </button>
@@ -296,34 +422,46 @@ export default function StoriesBar() {
 
               <div className="grid grid-cols-2 gap-3">
                 <button
+                  type="button"
                   disabled={uploading}
                   onClick={() => openFilePicker("image")}
-                  className="flex flex-col items-center gap-3 p-6 rounded-3xl bg-purple-50 border border-purple-100 disabled:opacity-50"
+                  className="flex flex-col items-center gap-3 rounded-3xl border border-purple-100 bg-purple-50 p-6 disabled:opacity-50"
                 >
-                  <div className="w-14 h-14 rounded-2xl bg-purple-500 flex items-center justify-center text-white">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500 text-white">
                     <Camera size={26} />
                   </div>
-                  <p className="font-bold text-moshi-text text-sm">Photo</p>
+
+                  <p className="text-sm font-bold text-moshi-text">
+                    Photo
+                  </p>
                 </button>
 
                 <button
+                  type="button"
                   disabled={uploading}
                   onClick={() => openFilePicker("video")}
-                  className="flex flex-col items-center gap-3 p-6 rounded-3xl bg-pink-50 border border-pink-100 disabled:opacity-50"
+                  className="flex flex-col items-center gap-3 rounded-3xl border border-pink-100 bg-pink-50 p-6 disabled:opacity-50"
                 >
-                  <div className="w-14 h-14 rounded-2xl moshi-gradient flex items-center justify-center text-white">
+                  <div className="moshi-gradient flex h-14 w-14 items-center justify-center rounded-2xl text-white">
                     <Video size={26} />
                   </div>
-                  <p className="font-bold text-moshi-text text-sm">Vidéo</p>
+
+                  <p className="text-sm font-bold text-moshi-text">
+                    Vidéo
+                  </p>
                 </button>
               </div>
 
               {uploading && (
-                <div className="mt-5 flex items-center justify-center gap-2 text-sm text-moshi-purple font-bold">
+                <div className="mt-5 flex items-center justify-center gap-2 text-sm font-bold text-moshi-purple">
                   <Loader2 size={18} className="animate-spin" />
                   Publication en cours...
                 </div>
               )}
+
+              <p className="mt-4 text-center text-xs text-gray-500">
+                Photos et vidéos de 30 Mo maximum. Les stories disparaissent après 24 heures.
+              </p>
             </motion.div>
           </>
         )}
@@ -332,7 +470,7 @@ export default function StoriesBar() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         onChange={handleFileSelect}
         className="hidden"
       />
