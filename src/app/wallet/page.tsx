@@ -572,16 +572,8 @@ export default function WalletPage() {
   };
 
   // --------------------------------------------------
-  // FERMETURE DE LA VUE PAIEMENT
+  // ÉTAT DU PAIEMENT
   // --------------------------------------------------
-
-  const cancelPaymentView = () => {
-    setActivePayment(null);
-    setPaymentStatus(null);
-    setSelectedPack(null);
-    setNotice("");
-    setCryptoError("");
-  };
 
   const currentStatus =
     paymentStatus?.status ||
@@ -595,6 +587,21 @@ export default function WalletPage() {
     "expired",
     "refunded",
   ].includes(currentStatus);
+
+  // --------------------------------------------------
+  // FERMETURE DE LA VUE PAIEMENT
+  // --------------------------------------------------
+
+  const cancelPaymentView = () => {
+    // Interdire de quitter tant que le paiement est actif.
+    if (!isFinished && !isFailed) return;
+
+    setActivePayment(null);
+    setPaymentStatus(null);
+    setSelectedPack(null);
+    setNotice("");
+    setCryptoError("");
+  };
 
   // --------------------------------------------------
   // CHARGEMENT
@@ -1109,12 +1116,17 @@ export default function WalletPage() {
             </button>
           </div>
 
+          {/* RETOUR AUX PACKS : AUTORISÉ UNIQUEMENT SI TERMINAL */}
+
           <button
             type="button"
             onClick={cancelPaymentView}
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-600"
+            disabled={!isFinished && !isFailed}
+            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Retour aux packs
+            {isFinished || isFailed
+              ? "Retour aux packs"
+              : "Paiement en cours — suivi obligatoire"}
           </button>
         </section>
       )}
