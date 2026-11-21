@@ -11,6 +11,9 @@ const ALLOWED_ACTIONS = [
   "user_reactivated",
   "verification_approved",
   "verification_rejected",
+  "country_change_in_progress",
+  "country_change_approved",
+  "country_change_rejected",
 ] as const;
 
 export async function GET(request: Request) {
