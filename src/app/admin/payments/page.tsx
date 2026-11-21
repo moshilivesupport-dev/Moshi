@@ -80,7 +80,11 @@ type ApiResponse = {
     crypto: number;
   };
 };
-
+{
+  title: "Paiements",
+  href: "/admin/payments",
+  // conserve les autres propriétés du module
+}
 const STATUS_LABELS: Record<PaymentStatus, string> = {
   pending: "En attente",
   success: "Réussi",
