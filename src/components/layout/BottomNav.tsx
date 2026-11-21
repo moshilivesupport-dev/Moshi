@@ -23,18 +23,20 @@ const links = [
   { href: "/profile/me", label: "Profil", icon: User },
 ];
 
+const hiddenRoutes = [
+  "/admin",
+  "/seller",
+  "/auth",
+  "/live",
+];
+
 export default function BottomNav() {
   const pathname = usePathname();
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
 
-  const hiddenRoutes = [
-    "/seller",
-    "/auth",
-    "/live",
-  ];
-
   const shouldHideNavigation = hiddenRoutes.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`)
+    (route) =>
+      pathname === route || pathname.startsWith(`${route}/`)
   );
 
   if (shouldHideNavigation) {
@@ -88,7 +90,9 @@ export default function BottomNav() {
                   <Icon
                     className={cn(
                       "h-[26px] w-[26px] transition-colors",
-                      isActive ? "text-[#9D7BEA]" : "text-gray-600"
+                      isActive
+                        ? "text-[#9D7BEA]"
+                        : "text-gray-600"
                     )}
                     strokeWidth={isActive ? 2.5 : 2}
                   />
@@ -103,7 +107,9 @@ export default function BottomNav() {
                 <span
                   className={cn(
                     "text-[10px] font-semibold transition-colors",
-                    isActive ? "text-[#9D7BEA]" : "text-gray-600"
+                    isActive
+                      ? "text-[#9D7BEA]"
+                      : "text-gray-600"
                   )}
                 >
                   {link.label}
