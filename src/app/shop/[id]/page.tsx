@@ -28,6 +28,7 @@ import {
   Plus,
   Minus,
   Send,
+  Star,
 } from "lucide-react";
 import { getFlag } from "@/lib/utils";
 
@@ -97,6 +98,10 @@ export default function ProductDetailPage() {
   const [likes, setLikes] = useState(0);
   const [liked, setLiked] = useState(false);
 
+  // Notes réelles enregistrées dans product_ratings
+  const [ratingAverage, setRatingAverage] = useState(0);
+  const [ratingCount, setRatingCount] = useState(0);
+
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -131,6 +136,11 @@ export default function ProductDetailPage() {
           count: commentCount,
           error: commentsError,
         },
+        {
+          data: ratingRows,
+          count: ratingsTotal,
+          error: ratingsError,
+        },
       ] = await Promise.all([
         supabase
           .from("product_likes")
@@ -159,10 +169,18 @@ export default function ProductDetailPage() {
           .is("parent_id", null)
           .order("created_at", { ascending: false })
           .range(from, to),
+
+        supabase
+          .from("product_ratings")
+          .select("rating", { count: "exact" })
+          .eq("product_id", id),
       ]);
 
       if (likesError) console.error(likesError);
       if (myLikeError) console.error(myLikeError);
+      if (ratingsError) {
+        console.error("Erreur chargement des avis :", ratingsError);
+      }
 
       if (commentsError) {
         console.error(commentsError);
@@ -173,8 +191,27 @@ export default function ProductDetailPage() {
       setLiked(!!myLike);
       setCommentsTotal(commentCount ?? 0);
 
-      const rows = commentRows || [];
+      // Calcul de la moyenne à partir des notes réellement enregistrées.
+      const validRatings = (ratingRows || [])
+        .map((row: { rating: number }) => Number(row.rating))
+        .filter(
+          (rating: number) =>
+            Number.isFinite(rating) &&
+            rating >= 1 &&
+            rating <= 5
+        );
 
+      const average = validRatings.length
+        ? validRatings.reduce(
+            (total: number, rating: number) => total + rating,
+            0
+          ) / validRatings.length
+        : 0;
+
+      setRatingAverage(average);
+      setRatingCount(ratingsTotal ?? validRatings.length);
+
+      const rows = commentRows || [];
       const parentIds = rows.map((row) => row.id);
 
       const replyRowsResult = parentIds.length
@@ -488,7 +525,9 @@ export default function ProductDetailPage() {
       });
 
     if (error) {
-      alert("Impossible de publier la réponse : " + error.message);
+      alert(
+        "Impossible de publier la réponse : " + error.message
+      );
     } else {
       setReplyText("");
       setReplyingTo(null);
@@ -713,7 +752,7 @@ export default function ProductDetailPage() {
   if (loading) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-moshi-purple" />
+        <Loader2 className="w-6 h-6 animate-spin text-moshi-purple" />
       </div>
     );
   }
@@ -721,11 +760,11 @@ export default function ProductDetailPage() {
   if (!product) {
     return (
       <div className="min-h-[100dvh] flex flex-col items-center justify-center gap-3">
-        <Package className="w-12 h-12 text-gray-300" />
-        <p>Produit introuvable</p>
+        <Package className="w-10 h-10 text-gray-300" />
+        <p className="text-sm">Produit introuvable</p>
         <button
           onClick={() => router.push("/shop")}
-          className="text-moshi-purple font-bold"
+          className="text-sm text-moshi-purple font-bold"
         >
           Retour à la boutique
         </button>
@@ -734,14 +773,15 @@ export default function ProductDetailPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-moshi-bg pb-36">
-      <header className="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between">
+    <div className="min-h-[100dvh] bg-moshi-bg pb-24 sm:pb-28">
+      {/* En-tête */}
+      <header className="absolute top-0 left-0 right-0 z-20 p-3 flex justify-between">
         <button
           onClick={() => router.back()}
           aria-label="Retour"
-          className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow-md"
+          className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center shadow-sm"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-4 h-4" />
         </button>
 
         {isOwner && !isEditing && (
@@ -749,22 +789,23 @@ export default function ProductDetailPage() {
             <button
               onClick={() => setIsEditing(true)}
               aria-label="Modifier"
-              className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow-md text-moshi-purple"
+              className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center shadow-sm text-moshi-purple"
             >
-              <Pencil className="w-5 h-5" />
+              <Pencil className="w-4 h-4" />
             </button>
 
             <button
               onClick={handleDelete}
               aria-label="Supprimer"
-              className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow-md text-red-500"
+              className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center shadow-sm text-red-500"
             >
-              <Trash2 className="w-5 h-5" />
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         )}
       </header>
 
+      {/* Photos */}
       <div className="relative aspect-square w-full bg-white">
         {isEditing ? (
           editImage ? (
@@ -776,7 +817,7 @@ export default function ProductDetailPage() {
               unoptimized
             />
           ) : (
-            <Package className="w-16 h-16 m-auto text-gray-300" />
+            <Package className="w-14 h-14 m-auto text-gray-300" />
           )
         ) : images.length ? (
           <Image
@@ -789,7 +830,7 @@ export default function ProductDetailPage() {
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-300">
-            <Package size={64} />
+            <Package size={48} />
           </div>
         )}
 
@@ -802,9 +843,9 @@ export default function ProductDetailPage() {
                 )
               }
               aria-label="Photo précédente"
-              className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow"
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 shadow-sm"
             >
-              <ChevronLeft />
+              <ChevronLeft className="w-5 h-5" />
             </button>
 
             <button
@@ -814,12 +855,12 @@ export default function ProductDetailPage() {
                 )
               }
               aria-label="Photo suivante"
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 shadow-sm"
             >
-              <ChevronRight />
+              <ChevronRight className="w-5 h-5" />
             </button>
 
-            <span className="absolute bottom-3 right-3 rounded-full bg-black/60 text-white text-xs px-3 py-1">
+            <span className="absolute bottom-2 right-2 rounded-full bg-black/60 text-white text-[10px] px-2.5 py-1">
               {activeImage + 1}/{images.length}
             </span>
           </>
@@ -828,7 +869,7 @@ export default function ProductDetailPage() {
         {isEditing && (
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="absolute bottom-4 right-4 bg-white px-3 py-2 rounded-full text-xs font-semibold shadow-md"
+            className="absolute bottom-3 right-3 bg-white px-3 py-2 rounded-full text-xs font-semibold shadow-sm"
           >
             {uploading ? "Envoi..." : "Changer la photo"}
           </button>
@@ -844,12 +885,12 @@ export default function ProductDetailPage() {
       </div>
 
       {!isEditing && images.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto px-4 py-3 bg-white">
+        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 bg-white">
           {images.map((src, i) => (
             <button
               key={src}
               onClick={() => setActiveImage(i)}
-              className={`relative w-16 h-16 shrink-0 rounded-lg overflow-hidden border-2 ${
+              className={`relative w-12 h-12 shrink-0 rounded-md overflow-hidden border ${
                 activeImage === i
                   ? "border-moshi-purple"
                   : "border-transparent"
@@ -867,14 +908,14 @@ export default function ProductDetailPage() {
         </div>
       )}
 
-      <main className="p-5 space-y-5">
+      <main className="px-3 py-3 sm:px-5 sm:py-4 space-y-4 sm:space-y-5">
         {isEditing ? (
-          <section className="space-y-3">
+          <section className="space-y-2.5">
             <input
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               placeholder="Nom du produit"
-              className="w-full px-4 py-3 rounded-xl bg-white border text-sm font-bold"
+              className="w-full px-3 py-2.5 rounded-lg bg-white border text-sm font-bold"
             />
 
             <textarea
@@ -884,7 +925,7 @@ export default function ProductDetailPage() {
               }
               rows={4}
               placeholder="Description obligatoire"
-              className="w-full px-4 py-3 rounded-xl bg-white border text-sm"
+              className="w-full px-3 py-2.5 rounded-lg bg-white border text-sm"
             />
 
             <div className="flex gap-2">
@@ -893,7 +934,8 @@ export default function ProductDetailPage() {
                 min="1"
                 value={editPrice}
                 onChange={(e) => setEditPrice(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-white border text-sm"
+                className="w-full px-3 py-2.5 rounded-lg bg-white border text-sm"
+                placeholder="Prix"
               />
 
               <input
@@ -901,71 +943,111 @@ export default function ProductDetailPage() {
                 min="0"
                 value={editStock}
                 onChange={(e) => setEditStock(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-white border text-sm"
+                className="w-full px-3 py-2.5 rounded-lg bg-white border text-sm"
+                placeholder="Stock"
               />
             </div>
           </section>
         ) : (
           <>
             {product.category && (
-              <p className="text-xs font-bold text-moshi-purple uppercase tracking-wider">
+              <p className="text-[10px] sm:text-xs font-bold text-moshi-purple uppercase tracking-wider">
                 {product.category}
               </p>
             )}
 
-            <div>
-              <h1 className="text-2xl font-extrabold text-moshi-text">
+            {/* Nom, prix et avis */}
+            <div className="space-y-1.5">
+              <h1 className="text-lg sm:text-xl font-extrabold leading-snug text-moshi-text">
                 {product.title}
               </h1>
 
-              <p className="text-3xl font-extrabold text-moshi-purple mt-2">
+              <p className="text-xl sm:text-2xl font-extrabold text-moshi-purple">
                 {product.price.toLocaleString("fr-FR")}{" "}
                 {product.currency === "XOF" || !product.currency
                   ? "FCFA"
                   : product.currency}
               </p>
 
-              <p className="text-sm text-gray-500 mt-2">
-                Stock disponible : {product.stock}
-              </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
+                <div
+                  className="inline-flex items-center gap-1.5"
+                  aria-label={`Note moyenne ${ratingAverage.toFixed(1)} sur 5`}
+                >
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
+                        key={star}
+                        className={`w-3.5 h-3.5 ${
+                          ratingAverage >= star
+                            ? "fill-amber-400 text-amber-400"
+                            : ratingAverage >= star - 0.5
+                              ? "fill-amber-200 text-amber-400"
+                              : "text-gray-300"
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  <span className="text-xs font-bold text-gray-700">
+                    {ratingCount > 0
+                      ? ratingAverage.toFixed(1)
+                      : "0,0"}
+                  </span>
+
+                  <span className="text-[11px] text-gray-400">
+                    ({ratingCount} avis)
+                  </span>
+                </div>
+
+                <span className="text-[11px] text-gray-500">
+                  Stock : {product.stock}
+                </span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            {/* Likes et commentaires */}
+            <div className="flex items-center gap-3">
               <button
                 onClick={toggleLike}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 font-semibold ${
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
                   liked
                     ? "bg-pink-50 text-pink-600"
                     : "bg-white text-gray-600"
                 }`}
               >
                 <Heart
-                  className={`w-5 h-5 ${
+                  className={`w-4 h-4 ${
                     liked ? "fill-current" : ""
                   }`}
                 />
                 {likes} J'aime
               </button>
 
-              <span className="inline-flex items-center gap-2 text-gray-500">
-                <MessageCircle className="w-5 h-5" />
+              <a
+                href="#comments"
+                className="inline-flex items-center gap-1.5 text-xs text-gray-500"
+              >
+                <MessageCircle className="w-4 h-4" />
                 {commentsTotal} commentaire(s)
-              </span>
+              </a>
             </div>
 
-            <section>
-              <h2 className="font-bold mb-2">Description</h2>
-              <p className="text-sm text-gray-600 whitespace-pre-line">
+            {/* Description */}
+            <section className="space-y-1.5">
+              <h2 className="text-sm font-bold">Description</h2>
+              <p className="text-xs sm:text-sm text-gray-600 whitespace-pre-line leading-relaxed">
                 {product.description || "Aucune description."}
               </p>
             </section>
 
-            <section className="bg-white rounded-2xl p-4 space-y-2">
-              <h2 className="font-bold">
+            {/* Vendeur */}
+            <section className="bg-white rounded-xl p-3 space-y-1.5">
+              <h2 className="text-sm font-bold">
                 Informations du vendeur
               </h2>
 
-              <p className="text-sm text-gray-600">
+              <p className="text-xs sm:text-sm text-gray-600">
                 {sellerProfile?.username ||
                   sellerProfile?.full_name ||
                   "Vendeur Moshi"}{" "}
@@ -976,8 +1058,8 @@ export default function ProductDetailPage() {
 
               {(product.seller_address ||
                 product.seller_country) && (
-                <p className="text-sm text-gray-600 flex items-start gap-2">
-                  <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
+                <p className="text-xs text-gray-600 flex items-start gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                   {[
                     product.seller_address,
                     product.seller_country,
@@ -988,34 +1070,35 @@ export default function ProductDetailPage() {
               )}
             </section>
 
+            {/* Commentaires */}
             <section
               id="comments"
-              className="space-y-3 scroll-mt-20"
+              className="space-y-2.5 scroll-mt-16"
             >
-              <div className="flex items-center justify-between">
-                <h2 className="font-bold">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm sm:text-base font-bold">
                   Commentaires ({commentsTotal})
                 </h2>
-                <span className="text-xs text-gray-400">
+                <span className="text-[10px] text-gray-400">
                   {COMMENTS_PER_PAGE} par page
                 </span>
               </div>
 
               {currentUser && !isOwner && (
-                <div className="bg-white rounded-2xl p-3 space-y-2">
+                <div className="bg-white rounded-xl p-2.5 space-y-2">
                   <textarea
                     value={commentText}
                     onChange={(e) =>
                       setCommentText(e.target.value)
                     }
                     maxLength={2000}
-                    rows={3}
+                    rows={2}
                     placeholder="Écris un commentaire..."
-                    className="w-full resize-none outline-none text-sm"
+                    className="w-full resize-none outline-none text-xs sm:text-sm"
                   />
 
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-[10px] text-gray-400">
                       {commentText.length}/2000
                     </span>
 
@@ -1024,12 +1107,12 @@ export default function ProductDetailPage() {
                       disabled={
                         commentBusy || !commentText.trim()
                       }
-                      className="moshi-gradient text-white px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-50 flex items-center gap-2"
+                      className="moshi-gradient text-white px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50 flex items-center gap-1.5"
                     >
                       {commentBusy ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
-                        <Send className="w-4 h-4" />
+                        <Send className="w-3.5 h-3.5" />
                       )}
                       Publier
                     </button>
@@ -1040,14 +1123,14 @@ export default function ProductDetailPage() {
               {!currentUser && (
                 <button
                   onClick={() => router.push("/auth/login")}
-                  className="w-full bg-white rounded-xl p-3 text-sm text-moshi-purple font-semibold"
+                  className="w-full bg-white rounded-lg p-2.5 text-xs text-moshi-purple font-semibold"
                 >
                   Connecte-toi pour commenter
                 </button>
               )}
 
               {comments.length === 0 ? (
-                <p className="text-sm text-gray-500 bg-white rounded-xl p-4">
+                <p className="text-xs text-gray-500 bg-white rounded-lg p-3">
                   Aucun commentaire pour le moment.
                 </p>
               ) : (
@@ -1064,13 +1147,13 @@ export default function ProductDetailPage() {
                   return (
                     <article
                       key={comment.id}
-                      className="bg-white rounded-xl p-3 space-y-3"
+                      className="bg-white rounded-lg p-2.5 space-y-2"
                     >
-                      <div className="flex justify-between items-start gap-3">
-                        <p className="text-xs font-bold">
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="text-[11px] font-bold">
                           {comment.author}
                           {isCommentAuthor && (
-                            <span className="ml-2 text-moshi-purple font-normal">
+                            <span className="ml-1.5 text-moshi-purple font-normal">
                               Toi
                             </span>
                           )}
@@ -1078,14 +1161,14 @@ export default function ProductDetailPage() {
 
                         {isCommentAuthor &&
                           !isEditingThisComment && (
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5 shrink-0">
                               <button
                                 onClick={() =>
                                   startEditComment(comment)
                                 }
                                 disabled={commentBusy}
                                 aria-label="Modifier mon commentaire"
-                                className="text-xs text-moshi-purple font-semibold disabled:opacity-50"
+                                className="text-[10px] text-moshi-purple font-semibold disabled:opacity-50"
                               >
                                 Modifier
                               </button>
@@ -1096,7 +1179,7 @@ export default function ProductDetailPage() {
                                 }
                                 disabled={commentBusy}
                                 aria-label="Supprimer mon commentaire"
-                                className="text-xs text-red-500 font-semibold disabled:opacity-50"
+                                className="text-[10px] text-red-500 font-semibold disabled:opacity-50"
                               >
                                 Supprimer
                               </button>
@@ -1114,20 +1197,20 @@ export default function ProductDetailPage() {
                               )
                             }
                             maxLength={2000}
-                            rows={3}
-                            className="w-full rounded-lg border p-3 text-sm resize-none outline-none focus:border-moshi-purple"
+                            rows={2}
+                            className="w-full rounded-lg border p-2 text-xs resize-none outline-none focus:border-moshi-purple"
                           />
 
                           <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-400">
+                            <span className="text-[10px] text-gray-400">
                               {editingCommentText.length}/2000
                             </span>
 
-                            <div className="flex gap-2">
+                            <div className="flex gap-1.5">
                               <button
                                 onClick={cancelEditComment}
                                 disabled={commentBusy}
-                                className="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 text-xs font-bold"
+                                className="px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-600 text-[10px] font-bold"
                               >
                                 Annuler
                               </button>
@@ -1140,7 +1223,7 @@ export default function ProductDetailPage() {
                                   commentBusy ||
                                   !editingCommentText.trim()
                                 }
-                                className="px-3 py-2 rounded-lg moshi-gradient text-white text-xs font-bold disabled:opacity-50"
+                                className="px-2.5 py-1.5 rounded-md moshi-gradient text-white text-[10px] font-bold disabled:opacity-50"
                               >
                                 {commentBusy
                                   ? "Enregistrement..."
@@ -1150,24 +1233,24 @@ export default function ProductDetailPage() {
                           </div>
                         </div>
                       ) : (
-                        <p className="text-sm whitespace-pre-line break-words">
+                        <p className="text-xs whitespace-pre-line break-words leading-relaxed">
                           {comment.content}
                         </p>
                       )}
 
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] text-gray-400">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[9px] text-gray-400">
                           {new Date(
                             comment.created_at
                           ).toLocaleString("fr-FR")}
                         </p>
 
-                        <span className="text-[11px] text-gray-400">
+                        <span className="text-[10px] text-gray-400">
                           {commentReplies.length} réponse(s)
                         </span>
                       </div>
 
-                      <div className="ml-2 border-l-2 border-moshi-purple/20 pl-3 space-y-3">
+                      <div className="ml-1.5 border-l-2 border-moshi-purple/20 pl-2.5 space-y-2">
                         {commentReplies.map((reply) => {
                           const isReplyAuthor =
                             currentUser?.id === reply.user_id;
@@ -1178,13 +1261,13 @@ export default function ProductDetailPage() {
                           return (
                             <div
                               key={reply.id}
-                              className="bg-gray-50 rounded-xl p-3 space-y-2"
+                              className="bg-gray-50 rounded-lg p-2 space-y-1.5"
                             >
                               <div className="flex justify-between items-start gap-2">
-                                <p className="text-xs font-bold">
+                                <p className="text-[11px] font-bold">
                                   {reply.author}
                                   {isReplyAuthor && (
-                                    <span className="ml-2 text-moshi-purple font-normal">
+                                    <span className="ml-1.5 text-moshi-purple font-normal">
                                       Toi
                                     </span>
                                   )}
@@ -1192,13 +1275,13 @@ export default function ProductDetailPage() {
 
                                 {isReplyAuthor &&
                                   !isEditingThisReply && (
-                                    <div className="flex gap-3">
+                                    <div className="flex gap-2 shrink-0">
                                       <button
                                         onClick={() =>
                                           startEditComment(reply)
                                         }
                                         disabled={commentBusy}
-                                        className="text-xs text-moshi-purple font-semibold"
+                                        className="text-[10px] text-moshi-purple font-semibold"
                                       >
                                         Modifier
                                       </button>
@@ -1208,7 +1291,7 @@ export default function ProductDetailPage() {
                                           deleteComment(reply.id)
                                         }
                                         disabled={commentBusy}
-                                        className="text-xs text-red-500 font-semibold"
+                                        className="text-[10px] text-red-500 font-semibold"
                                       >
                                         Supprimer
                                       </button>
@@ -1217,7 +1300,7 @@ export default function ProductDetailPage() {
                               </div>
 
                               {isEditingThisReply ? (
-                                <div className="space-y-2">
+                                <div className="space-y-1.5">
                                   <textarea
                                     value={editingCommentText}
                                     onChange={(e) =>
@@ -1227,14 +1310,14 @@ export default function ProductDetailPage() {
                                     }
                                     maxLength={2000}
                                     rows={2}
-                                    className="w-full rounded-lg border p-2 text-sm resize-none"
+                                    className="w-full rounded-md border p-2 text-xs resize-none"
                                   />
 
-                                  <div className="flex justify-end gap-2">
+                                  <div className="flex justify-end gap-1.5">
                                     <button
                                       onClick={cancelEditComment}
                                       disabled={commentBusy}
-                                      className="text-xs px-3 py-2 rounded-lg bg-gray-200"
+                                      className="text-[10px] px-2.5 py-1.5 rounded-md bg-gray-200"
                                     >
                                       Annuler
                                     </button>
@@ -1247,19 +1330,19 @@ export default function ProductDetailPage() {
                                         commentBusy ||
                                         !editingCommentText.trim()
                                       }
-                                      className="text-xs px-3 py-2 rounded-lg moshi-gradient text-white font-bold"
+                                      className="text-[10px] px-2.5 py-1.5 rounded-md moshi-gradient text-white font-bold"
                                     >
                                       Enregistrer
                                     </button>
                                   </div>
                                 </div>
                               ) : (
-                                <p className="text-sm whitespace-pre-line break-words">
+                                <p className="text-xs whitespace-pre-line break-words leading-relaxed">
                                   {reply.content}
                                 </p>
                               )}
 
-                              <p className="text-[10px] text-gray-400">
+                              <p className="text-[9px] text-gray-400">
                                 {new Date(
                                   reply.created_at
                                 ).toLocaleString("fr-FR")}
@@ -1279,7 +1362,7 @@ export default function ProductDetailPage() {
                               setReplyText("");
                             }}
                             disabled={commentBusy}
-                            className="text-xs font-bold text-moshi-purple"
+                            className="text-[11px] font-bold text-moshi-purple"
                           >
                             {replyingTo === comment.id
                               ? "Annuler"
@@ -1288,7 +1371,7 @@ export default function ProductDetailPage() {
                         )}
 
                         {replyingTo === comment.id && (
-                          <div className="space-y-2">
+                          <div className="space-y-1.5">
                             <textarea
                               value={replyText}
                               onChange={(e) =>
@@ -1297,11 +1380,11 @@ export default function ProductDetailPage() {
                               maxLength={2000}
                               rows={2}
                               placeholder="Écris ta réponse..."
-                              className="w-full rounded-xl border p-3 text-sm resize-none outline-none focus:border-moshi-purple"
+                              className="w-full rounded-lg border p-2 text-xs resize-none outline-none focus:border-moshi-purple"
                             />
 
                             <div className="flex items-center justify-between">
-                              <span className="text-xs text-gray-400">
+                              <span className="text-[10px] text-gray-400">
                                 {replyText.length}/2000
                               </span>
 
@@ -1313,14 +1396,14 @@ export default function ProductDetailPage() {
                                   commentBusy ||
                                   !replyText.trim()
                                 }
-                                className="moshi-gradient text-white rounded-xl px-4 py-2 text-xs font-bold disabled:opacity-50 flex items-center gap-2"
+                                className="moshi-gradient text-white rounded-lg px-3 py-1.5 text-[10px] font-bold disabled:opacity-50 flex items-center gap-1.5"
                               >
                                 {commentBusy ? (
                                   <Loader2 className="w-3 h-3 animate-spin" />
                                 ) : (
                                   <Send className="w-3 h-3" />
                                 )}
-                                Publier la réponse
+                                Publier
                               </button>
                             </div>
                           </div>
@@ -1332,7 +1415,7 @@ export default function ProductDetailPage() {
               )}
 
               {totalCommentPages > 1 && (
-                <div className="flex items-center justify-between bg-white rounded-xl p-3">
+                <div className="flex items-center justify-between bg-white rounded-lg p-2.5">
                   <button
                     onClick={() =>
                       changeCommentsPage(commentsPage - 1)
@@ -1340,13 +1423,13 @@ export default function ProductDetailPage() {
                     disabled={
                       commentsPage === 0 || commentBusy
                     }
-                    className="flex items-center gap-1 text-sm font-semibold text-moshi-purple disabled:text-gray-300"
+                    className="flex items-center gap-1 text-xs font-semibold text-moshi-purple disabled:text-gray-300"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft className="w-3.5 h-3.5" />
                     Précédent
                   </button>
 
-                  <span className="text-xs text-gray-500">
+                  <span className="text-[10px] text-gray-500">
                     Page {commentsPage + 1} / {totalCommentPages}
                   </span>
 
@@ -1358,10 +1441,10 @@ export default function ProductDetailPage() {
                       commentsPage + 1 >= totalCommentPages ||
                       commentBusy
                     }
-                    className="flex items-center gap-1 text-sm font-semibold text-moshi-purple disabled:text-gray-300"
+                    className="flex items-center gap-1 text-xs font-semibold text-moshi-purple disabled:text-gray-300"
                   >
                     Suivant
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
@@ -1370,27 +1453,28 @@ export default function ProductDetailPage() {
         )}
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe z-30">
+      {/* Barre d'achat compacte */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-100 bg-white/95 backdrop-blur-sm px-2.5 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]">
         {isEditing ? (
-          <div className="flex gap-2">
+          <div className="flex gap-2 max-w-2xl mx-auto">
             <button
               onClick={() => setIsEditing(false)}
-              className="flex-1 bg-gray-100 text-gray-600 font-bold py-4 rounded-2xl flex items-center justify-center gap-2"
+              className="flex-1 bg-gray-100 text-gray-600 font-bold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5"
             >
-              <X size={20} />
+              <X size={15} />
               Annuler
             </button>
 
             <button
               onClick={handleSave}
               disabled={saving || uploading}
-              className="flex-1 moshi-gradient text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex-1 moshi-gradient text-white font-bold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               {saving ? (
-                <Loader2 className="animate-spin" />
+                <Loader2 size={15} className="animate-spin" />
               ) : (
                 <>
-                  <Check size={20} />
+                  <Check size={15} />
                   Enregistrer
                 </>
               )}
@@ -1398,19 +1482,20 @@ export default function ProductDetailPage() {
           </div>
         ) : (
           !isOwner && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center border rounded-xl h-12">
+            <div className="flex items-center gap-1.5 max-w-2xl mx-auto">
+              {/* Quantité */}
+              <div className="flex items-center justify-between border border-gray-200 rounded-lg h-10 shrink-0 w-[88px]">
                 <button
                   onClick={() =>
                     setQuantity((n) => Math.max(1, n - 1))
                   }
-                  className="px-3"
+                  className="px-2 h-full"
                   aria-label="Diminuer"
                 >
-                  <Minus size={16} />
+                  <Minus size={13} />
                 </button>
 
-                <span className="min-w-6 text-center font-bold">
+                <span className="min-w-4 text-center text-xs font-bold">
                   {quantity}
                 </span>
 
@@ -1420,38 +1505,44 @@ export default function ProductDetailPage() {
                       Math.min(product.stock, n + 1)
                     )
                   }
-                  className="px-3"
+                  className="px-2 h-full"
                   aria-label="Augmenter"
                   disabled={quantity >= product.stock}
                 >
-                  <Plus size={16} />
+                  <Plus size={13} />
                 </button>
               </div>
 
+              {/* Ajouter au panier */}
               <button
                 onClick={() => addToCart(false)}
                 disabled={busy || product.stock < 1}
-                className="flex-1 bg-gray-100 text-moshi-purple font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                className="flex-1 min-w-0 h-10 bg-gray-100 text-moshi-purple font-bold text-[11px] sm:text-xs px-1.5 rounded-lg flex items-center justify-center gap-1 disabled:opacity-50"
               >
                 {busy ? (
-                  <Loader2 className="animate-spin" />
+                  <Loader2 size={14} className="animate-spin shrink-0" />
                 ) : (
                   <>
-                    <ShoppingBag size={18} />
-                    Ajouter au panier
+                    <ShoppingBag size={14} className="shrink-0" />
+                    <span className="truncate">
+                      Ajouter au panier
+                    </span>
                   </>
                 )}
               </button>
 
+              {/* Acheter */}
               <button
                 onClick={() => addToCart(true)}
                 disabled={busy || product.stock < 1}
-                className="flex-1 moshi-gradient text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                className="flex-1 min-w-0 h-10 moshi-gradient text-white font-bold text-[11px] sm:text-xs px-1.5 rounded-lg flex items-center justify-center disabled:opacity-50"
               >
                 {busy ? (
-                  <Loader2 className="animate-spin" />
+                  <Loader2 size={14} className="animate-spin" />
                 ) : (
-                  "Acheter maintenant"
+                  <span className="truncate">
+                    Acheter maintenant
+                  </span>
                 )}
               </button>
             </div>
