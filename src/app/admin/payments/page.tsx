@@ -3,7 +3,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
 import {
   CreditCard,
   Coins,
@@ -80,11 +79,7 @@ type ApiResponse = {
     crypto: number;
   };
 };
-{
-  title: "Paiements",
-  href: "/admin/payments",
-  // conserve les autres propriétés du module
-}
+
 const STATUS_LABELS: Record<PaymentStatus, string> = {
   pending: "En attente",
   success: "Réussi",
@@ -114,7 +109,9 @@ function formatDate(value: string | null) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "Date invalide";
+  if (Number.isNaN(date.getTime())) {
+    return "Date invalide";
+  }
 
   return new Intl.DateTimeFormat("fr-FR", {
     dateStyle: "medium",
@@ -131,17 +128,20 @@ function StatCard({
   label: string;
   value: string;
   description: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-[#111722] p-5">
       <div className="flex items-center justify-between">
         <span className="text-sm text-gray-400">{label}</span>
+
         <div className="rounded-xl bg-purple-500/10 p-3 text-purple-300">
           {icon}
         </div>
       </div>
+
       <p className="mt-4 text-2xl font-bold">{value}</p>
+
       <p className="mt-1 text-xs text-gray-500">{description}</p>
     </div>
   );
@@ -151,6 +151,7 @@ function StatusIcon({ status }: { status: PaymentStatus }) {
   if (status === "success") return <CheckCircle2 size={14} />;
   if (status === "failed") return <XCircle size={14} />;
   if (status === "refunded") return <RotateCcw size={14} />;
+
   return <Clock3 size={14} />;
 }
 
@@ -159,13 +160,16 @@ export default function AdminPaymentsPage() {
   const [search, setSearch] = useState("");
   const [provider, setProvider] = useState("all");
   const [status, setStatus] = useState("all");
+
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+
   const [providerTotals, setProviderTotals] = useState({
     cinetpay: 0,
     crypto: 0,
   });
+
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -183,7 +187,9 @@ export default function AdminPaymentsPage() {
         status,
       });
 
-      if (search.trim()) params.set("q", search.trim());
+      if (search.trim()) {
+        params.set("q", search.trim());
+      }
 
       const response = await fetch(
         `/api/admin/payments?${params.toString()}`,
@@ -196,19 +202,30 @@ export default function AdminPaymentsPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "Impossible de charger les paiements.");
+        throw new Error(
+          result.error || "Impossible de charger les paiements."
+        );
       }
 
       const data = result as ApiResponse;
 
       setPayments(data.payments ?? []);
       setTotal(data.total ?? 0);
-      setTotalPages(data.totalPages ?? 1);
-      setProviderTotals(data.totals ?? { cinetpay: 0, crypto: 0 });
+      setTotalPages(Math.max(1, data.totalPages ?? 1));
+
+      setProviderTotals(
+        data.totals ?? {
+          cinetpay: 0,
+          crypto: 0,
+        }
+      );
+
       setTruncated(Boolean(data.providerLimits?.truncated));
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Une erreur est survenue."
+        err instanceof Error
+          ? err.message
+          : "Une erreur est survenue."
       );
     } finally {
       setLoading(false);
@@ -244,8 +261,12 @@ export default function AdminPaymentsPage() {
   const copyValue = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
+
       setCopiedId(value);
-      window.setTimeout(() => setCopiedId(""), 1800);
+
+      window.setTimeout(() => {
+        setCopiedId("");
+      }, 1800);
     } catch {
       setError("Impossible de copier cette référence.");
     }
@@ -303,18 +324,21 @@ export default function AdminPaymentsPage() {
             description="Selon les filtres actifs"
             icon={<CreditCard size={21} />}
           />
+
           <StatCard
             label="CinetPay"
             value={String(providerTotals.cinetpay)}
             description="Transactions enregistrées"
             icon={<Smartphone size={21} />}
           />
+
           <StatCard
             label="Crypto"
             value={String(providerTotals.crypto)}
             description="Transactions NOWPayments"
             icon={<Bitcoin size={21} />}
           />
+
           <StatCard
             label="Réussis sur cette page"
             value={String(successful)}
@@ -325,22 +349,25 @@ export default function AdminPaymentsPage() {
 
         <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">
           <AlertTriangle size={20} className="mt-0.5 shrink-0" />
+
           <div>
             <p className="font-semibold">Contrôle des paiements</p>
+
             <p className="mt-1 text-amber-200/70">
-              Les statuts affichés proviennent des transactions enregistrées
-              après traitement serveur. Cette page ne valide pas manuellement
-              les paiements et ne crédite pas les coins.
+              Les statuts affichés proviennent des transactions
+              enregistrées après traitement serveur. Cette page ne
+              valide pas manuellement les paiements et ne crédite
+              pas les coins.
             </p>
           </div>
         </div>
 
         {truncated && (
           <div className="mb-5 rounded-xl border border-blue-500/20 bg-blue-500/10 p-4 text-sm text-blue-200">
-            L’historique est volumineux : cette vue charge au maximum les
-            1 000 transactions les plus récentes par prestataire. Une
-            pagination côté base de données sera nécessaire lorsque ce seuil
-            sera atteint.
+            L’historique est volumineux : cette vue charge au maximum
+            les 1 000 transactions les plus récentes par prestataire.
+            Une pagination côté base de données sera nécessaire
+            lorsque ce seuil sera atteint.
           </div>
         )}
 
@@ -357,6 +384,7 @@ export default function AdminPaymentsPage() {
                 size={19}
                 className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"
               />
+
               <input
                 type="search"
                 value={search}
@@ -393,7 +421,10 @@ export default function AdminPaymentsPage() {
         <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-5">
             <div>
-              <h2 className="font-bold">Historique des transactions</h2>
+              <h2 className="font-bold">
+                Historique des transactions
+              </h2>
+
               <p className="mt-1 text-xs text-gray-500">
                 {total} transaction(s) correspondant aux filtres
               </p>
@@ -412,7 +443,11 @@ export default function AdminPaymentsPage() {
           ) : payments.length === 0 ? (
             <div className="flex min-h-52 flex-col items-center justify-center px-5 text-center">
               <CreditCard size={34} className="mb-3 text-gray-600" />
-              <p className="font-semibold">Aucun paiement trouvé</p>
+
+              <p className="font-semibold">
+                Aucun paiement trouvé
+              </p>
+
               <p className="mt-1 text-sm text-gray-500">
                 Modifie les filtres ou actualise la liste.
               </p>
@@ -449,8 +484,10 @@ export default function AdminPaymentsPage() {
                             <p className="truncate font-semibold">
                               {userName}
                             </p>
+
                             <p className="truncate text-xs text-gray-500">
-                              {item.user?.email || "E-mail non renseigné"}
+                              {item.user?.email ||
+                                "E-mail non renseigné"}
                             </p>
                           </div>
                         </div>
@@ -459,8 +496,10 @@ export default function AdminPaymentsPage() {
                           <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-300">
                             {item.providerLabel}
                           </span>
+
                           <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-400">
-                            {item.paymentMethod || "Méthode inconnue"}
+                            {item.paymentMethod ||
+                              "Méthode inconnue"}
                           </span>
                         </div>
 
@@ -469,26 +508,31 @@ export default function AdminPaymentsPage() {
                             <CalendarDays size={14} />
                             Créé : {formatDate(item.createdAt)}
                           </div>
+
                           <div>
                             Mise à jour : {formatDate(item.updatedAt)}
                           </div>
+
                           {item.confirmedAt && (
                             <div>
                               Confirmation : {formatDate(item.confirmedAt)}
                             </div>
                           )}
+
                           {item.expiresAt && (
                             <div>
                               Expiration : {formatDate(item.expiresAt)}
                             </div>
                           )}
-                          {item.fees !== null && (
+
+                          {item.fees != null && (
                             <div>
                               Frais enregistrés :{" "}
                               {formatMoney(item.fees, item.currency)}
                             </div>
                           )}
-                          {item.coins !== null && (
+
+                          {item.coins != null && (
                             <div className="flex items-center gap-1.5 text-amber-300">
                               <Coins size={14} />
                               {item.coins.toLocaleString("fr-FR")} coins prévus
@@ -500,9 +544,11 @@ export default function AdminPaymentsPage() {
                           <span className="text-[11px] text-gray-500">
                             Référence :
                           </span>
+
                           <code className="max-w-64 truncate text-[11px] text-gray-400">
                             {item.reference || item.id}
                           </code>
+
                           <button
                             type="button"
                             onClick={() =>
@@ -537,20 +583,21 @@ export default function AdminPaymentsPage() {
                           {formatMoney(item.amount, item.currency)}
                         </p>
 
-                        {item.provider === "crypto" && item.cryptoAmount !== null && (
-                          <p className="text-xs text-gray-400">
-                            Montant crypto attendu :{" "}
-                            {item.cryptoAmount ?? "—"}{" "}
-                            {item.cryptoCurrency}
-                          </p>
-                        )}
+                        {item.provider === "crypto" &&
+                          item.cryptoAmount != null && (
+                            <p className="text-xs text-gray-400">
+                              Montant crypto attendu :{" "}
+                              {item.cryptoAmount} {item.cryptoCurrency}
+                            </p>
+                          )}
 
-                        {item.provider === "crypto" && item.cryptoPaid !== null && (
-                          <p className="text-xs text-gray-400">
-                            Montant reçu : {item.cryptoPaid ?? "—"}{" "}
-                            {item.cryptoCurrency}
-                          </p>
-                        )}
+                        {item.provider === "crypto" &&
+                          item.cryptoPaid != null && (
+                            <p className="text-xs text-gray-400">
+                              Montant reçu : {item.cryptoPaid}{" "}
+                              {item.cryptoCurrency}
+                            </p>
+                          )}
 
                         <span
                           className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_STYLES[item.status]}`}
@@ -578,7 +625,9 @@ export default function AdminPaymentsPage() {
           <div className="flex items-center justify-between border-t border-white/10 p-4">
             <button
               type="button"
-              onClick={() => setPage((value) => Math.max(1, value - 1))}
+              onClick={() =>
+                setPage((value) => Math.max(1, value - 1))
+              }
               disabled={page <= 1 || loading}
               className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm disabled:opacity-30"
             >
@@ -622,6 +671,7 @@ export default function AdminPaymentsPage() {
                 <p className="text-xs text-purple-300">
                   {selected.providerLabel}
                 </p>
+
                 <h2
                   id="payment-detail-title"
                   className="mt-1 text-xl font-bold"
@@ -629,6 +679,7 @@ export default function AdminPaymentsPage() {
                   Détails du paiement
                 </h2>
               </div>
+
               <button
                 type="button"
                 onClick={() => setSelected(null)}
@@ -639,10 +690,14 @@ export default function AdminPaymentsPage() {
             </div>
 
             <div className="mb-5 rounded-xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs text-gray-500">Montant enregistré</p>
+              <p className="text-xs text-gray-500">
+                Montant enregistré
+              </p>
+
               <p className="mt-1 text-2xl font-bold">
                 {formatMoney(selected.amount, selected.currency)}
               </p>
+
               <span
                 className={`mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_STYLES[selected.status]}`}
               >
@@ -652,36 +707,119 @@ export default function AdminPaymentsPage() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Detail label="Utilisateur" value={selected.user?.full_name || selected.user?.username || "Inconnu"} />
-              <Detail label="E-mail" value={selected.user?.email || "Non renseigné"} />
-              <Detail label="Téléphone" value={selected.user?.phone || "Non renseigné"} />
-              <Detail label="Pays" value={selected.user?.country || "Non renseigné"} />
-              <Detail label="Méthode" value={selected.paymentMethod || "Non renseignée"} />
-              <Detail label="Statut prestataire" value={selected.providerStatus || "Non renseigné"} />
-              <Detail label="Référence Moshi" value={selected.reference || selected.id} />
-              <Detail label="Référence prestataire" value={selected.providerReference || "Non renseignée"} />
-              <Detail label="Création" value={formatDate(selected.createdAt)} />
-              <Detail label="Dernière mise à jour" value={formatDate(selected.updatedAt)} />
-              <Detail label="Confirmation" value={formatDate(selected.confirmedAt)} />
-              <Detail label="Expiration" value={formatDate(selected.expiresAt)} />
-              {selected.fees !== null && (
-                <Detail label="Frais" value={formatMoney(selected.fees, selected.currency)} />
+              <Detail
+                label="Utilisateur"
+                value={
+                  selected.user?.full_name ||
+                  selected.user?.username ||
+                  "Inconnu"
+                }
+              />
+
+              <Detail
+                label="E-mail"
+                value={selected.user?.email || "Non renseigné"}
+              />
+
+              <Detail
+                label="Téléphone"
+                value={selected.user?.phone || "Non renseigné"}
+              />
+
+              <Detail
+                label="Pays"
+                value={selected.user?.country || "Non renseigné"}
+              />
+
+              <Detail
+                label="Méthode"
+                value={selected.paymentMethod || "Non renseignée"}
+              />
+
+              <Detail
+                label="Statut prestataire"
+                value={selected.providerStatus || "Non renseigné"}
+              />
+
+              <Detail
+                label="Référence Moshi"
+                value={selected.reference || selected.id}
+              />
+
+              <Detail
+                label="Référence prestataire"
+                value={selected.providerReference || "Non renseignée"}
+              />
+
+              <Detail
+                label="Création"
+                value={formatDate(selected.createdAt)}
+              />
+
+              <Detail
+                label="Dernière mise à jour"
+                value={formatDate(selected.updatedAt)}
+              />
+
+              <Detail
+                label="Confirmation"
+                value={formatDate(selected.confirmedAt)}
+              />
+
+              <Detail
+                label="Expiration"
+                value={formatDate(selected.expiresAt)}
+              />
+
+              {selected.fees != null && (
+                <Detail
+                  label="Frais"
+                  value={formatMoney(selected.fees, selected.currency)}
+                />
               )}
-              {selected.coins !== null && (
-                <Detail label="Coins prévus" value={String(selected.coins)} />
+
+              {selected.coins != null && (
+                <Detail
+                  label="Coins prévus"
+                  value={String(selected.coins)}
+                />
               )}
+
               {selected.orderId && (
-                <Detail label="Commande liée" value={selected.orderId} />
+                <Detail
+                  label="Commande liée"
+                  value={selected.orderId}
+                />
               )}
-              {selected.usdAmount !== undefined && (
-                <Detail label="Équivalent USD" value={formatMoney(selected.usdAmount, "USD")} />
+
+              {selected.usdAmount != null && (
+                <Detail
+                  label="Équivalent USD"
+                  value={formatMoney(selected.usdAmount, "USD")}
+                />
+              )}
+
+              {selected.cryptoAmount != null && (
+                <Detail
+                  label="Montant crypto attendu"
+                  value={`${selected.cryptoAmount} ${selected.cryptoCurrency || ""}`}
+                />
+              )}
+
+              {selected.cryptoPaid != null && (
+                <Detail
+                  label="Montant crypto reçu"
+                  value={`${selected.cryptoPaid} ${selected.cryptoCurrency || ""}`}
+                />
               )}
             </div>
 
             <div className="mt-6 flex justify-end">
               <button
                 type="button"
-                onClick={() => void copyValue(selected.reference || selected.id)}
+                onClick={() =>
+                  void copyValue(selected.reference || selected.id)
+                }
                 className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold hover:bg-white/5"
               >
                 <Copy size={15} />
@@ -695,11 +833,20 @@ export default function AdminPaymentsPage() {
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
   return (
     <div className="min-w-0 rounded-xl border border-white/5 bg-white/[0.02] p-3">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-1 break-all text-sm text-gray-200">{value}</p>
+
+      <p className="mt-1 break-all text-sm text-gray-200">
+        {value}
+      </p>
     </div>
   );
 }
