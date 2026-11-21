@@ -19,7 +19,14 @@ import {
   Languages,
   Check,
   Coins,
-  Sparkles,
+  Store,
+  Palette,
+  Globe,
+  Lock,
+  Download,
+  Headphones,
+  Video,
+  Smartphone,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -32,7 +39,7 @@ const LANGUAGES = [
 ] as const;
 
 const CURRENCIES = [
-  { value: "XOF", label: "XOF — Franc CFA (BCEAO)" },
+  { value: "XOF", label: "XOF — Franc CFA" },
   { value: "EUR", label: "EUR — Euro" },
   { value: "USD", label: "USD — Dollar américain" },
   { value: "GBP", label: "GBP — Livre sterling" },
@@ -42,13 +49,107 @@ const CURRENCIES = [
 type Language = (typeof LANGUAGES)[number]["value"];
 type Currency = (typeof CURRENCIES)[number]["value"];
 
+type SettingItem = {
+  title: string;
+  description?: string;
+  href?: string;
+  icon: typeof UserRound;
+  iconStyle: string;
+  value?: string;
+  disabled?: boolean;
+};
+
+function SettingLink({ item }: { item: SettingItem }) {
+  const Icon = item.icon;
+
+  const content = (
+    <>
+      <div
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.iconStyle}`}
+      >
+        <Icon className="h-5 w-5" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-gray-900">
+          {item.title}
+        </p>
+        {item.description && (
+          <p className="mt-0.5 text-xs text-gray-500">
+            {item.description}
+          </p>
+        )}
+      </div>
+
+      {item.value && (
+        <span className="rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-moshi-purple">
+          {item.value}
+        </span>
+      )}
+
+      {item.href && (
+        <ChevronRight className="h-5 w-5 shrink-0 text-moshi-purple" />
+      )}
+
+      {item.disabled && (
+        <span className="text-[10px] font-semibold text-gray-400">
+          Bientôt
+        </span>
+      )}
+    </>
+  );
+
+  if (item.href) {
+    return (
+      <Link
+        href={item.href}
+        className="flex min-h-[62px] items-center gap-3 px-4 py-3 transition hover:bg-purple-50/40"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div
+      aria-disabled="true"
+      className="flex min-h-[62px] items-center gap-3 px-4 py-3 opacity-70"
+    >
+      {content}
+    </div>
+  );
+}
+
+function SettingSection({
+  title,
+  items,
+}: {
+  title: string;
+  items: SettingItem[];
+}) {
+  return (
+    <section>
+      <h2 className="mb-2 px-1 text-sm font-bold text-gray-900">
+        {title}
+      </h2>
+
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm divide-y divide-gray-100">
+        {items.map((item) => (
+          <SettingLink key={item.title} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
 
+  const [userId, setUserId] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [loadingPreferences, setLoadingPreferences] = useState(true);
-  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const [language, setLanguage] = useState<Language>("fr");
   const [currency, setCurrency] = useState<Currency>("XOF");
@@ -59,7 +160,7 @@ export default function SettingsPage() {
   useEffect(() => {
     let active = true;
 
-    async function loadPreferences() {
+    async function loadSettings() {
       try {
         const {
           data: { user },
@@ -73,9 +174,12 @@ export default function SettingsPage() {
           return;
         }
 
+        if (!active) return;
+        setUserId(user.id);
+
         const { data, error: profileError } = await supabase
           .from("profiles")
-          .select("preferred_language, preferred_currency")
+          .select("preferred_language,preferred_currency")
           .eq("id", user.id)
           .maybeSingle();
 
@@ -93,17 +197,17 @@ export default function SettingsPage() {
         setLanguage(savedLanguage?.value ?? "fr");
         setCurrency(savedCurrency?.value ?? "XOF");
       } catch (err) {
-        console.error("Erreur de chargement des préférences :", err);
+        console.error("Chargement paramètres :", err);
 
         if (active) {
-          setError("Impossible de charger les préférences du compte.");
+          setError("Impossible de charger les paramètres du compte.");
         }
       } finally {
-        if (active) setLoadingPreferences(false);
+        if (active) setLoading(false);
       }
     }
 
-    void loadPreferences();
+    void loadSettings();
 
     return () => {
       active = false;
@@ -114,23 +218,20 @@ export default function SettingsPage() {
     nextLanguage: Language,
     nextCurrency: Currency
   ) {
-    if (savingPreferences) return;
+    if (saving || !userId) return;
 
-    if (nextLanguage === language && nextCurrency === currency) return;
+    if (
+      nextLanguage === language &&
+      nextCurrency === currency
+    ) {
+      return;
+    }
 
-    setSavingPreferences(true);
+    setSaving(true);
     setError("");
     setSuccess("");
 
     try {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) throw authError;
-      if (!user) throw new Error("Session expirée. Reconnecte-toi.");
-
       const { error: updateError } = await supabase
         .from("profiles")
         .update({
@@ -138,216 +239,215 @@ export default function SettingsPage() {
           preferred_currency: nextCurrency,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", user.id);
+        .eq("id", userId);
 
       if (updateError) throw updateError;
 
       setLanguage(nextLanguage);
       setCurrency(nextCurrency);
-      setSuccess("Tes préférences ont été enregistrées.");
+      setSuccess("Préférences enregistrées.");
     } catch (err) {
-      console.error("Erreur de sauvegarde des préférences :", err);
-
+      console.error("Sauvegarde préférences :", err);
       setError(
         err instanceof Error
           ? err.message
-          : "Impossible d'enregistrer ces préférences."
+          : "Impossible d'enregistrer les préférences."
       );
     } finally {
-      setSavingPreferences(false);
+      setSaving(false);
     }
   }
 
   async function handleLogout() {
-    const confirmed = window.confirm(
-      "Voulez-vous vraiment vous déconnecter de Moshi ?"
-    );
-
-    if (!confirmed) return;
+    if (
+      !window.confirm(
+        "Veux-tu vraiment te déconnecter de Moshi ?"
+      )
+    ) {
+      return;
+    }
 
     setLoggingOut(true);
     setError("");
-    setSuccess("");
 
     try {
-      const { error: logoutError } = await supabase.auth.signOut();
+      const { error: logoutError } =
+        await supabase.auth.signOut();
 
       if (logoutError) throw logoutError;
 
       router.replace("/auth/login");
       router.refresh();
     } catch (err) {
-      console.error("Erreur de déconnexion :", err);
-      setError("Impossible de vous déconnecter. Réessaie.");
+      console.error("Déconnexion :", err);
+      setError("Impossible de te déconnecter. Réessaie.");
       setLoggingOut(false);
     }
   }
 
-  const sections = [
-    {
-      title: "Notifications",
-      items: [
-        {
-          href: "/notifications",
-          title: "Mes notifications",
-          description: "Consulter les nouveautés et les alertes",
-          icon: Bell,
-          iconStyle: "bg-amber-50 text-amber-600",
-        },
-      ],
-    },
-    {
-      title: "Assistance",
-      items: [
-        {
-          href: "/support/report-problem",
-          title: "Signaler un problème",
-          description: "Contacter l’équipe Moshi et suivre tes demandes",
-          icon: MessageCircle,
-          iconStyle: "bg-orange-50 text-orange-600",
-        },
-      ],
-    },
-    {
-      title: "Finances",
-      items: [
-        {
-          href: "/wallet",
-          title: "Mon portefeuille",
-          description: "Consulter mon portefeuille Moshi",
-          icon: Wallet,
-          iconStyle: "bg-pink-50 text-pink-600",
-        },
-      ],
-    },
-  ];
+  function goBack() {
+    if (userId) {
+      router.push(`/profile/${userId}`);
+    } else {
+      router.push("/");
+    }
+  }
 
   return (
-    <main className="min-h-[100dvh] bg-moshi-bg pb-12">
-      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-gray-100 bg-white/95 px-4 py-4 shadow-sm backdrop-blur">
-        <button
-          type="button"
-          onClick={() => router.push("/profile/me")}
-          aria-label="Retour au profil"
-          className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-gray-100"
-        >
-          <ArrowLeft className="h-5 w-5 text-gray-800" />
-        </button>
+    <main className="min-h-[100dvh] bg-moshi-bg pb-10">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-purple-100 bg-white/95 px-4 py-3 backdrop-blur">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label="Retour au profil"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50"
+          >
+            <ArrowLeft className="h-5 w-5 text-gray-800" />
+          </button>
 
-        <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
-            <Settings className="h-5 w-5" />
-          </div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900">Paramètres</h1>
-            <p className="text-xs text-gray-500">Gère ton compte Moshi</p>
+            <h1 className="text-lg font-extrabold text-gray-900">
+              Paramètres
+            </h1>
+            <p className="text-[11px] text-gray-500">
+              Personnalise ton expérience Moshi
+            </p>
           </div>
         </div>
+
+        <Settings className="h-6 w-6 text-moshi-purple" />
       </header>
 
-      <div className="mx-auto max-w-xl space-y-6 px-4 py-6">
+      <div className="mx-auto max-w-xl space-y-5 px-4 py-5">
         {error && (
-          <div className="flex items-start gap-2 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-            <span>{error}</span>
+          <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            {error}
           </div>
         )}
 
         {success && (
-          <div className="flex items-start gap-2 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
-            <Check className="mt-0.5 h-5 w-5 shrink-0" />
-            <span>{success}</span>
+          <div className="flex items-center gap-2 rounded-xl border border-green-100 bg-green-50 p-3 text-sm text-green-700">
+            <Check className="h-5 w-5 shrink-0" />
+            {success}
           </div>
         )}
 
-        <section>
-          <div className="mb-3 flex items-center gap-2 px-1">
-            <UserRound className="h-4 w-4 text-moshi-purple" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-              Mon compte
-            </h2>
-          </div>
+        <SettingSection
+          title="Compte"
+          items={[
+            {
+              title: "Informations du compte",
+              description: "Identité et informations de connexion",
+              href: "/profile",
+              icon: UserRound,
+              iconStyle: "bg-indigo-50 text-indigo-600",
+            },
+            {
+              title: "Sécurité",
+              description: "Protection et sécurité du compte",
+              icon: ShieldCheck,
+              iconStyle: "bg-blue-50 text-blue-600",
+              disabled: true,
+            },
+            {
+              title: "Portefeuille",
+              description: "Solde, transactions et retraits",
+              href: "/wallet",
+              icon: Wallet,
+              iconStyle: "bg-purple-50 text-moshi-purple",
+            },
+            {
+              title: "Certification du compte",
+              description: "Demander la certification Moshi",
+              href: "/verification/request",
+              icon: ShieldCheck,
+              iconStyle: "bg-purple-100 text-purple-700",
+            },
+            {
+              title: "Statut vendeur",
+              description: "Gérer ton espace vendeur",
+              href: "/seller",
+              icon: Store,
+              iconStyle: "bg-pink-50 text-pink-600",
+            },
+          ]}
+        />
 
-          <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-            <Link
-              href="/profile/edit"
-              className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
-            >
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
-                <UserRound className="h-5 w-5" />
+        <section>
+          <h2 className="mb-2 px-1 text-sm font-bold text-gray-900">
+            Préférences
+          </h2>
+
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm divide-y divide-gray-100">
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                <Bell className="h-5 w-5" />
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">
-                  Modifier mon profil
+                <p className="text-sm font-semibold text-gray-900">
+                  Notifications
                 </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Photo, nom, identifiant, biographie et réseaux sociaux
+                <p className="text-xs text-gray-500">
+                  Alertes et actualités
                 </p>
               </div>
 
-              <ChevronRight className="h-5 w-5 text-gray-400" />
-            </Link>
+              <Link
+                href="/notifications"
+                aria-label="Ouvrir les notifications"
+              >
+                <ChevronRight className="h-5 w-5 text-moshi-purple" />
+              </Link>
+            </div>
 
-            <div className="mx-4 border-t border-gray-100" />
-
-            <Link
-              href="/verification/request"
-              className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
-            >
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <ShieldCheck className="h-5 w-5" />
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
+                <Palette className="h-5 w-5" />
               </div>
-
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">
-                  Certification du compte
+                <p className="text-sm font-semibold text-gray-900">
+                  Apparence
                 </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Demander ou suivre la certification
+                <p className="text-xs text-gray-500">
+                  Personnalisation de l'affichage
                 </p>
               </div>
+              <span className="text-[10px] font-semibold text-gray-400">
+                Bientôt
+              </span>
+            </div>
 
-              <ChevronRight className="h-5 w-5 text-gray-400" />
-            </Link>
-          </div>
-        </section>
-
-        <section>
-          <div className="mb-3 flex items-center gap-2 px-1">
-            <Sparkles className="h-4 w-4 text-moshi-purple" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-              Préférences
-            </h2>
-          </div>
-
-          <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-            <div className="flex items-center gap-3 p-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                 <Languages className="h-5 w-5" />
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">Langue</p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Langue préférée de ton compte
+                <p className="text-sm font-semibold text-gray-900">
+                  Langue
+                </p>
+                <p className="text-xs text-gray-500">
+                  Langue préférée
                 </p>
               </div>
 
-              {loadingPreferences ? (
-                <Loader2 className="h-5 w-5 animate-spin text-moshi-purple" />
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin text-moshi-purple" />
               ) : (
                 <select
                   aria-label="Choisir la langue"
                   value={language}
-                  disabled={savingPreferences}
+                  disabled={saving}
                   onChange={(event) =>
                     void savePreferences(
                       event.target.value as Language,
                       currency
                     )
                   }
-                  className="max-w-[145px] rounded-xl border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-moshi-purple disabled:opacity-50"
+                  className="max-w-[125px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-moshi-purple"
                 >
                   {LANGUAGES.map((item) => (
                     <option key={item.value} value={item.value}>
@@ -358,34 +458,34 @@ export default function SettingsPage() {
               )}
             </div>
 
-            <div className="mx-4 border-t border-gray-100" />
-
-            <div className="flex items-center gap-3 p-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                 <Coins className="h-5 w-5" />
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">Devise</p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Devise préférée de ton compte
+                <p className="text-sm font-semibold text-gray-900">
+                  Devise
+                </p>
+                <p className="text-xs text-gray-500">
+                  Devise préférée
                 </p>
               </div>
 
-              {loadingPreferences ? (
-                <Loader2 className="h-5 w-5 animate-spin text-moshi-purple" />
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin text-moshi-purple" />
               ) : (
                 <select
                   aria-label="Choisir la devise"
                   value={currency}
-                  disabled={savingPreferences}
+                  disabled={saving}
                   onChange={(event) =>
                     void savePreferences(
                       language,
                       event.target.value as Currency
                     )
                   }
-                  className="max-w-[165px] rounded-xl border border-gray-200 bg-white px-2 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-moshi-purple disabled:opacity-50"
+                  className="max-w-[145px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-moshi-purple"
                 >
                   {CURRENCIES.map((item) => (
                     <option key={item.value} value={item.value}>
@@ -396,71 +496,92 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {savingPreferences && (
-              <div className="flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-500">
-                <Loader2 className="h-4 w-4 animate-spin text-moshi-purple" />
-                Enregistrement des préférences...
+            <div className="flex items-center gap-3 px-4 py-3 opacity-70">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+                <Video className="h-5 w-5" />
               </div>
-            )}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-900">
+                  Qualité vidéo
+                </p>
+                <p className="text-xs text-gray-500">
+                  Qualité de lecture et consommation de données
+                </p>
+              </div>
+              <span className="text-[10px] font-semibold text-gray-400">
+                Bientôt
+              </span>
+            </div>
           </div>
 
-          <p className="mt-2 px-1 text-xs text-gray-400">
-            Tes choix sont enregistrés dans ton profil Moshi.
-          </p>
+          {saving && (
+            <p className="mt-2 flex items-center gap-2 px-1 text-xs text-gray-500">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Enregistrement...
+            </p>
+          )}
         </section>
 
-        {sections.map((section) => (
-          <section key={section.title}>
-            <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-500">
-              {section.title}
-            </h2>
+        <SettingSection
+          title="Confidentialité"
+          items={[
+            {
+              title: "Confidentialité",
+              description: "Contrôle de la visibilité de ton compte",
+              icon: Lock,
+              iconStyle: "bg-indigo-50 text-indigo-600",
+              disabled: true,
+            },
+            {
+              title: "Utilisateurs bloqués",
+              description: "Gérer les comptes bloqués",
+              icon: UserRound,
+              iconStyle: "bg-red-50 text-red-500",
+              disabled: true,
+            },
+            {
+              title: "Télécharger mes données",
+              description: "Obtenir une copie de tes informations",
+              icon: Download,
+              iconStyle: "bg-gray-100 text-gray-600",
+              disabled: true,
+            },
+          ]}
+        />
 
-            <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-              {section.items.map((item) => {
-                const Icon = item.icon;
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="flex items-center gap-3 p-4 transition hover:bg-gray-50"
-                  >
-                    <div
-                      className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.iconStyle}`}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-gray-900">
-                        {item.title}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        {item.description}
-                      </p>
-                    </div>
-
-                    <ChevronRight className="h-5 w-5 text-gray-400" />
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+        <SettingSection
+          title="Assistance"
+          items={[
+            {
+              title: "Centre d'aide et contact",
+              description: "Contacter l'équipe Moshi",
+              href: "/support/report-problem",
+              icon: Headphones,
+              iconStyle: "bg-orange-50 text-orange-600",
+            },
+            {
+              title: "Signaler un problème",
+              description: "Envoyer un signalement",
+              href: "/support/report-problem",
+              icon: MessageCircle,
+              iconStyle: "bg-pink-50 text-pink-600",
+            },
+          ]}
+        />
 
         <section>
-          <h2 className="mb-3 px-1 text-xs font-bold uppercase tracking-wider text-gray-500">
+          <h2 className="mb-2 px-1 text-sm font-bold text-gray-900">
             Session
           </h2>
 
-          <div className="overflow-hidden rounded-3xl border border-red-100 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-2xl border border-red-100 bg-white shadow-sm">
             <button
               type="button"
               onClick={handleLogout}
               disabled={loggingOut}
               className="flex w-full items-center gap-3 p-4 text-left transition hover:bg-red-50 disabled:opacity-60"
             >
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600">
                 {loggingOut ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
@@ -469,24 +590,27 @@ export default function SettingsPage() {
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-red-600">
+                <p className="text-sm font-semibold text-red-600">
                   {loggingOut ? "Déconnexion..." : "Se déconnecter"}
                 </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Fermer ta session Moshi sur cet appareil
+                <p className="text-xs text-gray-500">
+                  Fermer ta session sur cet appareil
                 </p>
               </div>
 
-              {!loggingOut && (
-                <ChevronRight className="h-5 w-5 text-gray-400" />
-              )}
+              <ChevronRight className="h-5 w-5 text-gray-400" />
             </button>
           </div>
         </section>
 
-        <p className="pt-3 text-center text-xs text-gray-400">
-          Moshi · Paramètres de ton compte
-        </p>
+        <div className="py-3 text-center">
+          <p className="text-xs font-semibold text-gray-400">
+            Moshi
+          </p>
+          <p className="mt-1 text-[10px] text-gray-400">
+            Paramètres de ton compte
+          </p>
+        </div>
       </div>
     </main>
   );
