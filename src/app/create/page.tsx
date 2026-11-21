@@ -13,7 +13,6 @@ import {
   UploadCloud,
   X,
   Loader2,
-  Play,
   Hash,
   CheckCircle2,
 } from "lucide-react";
@@ -107,6 +106,12 @@ export default function CreatePage() {
       return;
     }
 
+    if (selectedFile.size > 500 * 1024 * 1024) {
+      setError("La vidéo ne doit pas dépasser 500 Mo.");
+      event.target.value = "";
+      return;
+    }
+
     const newPreviewUrl = URL.createObjectURL(selectedFile);
 
     setFile(selectedFile);
@@ -153,7 +158,9 @@ export default function CreatePage() {
     let uploadedPath: string | null = null;
 
     try {
-      const fileExt = file.name.split(".").pop()?.toLowerCase() || "mp4";
+      const fileExt =
+        file.name.split(".").pop()?.toLowerCase() || "mp4";
+
       const fileName = `${userId}/${Date.now()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
@@ -161,24 +168,20 @@ export default function CreatePage() {
         .upload(fileName, file, {
           cacheControl: "3600",
           upsert: false,
-          contentType: file.type || undefined,
+          contentType: file.type || "video/mp4",
         });
 
       if (uploadError) throw uploadError;
 
       uploadedPath = fileName;
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage
-        .from("videos")
-        .getPublicUrl(fileName);
-
+      // On enregistre désormais le chemin du fichier,
+      // et non une URL publique.
       const { error: dbError } = await supabase
         .from("videos")
         .insert({
           user_id: userId,
-          url: publicUrl,
+          url: fileName,
           caption: caption.trim(),
           status: "published",
         });
@@ -190,8 +193,6 @@ export default function CreatePage() {
     } catch (err) {
       console.error("Erreur publication vidéo :", err);
 
-      // Supprime le fichier du Storage si son enregistrement
-      // dans la table videos a échoué.
       if (uploadedPath) {
         const { error: cleanupError } = await supabase.storage
           .from("videos")
