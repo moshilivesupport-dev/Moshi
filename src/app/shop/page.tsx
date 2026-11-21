@@ -1,7 +1,12 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -34,7 +39,19 @@ export default function ShopPage() {
   const router = useRouter();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [stats, setStats] = useState<Record<string, ProductStats>>({});
+  const [stats, setStats] = useState<
+    Record<string, ProductStats>
+  >({});
+  const [imageSources, setImageSources] = useState<
+    Record<string, string[]>
+  >({});
+  const [imageIndexes, setImageIndexes] = useState<
+    Record<string, number>
+  >({});
+  const [failedImages, setFailedImages] = useState<
+    Record<string, boolean>
+  >({});
+
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -44,11 +61,16 @@ export default function ShopPage() {
     setLoading(true);
 
     try {
-      const [{ data: auth }, { data, error }] = await Promise.all([
+      const [
+        { data: auth },
+        { data, error },
+      ] = await Promise.all([
         supabase.auth.getUser(),
         supabase
           .from("products")
-          .select("id,title,price,image_url,category")
+          .select(
+            "id,title,price,image_url,category"
+          )
           .order("created_at", { ascending: false }),
       ]);
 
@@ -62,16 +84,27 @@ export default function ShopPage() {
 
       if (!rows.length) {
         setStats({});
+        setImageSources({});
+        setImageIndexes({});
+        setFailedImages({});
         return;
       }
 
-      const productIds = rows.map((p) => p.id);
+      const productIds = rows.map((product) => product.id);
 
+      // Récupération des images supplémentaires.
       const [
+        { data: photoRows, error: photosError },
         { data: likeRows, error: likeError },
         { data: commentRows, error: commentError },
         { data: myLikes, error: myLikesError },
       ] = await Promise.all([
+        supabase
+          .from("product_images")
+          .select("product_id,url,position")
+          .in("product_id", productIds)
+          .order("position", { ascending: true }),
+
         supabase
           .from("product_likes")
           .select("product_id")
@@ -94,9 +127,63 @@ export default function ShopPage() {
             }),
       ]);
 
+      if (photosError) throw photosError;
       if (likeError) throw likeError;
       if (commentError) throw commentError;
       if (myLikesError) throw myLikesError;
+
+      // Les URL déjà complètes sont conservées.
+      // Les chemins de stockage sont convertis en URL publiques.
+      const normalizeImageUrl = (value: string | null) => {
+        if (!value) return null;
+
+        const cleanValue = value.trim();
+
+        if (!cleanValue) return null;
+
+        if (
+          cleanValue.startsWith("https://") ||
+          cleanValue.startsWith("http://") ||
+          cleanValue.startsWith("data:")
+        ) {
+          return cleanValue;
+        }
+
+        const cleanPath = cleanValue.replace(/^\/+/, "");
+
+        return supabase.storage
+          .from("products")
+          .getPublicUrl(cleanPath).data.publicUrl;
+      };
+
+      const nextImageSources: Record<string, string[]> = {};
+
+      for (const product of rows) {
+        const additionalPhotos = (photoRows || [])
+          .filter(
+            (photo) => photo.product_id === product.id
+          )
+          .map((photo) => normalizeImageUrl(photo.url))
+          .filter((url): url is string => Boolean(url));
+
+        const mainPhoto = normalizeImageUrl(
+          product.image_url
+        );
+
+        // Image principale en premier, puis les autres photos.
+        nextImageSources[product.id] = [
+          ...new Set(
+            [
+              mainPhoto,
+              ...additionalPhotos,
+            ].filter((url): url is string => Boolean(url))
+          ),
+        ];
+      }
+
+      setImageSources(nextImageSources);
+      setImageIndexes({});
+      setFailedImages({});
 
       const nextStats: Record<string, ProductStats> = {};
 
@@ -128,7 +215,10 @@ export default function ShopPage() {
 
       setStats(nextStats);
     } catch (error: any) {
-      console.error("Erreur chargement boutique :", error);
+      console.error(
+        "Erreur chargement boutique :",
+        error
+      );
     } finally {
       setLoading(false);
     }
@@ -161,7 +251,8 @@ export default function ShopPage() {
         liked: !wasLiked,
         likes: Math.max(
           0,
-          current[productId].likes + (wasLiked ? -1 : 1)
+          current[productId].likes +
+            (wasLiked ? -1 : 1)
         ),
       },
     }));
@@ -198,12 +289,31 @@ export default function ShopPage() {
     }
   };
 
+  const handleImageError = (productId: string) => {
+    const sources = imageSources[productId] || [];
+    const currentIndex = imageIndexes[productId] || 0;
+
+    if (currentIndex + 1 < sources.length) {
+      setImageIndexes((current) => ({
+        ...current,
+        [productId]: currentIndex + 1,
+      }));
+    } else {
+      setFailedImages((current) => ({
+        ...current,
+        [productId]: true,
+      }));
+    }
+  };
+
   const filtered = products.filter((product) => {
     const query = search.toLowerCase().trim();
 
     return (
       product.title.toLowerCase().includes(query) ||
-      (product.category || "").toLowerCase().includes(query)
+      (product.category || "")
+        .toLowerCase()
+        .includes(query)
     );
   });
 
@@ -211,7 +321,11 @@ export default function ShopPage() {
     <div className="min-h-[100dvh] bg-moshi-bg pb-24">
       <header className="bg-white shadow-sm sticky top-0 z-20">
         <div className="px-4 py-4 flex items-center gap-3">
-          <Link href="/" className="p-1" aria-label="Retour">
+          <Link
+            href="/"
+            className="p-1"
+            aria-label="Retour"
+          >
             <ArrowLeft className="w-6 h-6" />
           </Link>
 
@@ -263,6 +377,19 @@ export default function ShopPage() {
                 liked: false,
               };
 
+              const sources =
+                imageSources[product.id] || [];
+
+              const imageIndex =
+                imageIndexes[product.id] || 0;
+
+              const currentImage =
+                sources[imageIndex];
+
+              const showPlaceholder =
+                !currentImage ||
+                failedImages[product.id];
+
               return (
                 <article
                   key={product.id}
@@ -272,18 +399,23 @@ export default function ShopPage() {
                     href={`/shop/${product.id}`}
                     className="block"
                   >
-                    <div className="aspect-square bg-gray-100 relative">
-                      {product.image_url ? (
+                    <div className="aspect-square bg-gray-100 relative overflow-hidden">
+                      {!showPlaceholder ? (
                         <Image
-                          src={product.image_url}
+                          key={`${product.id}-${currentImage}`}
+                          src={currentImage}
                           alt={product.title}
                           fill
+                          sizes="(max-width: 768px) 50vw, 250px"
                           className="object-cover"
                           unoptimized
+                          onError={() =>
+                            handleImageError(product.id)
+                          }
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-gray-300">
-                          <Package size={32} />
+                          <Package size={40} />
                         </div>
                       )}
                     </div>
@@ -302,9 +434,9 @@ export default function ShopPage() {
                       )}
 
                       <p className="text-sm font-extrabold text-moshi-purple mt-1">
-                        {Number(product.price).toLocaleString(
-                          "fr-FR"
-                        )}{" "}
+                        {Number(
+                          product.price
+                        ).toLocaleString("fr-FR")}{" "}
                         FCFA
                       </p>
                     </Link>
@@ -312,8 +444,12 @@ export default function ShopPage() {
                     <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
                       <button
                         type="button"
-                        onClick={() => toggleLike(product.id)}
-                        disabled={liking.includes(product.id)}
+                        onClick={() =>
+                          toggleLike(product.id)
+                        }
+                        disabled={liking.includes(
+                          product.id
+                        )}
                         aria-label={
                           productStats.liked
                             ? "Retirer mon J'aime"
