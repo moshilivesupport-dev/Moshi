@@ -29,12 +29,23 @@ async function downloadWithWatermark(
     typeof MediaRecorder === "undefined" ||
     typeof HTMLCanvasElement.prototype.captureStream !== "function"
   ) {
-    throw new Error("Ton navigateur ne permet pas le téléchargement filigrané.");
+    throw new Error(
+      "Ton navigateur ne permet pas le téléchargement filigrané."
+    );
   }
 
-  const response = await fetch(videoUrl);
+  const response = await fetch(videoUrl, {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
 
   if (!response.ok) {
+    if (response.status === 403) {
+      throw new Error(
+        "Le créateur n'autorise pas le téléchargement de cette vidéo."
+      );
+    }
+
     throw new Error("Impossible de récupérer cette vidéo.");
   }
 
@@ -50,13 +61,14 @@ async function downloadWithWatermark(
   try {
     await new Promise<void>((resolve, reject) => {
       video.onloadedmetadata = () => resolve();
-      video.onerror = () => reject(new Error("Impossible de lire cette vidéo."));
+      video.onerror = () =>
+        reject(new Error("Impossible de lire cette vidéo."));
     });
 
     const width = video.videoWidth || 720;
     const height = video.videoHeight || 1280;
-    const canvas = document.createElement("canvas");
 
+    const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
 
@@ -73,7 +85,8 @@ async function downloadWithWatermark(
       mozCaptureStream?: () => MediaStream;
     };
 
-    const capture = videoWithCapture.captureStream ||
+    const capture =
+      videoWithCapture.captureStream ||
       videoWithCapture.mozCaptureStream;
 
     if (capture) {
@@ -96,7 +109,9 @@ async function downloadWithWatermark(
     );
 
     if (!mimeType) {
-      throw new Error("Format vidéo non pris en charge par ce navigateur.");
+      throw new Error(
+        "Format vidéo non pris en charge par ce navigateur."
+      );
     }
 
     const recorder = new MediaRecorder(canvasStream, {
@@ -107,17 +122,23 @@ async function downloadWithWatermark(
     const chunks: BlobPart[] = [];
 
     recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) chunks.push(event.data);
+      if (event.data.size > 0) {
+        chunks.push(event.data);
+      }
     };
 
     const recordingFinished = new Promise<Blob>((resolve, reject) => {
       recorder.onstop = () => {
-        resolve(new Blob(chunks, {
-          type: recorder.mimeType || mimeType,
-        }));
+        resolve(
+          new Blob(chunks, {
+            type: recorder.mimeType || mimeType,
+          })
+        );
       };
 
-      recorder.onerror = () => reject(new Error("Le téléchargement a échoué."));
+      recorder.onerror = () => {
+        reject(new Error("Le téléchargement a échoué."));
+      };
     });
 
     let animationFrame = 0;
@@ -141,7 +162,11 @@ async function downloadWithWatermark(
 
       context.fillText("MOSHI", width - padding, watermarkY);
 
-      context.font = `${Math.max(13, Math.round(fontSize * 0.65))}px Arial`;
+      context.font = `${Math.max(
+        13,
+        Math.round(fontSize * 0.65)
+      )}px Arial`;
+
       context.fillText(
         `@${creatorUsername}`,
         width - padding,
@@ -165,7 +190,9 @@ async function downloadWithWatermark(
 
     cancelAnimationFrame(animationFrame);
 
-    if (recorder.state !== "inactive") recorder.stop();
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
 
     const finalBlob = await recordingFinished;
 
@@ -184,7 +211,9 @@ async function downloadWithWatermark(
     anchor.click();
     anchor.remove();
 
-    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 30000);
+    window.setTimeout(() => {
+      URL.revokeObjectURL(downloadUrl);
+    }, 30000);
   } finally {
     video.pause();
     video.removeAttribute("src");
@@ -204,7 +233,7 @@ export default function VideoActionsMenu({
   const [hasReposted, setHasReposted] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   useEffect(() => {
     let cancelled = false;
@@ -223,7 +252,9 @@ export default function VideoActionsMenu({
         return;
       }
 
-      if (!cancelled) setUserId(user.id);
+      if (!cancelled) {
+        setUserId(user.id);
+      }
 
       const { data, error } = await supabase
         .from("video_reposts")
@@ -256,7 +287,9 @@ export default function VideoActionsMenu({
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      throw new Error("Connecte-toi pour utiliser cette fonctionnalité.");
+      throw new Error(
+        "Connecte-toi pour utiliser cette fonctionnalité."
+      );
     }
 
     return user;
@@ -278,7 +311,9 @@ export default function VideoActionsMenu({
         if (error) throw error;
 
         setHasReposted(false);
-        window.dispatchEvent(new CustomEvent("moshi:reposts-updated"));
+        window.dispatchEvent(
+          new CustomEvent("moshi:reposts-updated")
+        );
 
         alert("Republication annulée.");
       } else {
@@ -294,11 +329,14 @@ export default function VideoActionsMenu({
             setHasReposted(true);
             return;
           }
+
           throw error;
         }
 
         setHasReposted(true);
-        window.dispatchEvent(new CustomEvent("moshi:reposts-updated"));
+        window.dispatchEvent(
+          new CustomEvent("moshi:reposts-updated")
+        );
 
         alert("Vidéo republiée !");
       }
@@ -317,13 +355,24 @@ export default function VideoActionsMenu({
 
   const handleDownload = async () => {
     if (!allowDownload) {
-      alert("Le créateur n'autorise pas le téléchargement de cette vidéo.");
+      alert(
+        "Le créateur n'autorise pas le téléchargement de cette vidéo."
+      );
       return;
     }
 
     try {
       setBusy("download");
-      await downloadWithWatermark(videoUrl, creatorUsername);
+
+      // Le serveur vérifie à nouveau le droit de téléchargement.
+      const protectedDownloadUrl =
+        `/api/videos/${encodeURIComponent(videoId)}?download=1`;
+
+      await downloadWithWatermark(
+        protectedDownloadUrl,
+        creatorUsername
+      );
+
       setOpen(false);
     } catch (error) {
       alert(
@@ -353,7 +402,10 @@ export default function VideoActionsMenu({
 
       setOpen(false);
     } catch (error) {
-      if (error instanceof Error && error.name !== "AbortError") {
+      if (
+        error instanceof Error &&
+        error.name !== "AbortError"
+      ) {
         alert("Impossible de partager cette vidéo.");
       }
     }
@@ -431,7 +483,9 @@ export default function VideoActionsMenu({
                 <Repeat2 size={19} />
               )}
 
-              {hasReposted ? "Annuler la republication" : "Republier la vidéo"}
+              {hasReposted
+                ? "Annuler la republication"
+                : "Republier la vidéo"}
             </button>
 
             <button
@@ -451,7 +505,9 @@ export default function VideoActionsMenu({
               <span className="flex-1">Télécharger</span>
 
               {!allowDownload && (
-                <span className="text-[10px] text-white/45">Désactivé</span>
+                <span className="text-[10px] text-white/45">
+                  Désactivé
+                </span>
               )}
             </button>
 
@@ -478,6 +534,7 @@ export default function VideoActionsMenu({
               ) : (
                 <BookOpen size={19} />
               )}
+
               Ajouter en story
             </button>
           </div>
