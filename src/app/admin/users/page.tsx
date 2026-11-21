@@ -2,6 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Search,
   RefreshCw,
@@ -107,7 +108,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      loadUsers();
+      void loadUsers();
     }, 300);
 
     return () => window.clearTimeout(timer);
@@ -227,7 +228,7 @@ export default function AdminUsersPage() {
 
           <button
             type="button"
-            onClick={loadUsers}
+            onClick={() => void loadUsers()}
             disabled={loading}
             className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold hover:bg-white/10 disabled:opacity-50"
           >
@@ -245,16 +246,19 @@ export default function AdminUsersPage() {
             value={total}
             icon={<Users size={22} />}
           />
+
           <StatCard
             title="Acheteurs sur cette page"
             value={buyers}
             icon={<UserRound size={22} />}
           />
+
           <StatCard
             title="Vendeurs sur cette page"
             value={sellers}
             icon={<Store size={22} />}
           />
+
           <StatCard
             title="Suspendus sur cette page"
             value={suspended}
@@ -321,9 +325,11 @@ export default function AdminUsersPage() {
               size={38}
               className="mx-auto mb-4 text-gray-500"
             />
+
             <h2 className="font-semibold">
               Aucun utilisateur trouvé
             </h2>
+
             <p className="mt-2 text-sm text-gray-400">
               Modifie ta recherche ou tes filtres.
             </p>
@@ -339,7 +345,6 @@ export default function AdminUsersPage() {
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-purple-500/15 text-lg font-bold text-purple-200">
                       {user.avatar_url ? (
-                        // L'avatar est une URL fournie par le profil.
                         <img
                           src={user.avatar_url}
                           alt=""
@@ -361,11 +366,17 @@ export default function AdminUsersPage() {
                         </h2>
 
                         {user.is_verified && (
-                          <BadgeCheck
-                            size={17}
-                            className="text-blue-400"
+                          <span
                             title="Compte certifié"
-                          />
+                            aria-label="Compte certifié"
+                            className="inline-flex items-center"
+                          >
+                            <BadgeCheck
+                              size={17}
+                              className="text-blue-400"
+                              aria-hidden="true"
+                            />
+                          </span>
                         )}
 
                         {user.is_admin && (
@@ -382,9 +393,7 @@ export default function AdminUsersPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge
-                      suspended={user.is_suspended}
-                    />
+                    <StatusBadge suspended={user.is_suspended} />
 
                     <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-gray-300">
                       {user.role === "vendeur"
@@ -441,12 +450,13 @@ export default function AdminUsersPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        changeStatus(user, "reactivate")
+                        void changeStatus(user, "reactivate")
                       }
                       disabled={processingId === user.id}
                       className="flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-2.5 text-xs font-bold text-green-300 transition hover:bg-green-500/20 disabled:opacity-50"
                     >
                       <ShieldCheckIcon size={16} />
+
                       {processingId === user.id
                         ? "Traitement..."
                         : "Réactiver le compte"}
@@ -455,12 +465,13 @@ export default function AdminUsersPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        changeStatus(user, "suspend")
+                        void changeStatus(user, "suspend")
                       }
                       disabled={processingId === user.id}
                       className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-xs font-bold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
                     >
                       <ShieldBan size={16} />
+
                       {processingId === user.id
                         ? "Traitement..."
                         : "Suspendre le compte"}
@@ -515,6 +526,7 @@ export default function AdminUsersPage() {
               <h3 className="font-semibold text-amber-200">
                 À connaître sur les suspensions
               </h3>
+
               <p className="mt-2 text-sm leading-6 text-gray-400">
                 La suspension Auth bloque les nouvelles connexions et
                 le renouvellement des sessions. Elle ne révoque pas
@@ -538,16 +550,18 @@ function StatCard({
 }: {
   title: string;
   value: number;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-[#111722] p-5">
       <div className="flex items-center justify-between text-gray-400">
         <span className="text-sm">{title}</span>
+
         <span className="rounded-xl bg-purple-500/10 p-3 text-purple-300">
           {icon}
         </span>
       </div>
+
       <p className="mt-4 text-3xl font-bold tabular-nums">
         {value}
       </p>
@@ -560,7 +574,7 @@ function InfoItem({
   label,
   value,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
 }) {
@@ -570,6 +584,7 @@ function InfoItem({
         {icon}
         {label}
       </div>
+
       <p className="truncate text-xs text-gray-300">{value}</p>
     </div>
   );
