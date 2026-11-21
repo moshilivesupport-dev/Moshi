@@ -93,9 +93,11 @@ const modules: AdminModule[] = [
   },
   {
     title: "Portefeuilles vendeurs",
-    description: "Contrôle, mouvements et audit des opérations.",
+    description:
+      "Demandes de retrait, suivi des versements et historique.",
+    href: "/admin/payouts",
     icon: Wallet,
-    status: "coming",
+    status: "active",
   },
   {
     title: "Promotions",
@@ -127,7 +129,8 @@ const modules: AdminModule[] = [
 const activeShortcuts = [
   {
     title: "Gestion des utilisateurs",
-    description: "Consulter les comptes, gérer les statuts et les suspensions.",
+    description:
+      "Consulter les comptes, gérer les statuts et les suspensions.",
     href: "/admin/users",
     icon: Users,
   },
@@ -144,8 +147,16 @@ const activeShortcuts = [
     icon: ClipboardList,
   },
   {
+    title: "Gestion des retraits",
+    description:
+      "Suivre les demandes et contrôler les versements vendeurs.",
+    href: "/admin/payouts",
+    icon: Wallet,
+  },
+  {
     title: "Journal administratif",
-    description: "Consulter les suspensions, réactivations et motifs.",
+    description:
+      "Consulter les suspensions, certifications et opérations administratives.",
     href: "/admin/activities",
     icon: Activity,
   },
