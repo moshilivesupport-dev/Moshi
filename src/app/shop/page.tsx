@@ -277,12 +277,12 @@ export default function ShopPage() {
   return (
     <div className="min-h-[100dvh] bg-moshi-bg pb-28">
       <header className="sticky top-0 z-20 bg-white/95 shadow-sm backdrop-blur-md">
-        <div className="px-4 pt-4 pb-3">
-          <div className="mb-4 flex items-center gap-3">
+        <div className="px-3 pt-4 pb-3 sm:px-4">
+          <div className="mb-3 flex items-center gap-3">
             <Link
               href="/"
               aria-label="Retour à l'accueil"
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-moshi-text"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-50 text-moshi-text"
             >
               <ArrowLeft className="h-5 w-5" />
             </Link>
@@ -291,31 +291,31 @@ export default function ShopPage() {
               Boutique
             </h1>
 
-            <span className="text-sm text-gray-400">
+            <span className="text-xs text-gray-400 sm:text-sm">
               {products.length} produit(s)
             </span>
           </div>
 
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
 
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Rechercher un produit..."
-              className="w-full rounded-2xl bg-gray-100 py-4 pl-12 pr-4 text-base outline-none focus:ring-2 focus:ring-[#9D7BEA]/25"
+              className="w-full rounded-2xl bg-gray-100 py-3 pl-10 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#9D7BEA]/25 sm:py-4 sm:text-base"
             />
           </div>
         </div>
       </header>
 
-      <main className="py-5">
-        <div className="mb-4 flex items-center justify-between px-4">
-          <h2 className="text-lg font-extrabold text-moshi-text">
+      <main className="px-2 py-4 sm:px-4 sm:py-5">
+        <div className="mb-3 flex items-center justify-between px-1">
+          <h2 className="text-sm font-extrabold text-moshi-text sm:text-lg">
             {search ? "Résultats de recherche" : "Découvrir les produits"}
           </h2>
 
-          <span className="text-xs text-gray-400">
+          <span className="text-[11px] text-gray-400 sm:text-xs">
             {filtered.length} article(s)
           </span>
         </div>
@@ -335,7 +335,7 @@ export default function ShopPage() {
             </p>
           </div>
         ) : (
-          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4">
             {filtered.map((product) => {
               const itemStats = stats[product.id] || {
                 likes: 0,
@@ -351,7 +351,7 @@ export default function ShopPage() {
               return (
                 <article
                   key={product.id}
-                  className="w-[76vw] min-w-[245px] max-w-[285px] shrink-0 snap-start overflow-hidden rounded-[26px] bg-white shadow-sm ring-1 ring-black/[0.03]"
+                  className="min-w-0 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-black/[0.04] sm:rounded-2xl"
                 >
                   <Link href={`/shop/${product.id}`} className="block">
                     <div className="relative aspect-square w-full overflow-hidden bg-[#F1EFF6]">
@@ -361,61 +361,66 @@ export default function ShopPage() {
                           src={imageUrl}
                           alt={product.title}
                           fill
-                          sizes="(max-width: 640px) 76vw, 285px"
+                          sizes="(max-width: 640px) 33vw, (max-width: 1024px) 33vw, 25vw"
                           className="object-cover"
                           unoptimized
                           onError={() => handleImageError(product.id)}
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-[#C9C6D2]">
-                          <Package size={48} strokeWidth={1.5} />
+                          <Package
+                            size={30}
+                            strokeWidth={1.5}
+                          />
                         </div>
                       )}
                     </div>
                   </Link>
 
-                  <div className="p-4">
+                  <div className="p-2 sm:p-3">
                     <Link href={`/shop/${product.id}`} className="block">
-                      <h3 className="line-clamp-2 min-h-10 text-[15px] font-bold leading-5 text-moshi-text">
+                      <h3 className="line-clamp-2 min-h-[2rem] text-[11px] font-bold leading-4 text-moshi-text sm:min-h-10 sm:text-sm sm:leading-5">
                         {product.title}
                       </h3>
 
                       {product.category && (
-                        <p className="mt-1 truncate text-xs text-gray-400">
+                        <p className="mt-1 truncate text-[9px] text-gray-400 sm:text-xs">
                           {product.category}
                         </p>
                       )}
 
-                      <p className="mt-2 text-xl font-extrabold text-[#9D7BEA]">
+                      <p className="mt-2 break-words text-xs font-extrabold leading-4 text-[#9D7BEA] sm:text-base sm:leading-5">
                         {Number(product.price).toLocaleString("fr-FR")} FCFA
                       </p>
                     </Link>
 
-                    <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
+                    <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
                       <button
                         type="button"
                         onClick={() => void toggleLike(product.id)}
                         disabled={liking.includes(product.id)}
-                        className={`flex items-center gap-2 text-sm font-bold disabled:opacity-50 ${
+                        aria-label="Aimer ce produit"
+                        className={`flex min-w-0 items-center gap-1 text-[10px] font-bold disabled:opacity-50 sm:gap-1.5 sm:text-sm ${
                           itemStats.liked
                             ? "text-[#D83D83]"
                             : "text-gray-500"
                         }`}
                       >
                         <Heart
-                          className={`h-5 w-5 ${
+                          className={`h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4 ${
                             itemStats.liked ? "fill-current" : ""
                           }`}
                         />
-                        {itemStats.likes}
+                        <span>{itemStats.likes}</span>
                       </button>
 
                       <Link
                         href={`/shop/${product.id}#comments`}
-                        className="flex items-center gap-2 text-sm font-semibold text-gray-500"
+                        aria-label="Voir les commentaires"
+                        className="flex min-w-0 items-center gap-1 text-[10px] font-semibold text-gray-500 sm:gap-1.5 sm:text-sm"
                       >
-                        <MessageCircle className="h-5 w-5" />
-                        {itemStats.comments}
+                        <MessageCircle className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+                        <span>{itemStats.comments}</span>
                       </Link>
                     </div>
                   </div>
@@ -423,12 +428,6 @@ export default function ShopPage() {
               );
             })}
           </div>
-        )}
-
-        {!loading && filtered.length > 1 && (
-          <p className="px-4 text-center text-xs text-gray-400">
-            Fais glisser pour découvrir les autres produits
-          </p>
         )}
       </main>
     </div>
