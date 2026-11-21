@@ -112,8 +112,9 @@ const modules: AdminModule[] = [
   {
     title: "Activités",
     description: "Historique des actions et journal administratif.",
+    href: "/admin/activities",
     icon: Activity,
-    status: "coming",
+    status: "active",
   },
   {
     title: "Paramètres",
@@ -141,6 +142,12 @@ const activeShortcuts = [
     description: "Examiner les demandes de changement de pays.",
     href: "/admin/country-change",
     icon: ClipboardList,
+  },
+  {
+    title: "Journal administratif",
+    description: "Consulter les suspensions, réactivations et motifs.",
+    href: "/admin/activities",
+    icon: Activity,
   },
 ];
 
