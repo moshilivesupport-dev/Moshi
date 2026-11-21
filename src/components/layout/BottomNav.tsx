@@ -34,10 +34,15 @@ export default function BottomNav() {
   const pathname = usePathname();
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
 
-  const shouldHideNavigation = hiddenRoutes.some(
-    (route) =>
-      pathname === route || pathname.startsWith(`${route}/`)
-  );
+  const isProductDetail =
+    /^\/shop\/[^/]+\/?$/.test(pathname);
+
+  const shouldHideNavigation =
+    isProductDetail ||
+    hiddenRoutes.some(
+      (route) =>
+        pathname === route || pathname.startsWith(`${route}/`)
+    );
 
   if (shouldHideNavigation) {
     return null;
