@@ -6,11 +6,10 @@ import {
   ArrowUpRight,
   BadgeCheck,
   BarChart3,
-  Bell,
-  CircleDollarSign,
   ClipboardList,
   Coins,
   CreditCard,
+  CircleDollarSign,
   Gavel,
   LayoutDashboard,
   Megaphone,
@@ -39,8 +38,9 @@ const modules: AdminModule[] = [
   {
     title: "Utilisateurs",
     description: "Comptes, vendeurs, créateurs et suspensions.",
+    href: "/admin/users",
     icon: Users,
-    status: "coming",
+    status: "active",
   },
   {
     title: "Certifications",
@@ -125,6 +125,12 @@ const modules: AdminModule[] = [
 
 const activeShortcuts = [
   {
+    title: "Gestion des utilisateurs",
+    description: "Consulter les comptes, gérer les statuts et les suspensions.",
+    href: "/admin/users",
+    icon: Users,
+  },
+  {
     title: "Demandes de certification",
     description: "Examiner les dossiers des utilisateurs.",
     href: "/admin/verifications",
@@ -146,7 +152,7 @@ export default async function AdminHomePage() {
   }
 
   const activeCount = modules.filter(
-    (module) => module.status === "active"
+    (module) => module.status === "active" && Boolean(module.href)
   ).length;
 
   const comingCount = modules.filter(
@@ -201,7 +207,7 @@ export default async function AdminHomePage() {
           <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-400">
             Depuis cet espace, tu pourras superviser les utilisateurs,
             les revenus de Moshi, les paiements, les boutiques et
-            l'ensemble des activités de la plateforme.
+            l&apos;ensemble des activités de la plateforme.
           </p>
         </section>
 
@@ -222,7 +228,7 @@ export default async function AdminHomePage() {
             </p>
 
             <p className="mt-1 text-xs text-gray-500">
-              Sections déjà reliées à leurs interfaces.
+              Sections reliées à leurs interfaces.
             </p>
           </div>
 
@@ -241,7 +247,7 @@ export default async function AdminHomePage() {
             </p>
 
             <p className="mt-1 text-xs text-gray-500">
-              Sections prévues dans l'administration centrale.
+              Sections prévues dans l&apos;administration centrale.
             </p>
           </div>
 
@@ -276,7 +282,7 @@ export default async function AdminHomePage() {
             </p>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {activeShortcuts.map((item) => {
               const Icon = item.icon;
 
@@ -284,7 +290,7 @@ export default async function AdminHomePage() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="group flex items-center justify-between rounded-2xl border border-white/10 bg-[#111722] p-5 transition hover:border-purple-400/50 hover:bg-[#151d2b]"
+                  className="group flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#111722] p-5 transition hover:border-purple-400/50 hover:bg-[#151d2b]"
                 >
                   <div className="flex items-center gap-4">
                     <div className="rounded-xl bg-purple-500/10 p-3 text-purple-300">
@@ -303,7 +309,7 @@ export default async function AdminHomePage() {
 
                   <ArrowUpRight
                     size={20}
-                    className="text-gray-500 transition group-hover:text-purple-300"
+                    className="shrink-0 text-gray-500 transition group-hover:text-purple-300"
                   />
                 </Link>
               );
@@ -319,7 +325,7 @@ export default async function AdminHomePage() {
                 Tous les modules
               </h2>
               <p className="mt-1 text-sm text-gray-400">
-                Organisation générale de l'administration Moshi.
+                Organisation générale de l&apos;administration Moshi.
               </p>
             </div>
 
@@ -331,7 +337,8 @@ export default async function AdminHomePage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {modules.map((module) => {
               const Icon = module.icon;
-              const isActive = module.status === "active";
+              const isActive =
+                module.status === "active" && Boolean(module.href);
 
               const content = (
                 <>
@@ -365,11 +372,16 @@ export default async function AdminHomePage() {
                         isActive ? "text-purple-300" : "text-gray-500"
                       }`}
                     >
-                      {isActive ? "Ouvrir le module" : "Développement à venir"}
+                      {isActive
+                        ? "Ouvrir le module"
+                        : "Développement à venir"}
                     </span>
 
                     {isActive ? (
-                      <ArrowUpRight size={17} className="text-purple-300" />
+                      <ArrowUpRight
+                        size={17}
+                        className="text-purple-300"
+                      />
                     ) : (
                       <span className="text-xs text-gray-600">—</span>
                     )}
@@ -426,6 +438,7 @@ export default async function AdminHomePage() {
           </div>
         </section>
 
+        {/* FOOTER */}
         <footer className="mt-10 border-t border-white/10 py-6 text-center text-xs text-gray-600">
           Moshi Administration · Espace réservé aux administrateurs autorisés
         </footer>
