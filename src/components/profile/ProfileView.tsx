@@ -21,6 +21,7 @@ import {
   MessageCircle,
   Loader2,
   ArrowLeft,
+  Ban,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import FollowListModal from "@/components/profile/FollowListModal";
@@ -91,13 +92,16 @@ export default function ProfileView({
   const [followListType, setFollowListType] =
     useState<FollowListType | null>(null);
 
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+  const [blockStatusLoading, setBlockStatusLoading] = useState(true);
+
   const [stats, setStats] = useState({
     followers_count: 0,
     following_count: 0,
     total_likes: 0,
   });
 
-  // Retour intelligent
   const handleProfileBack = () => {
     if (returnToLiveId) {
       router.push(fallbackHref);
@@ -109,7 +113,6 @@ export default function ProfileView({
       return;
     }
 
-    // On ne revient pas vers une page extérieure à Moshi.
     const hasInternalReferrer =
       document.referrer.startsWith(window.location.origin);
 
@@ -121,7 +124,6 @@ export default function ProfileView({
     router.push("/");
   };
 
-  // Chargement des vidéos du profil
   const loadVideos = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
@@ -214,7 +216,6 @@ export default function ProfileView({
     }
   }, [activeTab, isOwnProfile, profile.id, supabase]);
 
-  // Chargement des statistiques
   const loadStats = useCallback(async () => {
     try {
       const [
@@ -258,7 +259,6 @@ export default function ProfileView({
     }
   }, [profile.id, supabase]);
 
-  // Vérification de l'abonnement
   const loadFollowStatus = useCallback(async () => {
     const {
       data: { user },
@@ -268,6 +268,8 @@ export default function ProfileView({
     if (authError || !user) {
       setCurrentUserId(null);
       setIsFollowing(false);
+      setIsBlocked(false);
+      setBlockStatusLoading(false);
       return;
     }
 
@@ -275,22 +277,43 @@ export default function ProfileView({
 
     if (user.id === profile.id) {
       setIsFollowing(false);
+      setIsBlocked(false);
+      setBlockStatusLoading(false);
       return;
     }
 
-    const { data, error } = await supabase
-      .from("follows")
-      .select("id")
-      .eq("follower_id", user.id)
-      .eq("following_id", profile.id)
-      .maybeSingle();
+    const [
+      followResult,
+      blockResult,
+    ] = await Promise.all([
+      supabase
+        .from("follows")
+        .select("id")
+        .eq("follower_id", user.id)
+        .eq("following_id", profile.id)
+        .maybeSingle(),
 
-    if (error) {
-      console.error("Erreur vérification abonnement :", error);
-      return;
+      supabase
+        .from("user_blocks")
+        .select("id")
+        .eq("blocker_id", user.id)
+        .eq("blocked_id", profile.id)
+        .maybeSingle(),
+    ]);
+
+    if (followResult.error) {
+      console.error("Erreur vérification abonnement :", followResult.error);
+    } else {
+      setIsFollowing(Boolean(followResult.data));
     }
 
-    setIsFollowing(Boolean(data));
+    if (blockResult.error) {
+      console.error("Erreur vérification blocage :", blockResult.error);
+    } else {
+      setIsBlocked(Boolean(blockResult.data));
+    }
+
+    setBlockStatusLoading(false);
   }, [profile.id, supabase]);
 
   useEffect(() => {
@@ -302,7 +325,6 @@ export default function ProfileView({
     void loadFollowStatus();
   }, [loadStats, loadFollowStatus]);
 
-  // Suivre ou ne plus suivre un profil
   const handleToggleFollow = async () => {
     if (followLoading) return;
 
@@ -312,7 +334,7 @@ export default function ProfileView({
       return;
     }
 
-    if (currentUserId === profile.id) return;
+    if (currentUserId === profile.id || isBlocked) return;
 
     setFollowLoading(true);
 
@@ -364,9 +386,80 @@ export default function ProfileView({
     }
   };
 
-  // Ouvrir une conversation existante ou en créer une nouvelle
+  const handleToggleBlock = async () => {
+    if (blockLoading || blockStatusLoading) return;
+
+    if (!currentUserId) {
+      alert("Connectez-vous pour gérer les utilisateurs bloqués.");
+      router.push("/auth/login");
+      return;
+    }
+
+    if (currentUserId === profile.id) return;
+
+    if (
+      !confirm(
+        isBlocked
+          ? `Voulez-vous débloquer ${profile.full_name || profile.username || "cet utilisateur"} ?`
+          : `Voulez-vous bloquer ${profile.full_name || profile.username || "cet utilisateur"} ? Il ne pourra plus vous contacter par les fonctionnalités protégées de Moshi.`
+      )
+    ) {
+      return;
+    }
+
+    setBlockLoading(true);
+
+    try {
+      if (isBlocked) {
+        const { error } = await supabase
+          .from("user_blocks")
+          .delete()
+          .eq("blocker_id", currentUserId)
+          .eq("blocked_id", profile.id);
+
+        if (error) throw error;
+
+        setIsBlocked(false);
+        alert("Utilisateur débloqué.");
+      } else {
+        const { error } = await supabase
+          .from("user_blocks")
+          .insert({
+            blocker_id: currentUserId,
+            blocked_id: profile.id,
+          });
+
+        if (error && error.code !== "23505") throw error;
+
+        setIsBlocked(true);
+        setIsFollowing(false);
+
+        setStats((current) => ({
+          ...current,
+          followers_count: Math.max(0, current.followers_count - 1),
+        }));
+
+        alert("Utilisateur bloqué.");
+      }
+
+      await loadStats();
+    } catch (error) {
+      console.error("Erreur blocage utilisateur :", error);
+      alert(
+        "Impossible de modifier le blocage. Vérifiez votre connexion et réessayez."
+      );
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (messageLoading) return;
+
+    if (isBlocked) {
+      alert("Débloquez cet utilisateur avant de lui envoyer un message.");
+      return;
+    }
 
     setMessageLoading(true);
 
@@ -440,7 +533,6 @@ export default function ProfileView({
     }
   };
 
-  // Suppression d'une vidéo
   const handleDeleteVideo = async (videoId: string) => {
     if (!confirm("Supprimer cette vidéo définitivement ?")) return;
 
@@ -465,7 +557,6 @@ export default function ProfileView({
     }
   };
 
-  // Modifier la visibilité d'une vidéo
   const handleTogglePrivate = async (video: VideoData) => {
     const nextStatus =
       video.status === "hidden" ? "published" : "hidden";
@@ -490,7 +581,6 @@ export default function ProfileView({
     }
   };
 
-  // Retirer une vidéo des favoris
   const handleUnsaveVideo = async (videoId: string) => {
     try {
       const { error } = await supabase
@@ -600,7 +690,6 @@ export default function ProfileView({
           </div>
         </header>
 
-        {/* Identité du profil */}
         <div className="px-4 flex items-start justify-between mb-4 mt-2">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -643,7 +732,6 @@ export default function ProfileView({
           </div>
         </div>
 
-        {/* Statistiques cliquables */}
         <div className="px-4 flex items-center gap-8 mb-4">
           <button
             type="button"
@@ -683,14 +771,13 @@ export default function ProfileView({
           </p>
         )}
 
-        {/* Actions visibles uniquement sur le profil d'un autre utilisateur */}
         {!isOwnProfile && (
-          <div className="px-4 mb-4 flex gap-3">
+          <div className="px-4 mb-4 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void handleToggleFollow()}
-              disabled={followLoading}
-              className={`flex-1 rounded-full py-3 text-sm font-bold transition-all disabled:opacity-60 ${
+              disabled={followLoading || isBlocked}
+              className={`flex-1 min-w-[100px] rounded-full py-3 text-sm font-bold transition-all disabled:opacity-60 ${
                 isFollowing
                   ? "bg-gray-100 text-gray-800 border border-gray-300"
                   : "moshi-gradient text-white shadow-sm"
@@ -706,8 +793,8 @@ export default function ProfileView({
             <button
               type="button"
               onClick={() => void handleSendMessage()}
-              disabled={messageLoading}
-              className="flex-1 rounded-full py-3 text-sm font-bold border border-moshi-purple text-moshi-purple bg-white flex items-center justify-center gap-2 disabled:opacity-60"
+              disabled={messageLoading || isBlocked}
+              className="flex-1 min-w-[100px] rounded-full py-3 text-sm font-bold border border-moshi-purple text-moshi-purple bg-white flex items-center justify-center gap-2 disabled:opacity-60"
             >
               {messageLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -715,6 +802,31 @@ export default function ProfileView({
                 <MessageCircle className="w-4 h-4" />
               )}
               {messageLoading ? "Ouverture..." : "Message"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleToggleBlock()}
+              disabled={blockLoading || blockStatusLoading}
+              className={`rounded-full px-4 py-3 text-sm font-semibold border flex items-center justify-center gap-2 disabled:opacity-60 ${
+                isBlocked
+                  ? "border-red-200 bg-red-50 text-red-600"
+                  : "border-gray-200 bg-white text-gray-600"
+              }`}
+              aria-label={isBlocked ? "Débloquer cet utilisateur" : "Bloquer cet utilisateur"}
+            >
+              {blockLoading || blockStatusLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Ban className="w-4 h-4" />
+              )}
+              {blockStatusLoading
+                ? "..."
+                : blockLoading
+                  ? "Patientez"
+                  : isBlocked
+                    ? "Débloquer"
+                    : "Bloquer"}
             </button>
           </div>
         )}
@@ -730,7 +842,6 @@ export default function ProfileView({
           </div>
         )}
 
-        {/* Onglets */}
         <div className="flex border-b border-gray-200">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -761,7 +872,6 @@ export default function ProfileView({
           })}
         </div>
 
-        {/* Contenu des onglets */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-10 h-10 border-4 border-[#9D7BEA] border-t-transparent rounded-full animate-spin" />
@@ -899,7 +1009,6 @@ export default function ProfileView({
         )}
       </div>
 
-      {/* Fenêtre abonnés / abonnements */}
       {followListType && (
         <FollowListModal
           profileId={profile.id}
