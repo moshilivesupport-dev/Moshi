@@ -57,7 +57,16 @@ export default function VideoDetailPage() {
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [showComments, setShowComments] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [downloadLoading, setDownloadLoading] = useState(false);
   const [pageError, setPageError] = useState("");
+
+  const playbackUrl = videoId
+    ? `/api/videos/${encodeURIComponent(videoId)}`
+    : "";
+
+  const downloadUrl = videoId
+    ? `/api/videos/${encodeURIComponent(videoId)}?download=1`
+    : "";
 
   const loadCommentCount = useCallback(async () => {
     if (!videoId) return;
@@ -119,6 +128,8 @@ export default function VideoDetailPage() {
 
       const loadedVideo: Video = {
         ...videoData,
+        // Ne jamais exposer directement l'URL de stockage au lecteur.
+        url: playbackUrl,
         profiles: profile ?? null,
       };
 
@@ -145,18 +156,22 @@ export default function VideoDetailPage() {
         ]);
 
         if (likeResult.error) {
-          console.warn("Vérification du J'aime impossible :", likeResult.error.message);
+          console.warn(
+            "Vérification du J'aime impossible :",
+            likeResult.error.message
+          );
         }
 
         if (saveResult.error) {
-          console.warn("Vérification de l'enregistrement impossible :", saveResult.error.message);
+          console.warn(
+            "Vérification de l'enregistrement impossible :",
+            saveResult.error.message
+          );
         }
 
         setIsLiked(!!likeResult.data);
         setIsSaved(!!saveResult.data);
 
-        // Une seule opération atomique : la fonction SQL insère la vue
-        // uniquement si elle n'existe pas et incrémente le compteur.
         if (videoData.status === "published") {
           const { error: rpcError } = await supabase.rpc(
             "increment_video_view",
@@ -164,10 +179,11 @@ export default function VideoDetailPage() {
           );
 
           if (rpcError) {
-            console.warn("Comptabilisation de la vue impossible :", rpcError.message);
+            console.warn(
+              "Comptabilisation de la vue impossible :",
+              rpcError.message
+            );
           } else {
-            // On relit le compteur réel pour éviter une valeur locale
-            // incorrecte si la vue existait déjà ou si plusieurs vues arrivent.
             const { data: updatedVideo, error: countError } = await supabase
               .from("videos")
               .select("view_count")
@@ -197,7 +213,7 @@ export default function VideoDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, videoId]);
+  }, [supabase, videoId, playbackUrl]);
 
   useEffect(() => {
     void loadVideo();
@@ -306,11 +322,24 @@ export default function VideoDetailPage() {
       return;
     }
 
+    if (downloadLoading) return;
+
+    setDownloadLoading(true);
+
     try {
-      const response = await fetch(video.url);
+      const response = await fetch(downloadUrl, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (response.status === 403) {
+        throw new Error(
+          "Le créateur a désactivé le téléchargement de cette vidéo."
+        );
+      }
 
       if (!response.ok) {
-        throw new Error("Téléchargement impossible");
+        throw new Error("Téléchargement impossible.");
       }
 
       const blob = await response.blob();
@@ -324,10 +353,16 @@ export default function VideoDetailPage() {
       link.click();
       link.remove();
 
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
     } catch (error) {
       console.error("Erreur téléchargement :", error);
-      window.open(video.url, "_blank", "noopener,noreferrer");
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Impossible de télécharger cette vidéo."
+      );
+    } finally {
+      setDownloadLoading(false);
     }
   };
 
@@ -384,7 +419,7 @@ export default function VideoDetailPage() {
       </header>
 
       <video
-        src={video.url}
+        src={playbackUrl}
         className="absolute inset-0 h-full w-full object-cover"
         autoPlay
         loop
@@ -476,11 +511,16 @@ export default function VideoDetailPage() {
           <button
             type="button"
             onClick={() => void handleDownload()}
-            className="flex flex-col items-center gap-1"
+            disabled={downloadLoading}
+            className="flex flex-col items-center gap-1 disabled:opacity-60"
             aria-label="Télécharger la vidéo"
           >
             <div className="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-white">
-              <Download size={22} className="text-gray-900" />
+              {downloadLoading ? (
+                <Loader2 size={22} className="animate-spin text-gray-900" />
+              ) : (
+                <Download size={22} className="text-gray-900" />
+              )}
             </div>
             <span className="text-xs font-semibold text-white">
               Télécharger
@@ -531,7 +571,7 @@ export default function VideoDetailPage() {
         <CommentsSheet
           videoId={video.id}
           onCommentAdded={() => {
-            setCommentCount((count) => count + 1);
+            void loadCommentCount();
           }}
           onClose={() => {
             setShowComments(false);
