@@ -46,6 +46,10 @@ interface HashtagInfo {
   usage_count: number;
 }
 
+function getVideoPlaybackUrl(videoId: string): string {
+  return `/api/videos/${encodeURIComponent(videoId)}`;
+}
+
 export default function HashtagPage() {
   const params = useParams<{ tag: string }>();
   const router = useRouter();
@@ -178,6 +182,7 @@ export default function HashtagPage() {
       setVideos(
         videoRows.map((video) => ({
           ...video,
+          url: getVideoPlaybackUrl(video.id),
           profile: profileMap[video.user_id] || null,
         }))
       );
