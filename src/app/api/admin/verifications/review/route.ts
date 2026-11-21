@@ -6,7 +6,6 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    // Vérifier que la personne connectée est administrateur
     const auth = await requireAdmin();
 
     if (!auth.ok) {
@@ -16,23 +15,29 @@ export async function POST(request: Request) {
       );
     }
 
-    // Lire les informations envoyées par l'interface
     const body = await request.json();
 
     const requestId =
-      typeof body.requestId === "string" ? body.requestId : "";
+      typeof body.requestId === "string"
+        ? body.requestId.trim()
+        : "";
 
     const decision =
-      typeof body.decision === "string" ? body.decision : "";
+      typeof body.decision === "string"
+        ? body.decision.trim()
+        : "";
 
     const adminNote =
       typeof body.adminNote === "string"
         ? body.adminNote.trim()
-        : null;
+        : "";
 
-    if (!requestId) {
+    const UUID_PATTERN =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    if (!UUID_PATTERN.test(requestId)) {
       return NextResponse.json(
-        { error: "Identifiant de demande manquant." },
+        { error: "Identifiant de demande invalide." },
         { status: 400 }
       );
     }
@@ -44,20 +49,20 @@ export async function POST(request: Request) {
       );
     }
 
-    if (adminNote && adminNote.length > 1000) {
+    if (adminNote.length > 1000) {
       return NextResponse.json(
         { error: "La note ne doit pas dépasser 1000 caractères." },
         { status: 400 }
       );
     }
 
-    // Exécuter la fonction SQL avec le client administrateur
     const { data, error } = await auth.adminClient.rpc(
       "review_verification_request",
       {
         p_request_id: requestId,
         p_decision: decision,
         p_admin_note: adminNote || null,
+        p_admin_user_id: auth.user.id,
       }
     );
 
@@ -80,8 +85,8 @@ export async function POST(request: Request) {
         result: data,
         message:
           decision === "approved"
-            ? "Certification approuvée."
-            : "Demande de certification refusée.",
+            ? "Certification approuvée et journalisée."
+            : "Demande refusée et décision journalisée.",
       },
       {
         headers: {
