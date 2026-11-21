@@ -17,7 +17,6 @@ import {
   Copy,
   Check,
   Clock,
-  Bitcoin,
   CircleDollarSign,
   QrCode,
   CheckCircle2,
@@ -153,6 +152,69 @@ export default function WalletPage() {
         if (walletError) throw walletError;
         if (packError) throw packError;
 
+        // Restaurer le dernier paiement encore actif.
+        const {
+          data: pendingPayment,
+          error: pendingPaymentError,
+        } = await supabase
+          .from("crypto_transactions")
+          .select(
+            "id,merchant_order_id,provider_payment_id,pay_currency,pay_amount,payment_address,expires_at,price_amount_xof,coins_to_credit,status,provider_status,actually_paid,confirmed_at"
+          )
+          .eq("user_id", user.id)
+          .in("status", [
+            "waiting",
+            "confirming",
+            "confirmed",
+            "sending",
+            "partially_paid",
+          ])
+          .not("payment_address", "is", null)
+          .not("pay_amount", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (pendingPaymentError) {
+          console.warn(
+            "Impossible de restaurer le paiement en cours :",
+            pendingPaymentError
+          );
+        } else if (
+          pendingPayment?.payment_address &&
+          pendingPayment.pay_amount != null
+        ) {
+          setActivePayment({
+            cryptoTransactionId: pendingPayment.id,
+            merchantOrderId: pendingPayment.merchant_order_id,
+            paymentId: pendingPayment.provider_payment_id ?? "",
+            payCurrency: pendingPayment.pay_currency,
+            payAmount: String(pendingPayment.pay_amount),
+            payAddress: pendingPayment.payment_address,
+            expiration: pendingPayment.expires_at,
+            priceXof: Number(
+              pendingPayment.price_amount_xof ?? 0
+            ),
+            coinsToCredit: Number(
+              pendingPayment.coins_to_credit ?? 0
+            ),
+            paymentStatus: pendingPayment.status,
+          });
+
+          setPaymentStatus({
+            id: pendingPayment.id,
+            status: pendingPayment.status,
+            provider_status: pendingPayment.provider_status,
+            actually_paid:
+              pendingPayment.actually_paid == null
+                ? null
+                : Number(pendingPayment.actually_paid),
+            pay_amount: Number(pendingPayment.pay_amount),
+            pay_currency: pendingPayment.pay_currency,
+            confirmed_at: pendingPayment.confirmed_at,
+          });
+        }
+
         setBalance(Number(wallet?.coins_balance ?? 0));
 
         setPacks(
@@ -262,7 +324,11 @@ export default function WalletPage() {
 
   useEffect(() => {
     if (!activePayment?.cryptoTransactionId) return;
-    if (paymentStatus && TERMINAL_STATUSES.includes(paymentStatus.status)) {
+
+    if (
+      paymentStatus &&
+      TERMINAL_STATUSES.includes(paymentStatus.status)
+    ) {
       return;
     }
 
@@ -277,7 +343,9 @@ export default function WalletPage() {
 
   const startCheckout = async (pack: CoinPack) => {
     if (!selectedCurrency) {
-      setCryptoError("Sélectionne une cryptomonnaie avant de continuer.");
+      setCryptoError(
+        "Sélectionne une cryptomonnaie avant de continuer."
+      );
       return;
     }
 
@@ -336,7 +404,8 @@ export default function WalletPage() {
         expiration: data.expiration ?? null,
         priceXof: Number(data.priceXof ?? pack.price_fcfa),
         coinsToCredit: Number(
-          data.coinsToCredit ?? pack.coins + (pack.bonus ?? 0)
+          data.coinsToCredit ??
+            pack.coins + (pack.bonus ?? 0)
         ),
         paymentStatus: data.paymentStatus ?? "waiting",
       });
@@ -355,7 +424,10 @@ export default function WalletPage() {
         "Ta demande de paiement a été créée. Envoie exactement le montant indiqué à l'adresse affichée."
       );
     } catch (err) {
-      console.error("Erreur création paiement crypto :", err);
+      console.error(
+        "Erreur création paiement crypto :",
+        err
+      );
 
       setCryptoError(
         err instanceof Error
@@ -371,7 +443,10 @@ export default function WalletPage() {
     if (!activePayment?.payAddress) return;
 
     try {
-      await navigator.clipboard.writeText(activePayment.payAddress);
+      await navigator.clipboard.writeText(
+        activePayment.payAddress
+      );
+
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2500);
     } catch {
@@ -395,7 +470,12 @@ export default function WalletPage() {
     "waiting";
 
   const isFinished = currentStatus === "finished";
-  const isFailed = ["failed", "expired", "refunded"].includes(currentStatus);
+
+  const isFailed = [
+    "failed",
+    "expired",
+    "refunded",
+  ].includes(currentStatus);
 
   if (loading) {
     return (
@@ -462,7 +542,10 @@ export default function WalletPage() {
           </p>
 
           <div className="relative mt-5 flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2">
-            <ShieldCheck size={16} className="shrink-0 text-green-200" />
+            <ShieldCheck
+              size={16}
+              className="shrink-0 text-green-200"
+            />
             <p className="text-xs text-white/90">
               Ton solde est protégé par une confirmation côté serveur.
             </p>
@@ -473,9 +556,14 @@ export default function WalletPage() {
       {error && (
         <div className="mx-6 mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+
           <div className="min-w-0 flex-1">
-            <p className="font-semibold">Erreur de chargement</p>
+            <p className="font-semibold">
+              Erreur de chargement
+            </p>
+
             <p className="mt-1 break-words">{error}</p>
+
             <button
               type="button"
               onClick={() => void loadWallet()}
@@ -487,204 +575,224 @@ export default function WalletPage() {
         </div>
       )}
 
+      {notice && (
+        <div className="mx-6 mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          {notice}
+        </div>
+      )}
+
       {!activePayment ? (
-        <>
-          <section className="px-6">
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-moshi-text">
-                Recharger mes coins
-              </h2>
-              <p className="mt-1 text-xs text-gray-400">
-                Choisis un pack et règle avec ta cryptomonnaie.
-              </p>
+        <section className="px-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-moshi-text">
+              Recharger mes coins
+            </h2>
+
+            <p className="mt-1 text-xs text-gray-400">
+              Choisis un pack et règle avec ta cryptomonnaie.
+            </p>
+          </div>
+
+          <div className="mb-5 rounded-2xl border border-gray-100 bg-white p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <CircleDollarSign className="h-5 w-5 text-moshi-purple" />
+
+              <h3 className="text-sm font-bold text-gray-800">
+                Moyen de paiement
+              </h3>
             </div>
 
-            <div className="mb-5 rounded-2xl border border-gray-100 bg-white p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <CircleDollarSign className="h-5 w-5 text-moshi-purple" />
-                <h3 className="text-sm font-bold text-gray-800">
-                  Moyen de paiement
-                </h3>
+            {loadingCurrencies ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Chargement des cryptomonnaies...
               </div>
-
-              {loadingCurrencies ? (
-                <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Chargement des cryptomonnaies...
-                </div>
-              ) : currencies.length > 0 ? (
-                <div className="grid grid-cols-2 gap-2">
-                  {currencies.map((currency) => {
-                    const active =
-                      selectedCurrency === currency.code;
-
-                    return (
-                      <button
-                        key={currency.code}
-                        type="button"
-                        onClick={() => setSelectedCurrency(currency.code)}
-                        className={`rounded-xl border p-3 text-left transition ${
-                          active
-                            ? "border-moshi-purple bg-purple-50"
-                            : "border-gray-200 bg-white hover:border-gray-300"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-extrabold text-gray-800">
-                            {currency.ticker}
-                          </span>
-                          {active && (
-                            <CheckCircle2
-                              size={17}
-                              className="text-moshi-purple"
-                            />
-                          )}
-                        </div>
-                        <p className="mt-1 text-[10px] text-gray-500">
-                          {currency.network}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-500">
-                  Les moyens crypto ne sont pas disponibles pour le moment.
-                </p>
-              )}
-
-              {cryptoError && (
-                <p className="mt-3 break-words text-xs text-red-600">
-                  {cryptoError}
-                </p>
-              )}
-            </div>
-
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-bold text-moshi-text">
-                  Choisis ton pack
-                </h3>
-                <p className="mt-1 text-xs text-gray-400">
-                  Le montant crypto sera calculé au moment du paiement.
-                </p>
-              </div>
-              <span className="flex shrink-0 items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-500">
-                <LockKeyhole size={12} />
-                Sécurisé
-              </span>
-            </div>
-
-            {packs.length === 0 ? (
-              <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center">
-                <Coins className="mx-auto mb-3 h-9 w-9 text-gray-300" />
-                <p className="font-semibold text-gray-700">
-                  Aucun pack disponible
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void loadWallet(true)}
-                  className="mt-4 rounded-xl bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700"
-                >
-                  Actualiser
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {packs.map((pack) => {
-                  const bonus = Number(pack.bonus ?? 0);
-                  const totalCoins = pack.coins + bonus;
-                  const pricePerCoin =
-                    totalCoins > 0 ? pack.price_fcfa / totalCoins : 0;
+            ) : currencies.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {currencies.map((currency) => {
+                  const active =
+                    selectedCurrency === currency.code;
 
                   return (
-                    <article
-                      key={pack.id}
-                      className={`relative flex items-center justify-between gap-3 rounded-2xl border-2 bg-white p-4 shadow-sm ${
-                        pack.is_popular
-                          ? "border-moshi-purple"
-                          : "border-transparent"
+                    <button
+                      key={currency.code}
+                      type="button"
+                      onClick={() =>
+                        setSelectedCurrency(currency.code)
+                      }
+                      className={`rounded-xl border p-3 text-left transition ${
+                        active
+                          ? "border-moshi-purple bg-purple-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
                       }`}
                     >
-                      {pack.is_popular && (
-                        <span className="absolute -top-2.5 left-4 flex items-center gap-1 rounded-full bg-moshi-purple px-2 py-0.5 text-[9px] font-bold text-white">
-                          <Sparkles size={10} />
-                          MEILLEUR CHOIX
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-extrabold text-gray-800">
+                          {currency.ticker}
                         </span>
-                      )}
 
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${
-                            pack.is_popular
-                              ? "moshi-gradient text-white"
-                              : "bg-yellow-50 text-yellow-600"
-                          }`}
-                        >
-                          <Coins size={28} />
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="text-xl font-extrabold text-moshi-text">
-                            {formatMoney(totalCoins)}
-                            <span className="ml-1 text-xs font-semibold text-gray-400">
-                              coins
-                            </span>
-                          </p>
-
-                          {bonus > 0 && (
-                            <p className="text-[10px] font-bold text-green-500">
-                              +{formatMoney(bonus)} offerts
-                            </p>
-                          )}
-
-                          <p className="mt-1 text-[10px] text-gray-400">
-                            {pricePerCoin.toFixed(2)} FCFA / coin
-                          </p>
-                        </div>
+                        {active && (
+                          <CheckCircle2
+                            size={17}
+                            className="text-moshi-purple"
+                          />
+                        )}
                       </div>
 
-                      <div className="shrink-0 text-right">
-                        <p className="mb-2 text-sm font-extrabold text-moshi-text">
-                          {formatMoney(pack.price_fcfa)} FCFA
-                        </p>
-
-                        <button
-                          type="button"
-                          onClick={() => void startCheckout(pack)}
-                          disabled={
-                            creatingPayment ||
-                            !selectedCurrency ||
-                            loadingCurrencies
-                          }
-                          className={`rounded-xl px-4 py-2.5 text-xs font-bold transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${
-                            pack.is_popular
-                              ? "moshi-gradient text-white shadow-md"
-                              : "bg-gray-100 text-moshi-text hover:bg-gray-200"
-                          }`}
-                        >
-                          {creatingPayment && selectedPack?.id === pack.id ? (
-                            <Loader2
-                              size={15}
-                              className="animate-spin"
-                            />
-                          ) : (
-                            "Acheter"
-                          )}
-                        </button>
-                      </div>
-                    </article>
+                      <p className="mt-1 text-[10px] text-gray-500">
+                        {currency.network}
+                      </p>
+                    </button>
                   );
                 })}
               </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                Les moyens crypto ne sont pas disponibles pour le moment.
+              </p>
             )}
-          </section>
-        </>
+
+            {cryptoError && (
+              <p className="mt-3 break-words text-xs text-red-600">
+                {cryptoError}
+              </p>
+            )}
+          </div>
+
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-moshi-text">
+                Choisis ton pack
+              </h3>
+
+              <p className="mt-1 text-xs text-gray-400">
+                Le montant crypto sera calculé au moment du paiement.
+              </p>
+            </div>
+
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-500">
+              <LockKeyhole size={12} />
+              Sécurisé
+            </span>
+          </div>
+
+          {packs.length === 0 ? (
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center">
+              <Coins className="mx-auto mb-3 h-9 w-9 text-gray-300" />
+
+              <p className="font-semibold text-gray-700">
+                Aucun pack disponible
+              </p>
+
+              <button
+                type="button"
+                onClick={() => void loadWallet(true)}
+                className="mt-4 rounded-xl bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700"
+              >
+                Actualiser
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {packs.map((pack) => {
+                const bonus = Number(pack.bonus ?? 0);
+                const totalCoins = pack.coins + bonus;
+
+                const pricePerCoin =
+                  totalCoins > 0
+                    ? pack.price_fcfa / totalCoins
+                    : 0;
+
+                return (
+                  <article
+                    key={pack.id}
+                    className={`relative flex items-center justify-between gap-3 rounded-2xl border-2 bg-white p-4 shadow-sm ${
+                      pack.is_popular
+                        ? "border-moshi-purple"
+                        : "border-transparent"
+                    }`}
+                  >
+                    {pack.is_popular && (
+                      <span className="absolute -top-2.5 left-4 flex items-center gap-1 rounded-full bg-moshi-purple px-2 py-0.5 text-[9px] font-bold text-white">
+                        <Sparkles size={10} />
+                        MEILLEUR CHOIX
+                      </span>
+                    )}
+
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${
+                          pack.is_popular
+                            ? "moshi-gradient text-white"
+                            : "bg-yellow-50 text-yellow-600"
+                        }`}
+                      >
+                        <Coins size={28} />
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-xl font-extrabold text-moshi-text">
+                          {formatMoney(totalCoins)}
+
+                          <span className="ml-1 text-xs font-semibold text-gray-400">
+                            coins
+                          </span>
+                        </p>
+
+                        {bonus > 0 && (
+                          <p className="text-[10px] font-bold text-green-500">
+                            +{formatMoney(bonus)} offerts
+                          </p>
+                        )}
+
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          {pricePerCoin.toFixed(2)} FCFA / coin
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <p className="mb-2 text-sm font-extrabold text-moshi-text">
+                        {formatMoney(pack.price_fcfa)} FCFA
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => void startCheckout(pack)}
+                        disabled={
+                          creatingPayment ||
+                          !selectedCurrency ||
+                          loadingCurrencies
+                        }
+                        className={`rounded-xl px-4 py-2.5 text-xs font-bold transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${
+                          pack.is_popular
+                            ? "moshi-gradient text-white shadow-md"
+                            : "bg-gray-100 text-moshi-text hover:bg-gray-200"
+                        }`}
+                      >
+                        {creatingPayment &&
+                        selectedPack?.id === pack.id ? (
+                          <Loader2
+                            size={15}
+                            className="animate-spin"
+                          />
+                        ) : (
+                          "Acheter"
+                        )}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       ) : (
         <section className="mx-6 space-y-4">
           <div className="rounded-2xl border border-gray-100 bg-white p-5">
             <div className="mb-4 flex items-center gap-2">
               <QrCode className="h-6 w-6 text-moshi-purple" />
+
               <h2 className="text-lg font-bold text-gray-900">
                 Effectuer le paiement
               </h2>
@@ -694,15 +802,19 @@ export default function WalletPage() {
               <p className="text-xs text-purple-700">
                 Montant à envoyer
               </p>
+
               <p className="mt-1 break-all text-2xl font-extrabold text-purple-900">
                 {activePayment.payAmount}{" "}
                 {activePayment.payCurrency.toUpperCase()}
               </p>
+
               <p className="mt-2 text-xs text-purple-700">
                 Réseau :{" "}
                 {currencies.find(
-                  (item) => item.code === activePayment.payCurrency
-                )?.network || activePayment.payCurrency.toUpperCase()}
+                  (item) =>
+                    item.code === activePayment.payCurrency
+                )?.network ||
+                  activePayment.payCurrency.toUpperCase()}
               </p>
             </div>
 
@@ -720,8 +832,15 @@ export default function WalletPage() {
                 onClick={() => void copyAddress()}
                 className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white transition hover:bg-gray-800"
               >
-                {copied ? <Check size={17} /> : <Copy size={17} />}
-                {copied ? "Adresse copiée" : "Copier l'adresse"}
+                {copied ? (
+                  <Check size={17} />
+                ) : (
+                  <Copy size={17} />
+                )}
+
+                {copied
+                  ? "Adresse copiée"
+                  : "Copier l'adresse"}
               </button>
             </div>
 
@@ -736,8 +855,11 @@ export default function WalletPage() {
             {activePayment.expiration && (
               <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
                 <Clock size={15} />
+
                 Expiration estimée :{" "}
-                {new Date(activePayment.expiration).toLocaleString("fr-FR")}
+                {new Date(
+                  activePayment.expiration
+                ).toLocaleString("fr-FR")}
               </div>
             )}
 
@@ -745,6 +867,7 @@ export default function WalletPage() {
               <p className="text-xs text-gray-500">
                 Référence Moshi
               </p>
+
               <p className="mt-1 break-all text-xs font-semibold text-gray-800">
                 {activePayment.merchantOrderId}
               </p>
@@ -765,6 +888,7 @@ export default function WalletPage() {
                 <p className="text-sm font-bold text-gray-800">
                   Suivi du paiement
                 </p>
+
                 <p className="mt-1 text-xs text-gray-500">
                   {STATUS_LABELS[currentStatus] || currentStatus}
                 </p>
@@ -773,7 +897,8 @@ export default function WalletPage() {
 
             {paymentStatus?.actually_paid != null && (
               <p className="mt-3 text-xs text-gray-500">
-                Montant détecté : {paymentStatus.actually_paid}{" "}
+                Montant détecté :{" "}
+                {paymentStatus.actually_paid}{" "}
                 {activePayment.payCurrency.toUpperCase()}
               </p>
             )}
@@ -783,6 +908,7 @@ export default function WalletPage() {
                 <p className="text-sm font-bold text-green-800">
                   Paiement confirmé !
                 </p>
+
                 <p className="mt-1 text-xs text-green-700">
                   {formatMoney(activePayment.coinsToCredit)} coins ont été
                   attribués à ton portefeuille.
@@ -833,10 +959,12 @@ export default function WalletPage() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-600">
             <ShieldCheck size={21} />
           </div>
+
           <div>
             <p className="text-sm font-bold text-gray-800">
               Portefeuille sécurisé
             </p>
+
             <p className="mt-1 text-xs leading-relaxed text-gray-400">
               Les coins sont crédités uniquement après confirmation du
               paiement par le serveur et le prestataire.
