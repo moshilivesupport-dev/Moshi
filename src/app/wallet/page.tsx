@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -43,8 +43,8 @@ interface CryptoPayment {
   merchantOrderId: string;
   paymentId: string;
   payCurrency: string;
-  payAmount: string;
-  payAddress: string;
+  payAmount: string | null;
+  payAddress: string | null;
   expiration: string | null;
   priceXof: number;
   coinsToCredit: number;
@@ -104,11 +104,18 @@ export default function WalletPage() {
   const [loadingCurrencies, setLoadingCurrencies] = useState(true);
   const [creatingPayment, setCreatingPayment] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
 
   const [error, setError] = useState("");
   const [cryptoError, setCryptoError] = useState("");
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
+
+  const reconcileLock = useRef(false);
+
+  // --------------------------------------------------
+  // CHARGEMENT DU PORTEFEUILLE ET RESTAURATION PAIEMENT
+  // --------------------------------------------------
 
   const loadWallet = useCallback(
     async (isRefresh = false) => {
@@ -152,7 +159,8 @@ export default function WalletPage() {
         if (walletError) throw walletError;
         if (packError) throw packError;
 
-        // Restaurer le dernier paiement encore actif.
+        // Restaurer toute réservation active,
+        // même si NOWPayments n'a pas encore renvoyé l'adresse.
         const {
           data: pendingPayment,
           error: pendingPaymentError,
@@ -169,8 +177,6 @@ export default function WalletPage() {
             "sending",
             "partially_paid",
           ])
-          .not("payment_address", "is", null)
-          .not("pay_amount", "is", null)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -180,17 +186,17 @@ export default function WalletPage() {
             "Impossible de restaurer le paiement en cours :",
             pendingPaymentError
           );
-        } else if (
-          pendingPayment?.payment_address &&
-          pendingPayment.pay_amount != null
-        ) {
+        } else if (pendingPayment) {
           setActivePayment({
             cryptoTransactionId: pendingPayment.id,
             merchantOrderId: pendingPayment.merchant_order_id,
             paymentId: pendingPayment.provider_payment_id ?? "",
             payCurrency: pendingPayment.pay_currency,
-            payAmount: String(pendingPayment.pay_amount),
-            payAddress: pendingPayment.payment_address,
+            payAmount:
+              pendingPayment.pay_amount == null
+                ? null
+                : String(pendingPayment.pay_amount),
+            payAddress: pendingPayment.payment_address ?? null,
             expiration: pendingPayment.expires_at,
             priceXof: Number(
               pendingPayment.price_amount_xof ?? 0
@@ -209,7 +215,10 @@ export default function WalletPage() {
               pendingPayment.actually_paid == null
                 ? null
                 : Number(pendingPayment.actually_paid),
-            pay_amount: Number(pendingPayment.pay_amount),
+            pay_amount:
+              pendingPayment.pay_amount == null
+                ? null
+                : Number(pendingPayment.pay_amount),
             pay_currency: pendingPayment.pay_currency,
             confirmed_at: pendingPayment.confirmed_at,
           });
@@ -241,6 +250,10 @@ export default function WalletPage() {
     },
     [supabase, router]
   );
+
+  // --------------------------------------------------
+  // CHARGEMENT DES CRYPTOMONNAIES
+  // --------------------------------------------------
 
   const loadCurrencies = useCallback(async () => {
     setLoadingCurrencies(true);
@@ -291,39 +304,118 @@ export default function WalletPage() {
     }
   }, [supabase]);
 
+  // --------------------------------------------------
+  // RÉCONCILIATION SERVEUR DU PAIEMENT
+  // --------------------------------------------------
+
+  const transactionId =
+    activePayment?.cryptoTransactionId ?? null;
+
   const refreshPaymentStatus = useCallback(async () => {
-    if (!activePayment?.cryptoTransactionId) return;
+    if (!transactionId || reconcileLock.current) return;
 
-    const { data, error: queryError } = await supabase
-      .from("crypto_transactions")
-      .select(
-        "id,status,provider_status,actually_paid,pay_amount,pay_currency,confirmed_at"
-      )
-      .eq("id", activePayment.cryptoTransactionId)
-      .maybeSingle();
+    reconcileLock.current = true;
+    setReconciling(true);
 
-    if (queryError) {
-      console.error("Erreur statut paiement :", queryError);
-      return;
+    try {
+      const { data, error: functionError } =
+        await supabase.functions.invoke("crypto-reconcile", {
+          body: {
+            cryptoTransactionId: transactionId,
+          },
+        });
+
+      if (functionError) {
+        throw new Error(
+          data?.error ||
+            functionError.message ||
+            "Vérification indisponible."
+        );
+      }
+
+      if (!data?.transaction) {
+        if (data?.error) {
+          throw new Error(data.error);
+        }
+        return;
+      }
+
+      const tx = data.transaction;
+
+      setPaymentStatus({
+        id: tx.id,
+        status: tx.status,
+        provider_status: tx.provider_status ?? null,
+        actually_paid:
+          tx.actually_paid == null
+            ? null
+            : Number(tx.actually_paid),
+        pay_amount:
+          tx.pay_amount == null
+            ? null
+            : Number(tx.pay_amount),
+        pay_currency: tx.pay_currency,
+        confirmed_at: tx.confirmed_at ?? null,
+      });
+
+      // Mettre à jour les informations de paiement
+      // sans perdre les données déjà affichées.
+      setActivePayment((current) => {
+        if (
+          !current ||
+          current.cryptoTransactionId !== transactionId
+        ) {
+          return current;
+        }
+
+        return {
+          ...current,
+          merchantOrderId:
+            tx.merchant_order_id ?? current.merchantOrderId,
+          paymentId:
+            tx.provider_payment_id ?? current.paymentId,
+          payAmount:
+            tx.pay_amount == null
+              ? current.payAmount
+              : String(tx.pay_amount),
+          payAddress:
+            tx.payment_address ?? current.payAddress,
+          expiration:
+            tx.expires_at ?? current.expiration,
+          paymentStatus:
+            tx.status ?? current.paymentStatus,
+        };
+      });
+
+      if (tx.status === "finished") {
+        await loadWallet(true);
+      }
+    } catch (err) {
+      console.error(
+        "Erreur réconciliation paiement :",
+        err
+      );
+    } finally {
+      reconcileLock.current = false;
+      setReconciling(false);
     }
+  }, [transactionId, supabase, loadWallet]);
 
-    if (!data) return;
-
-    const status = data as PaymentStatus;
-    setPaymentStatus(status);
-
-    if (status.status === "finished") {
-      await loadWallet(true);
-    }
-  }, [activePayment, supabase, loadWallet]);
+  // --------------------------------------------------
+  // INITIALISATION
+  // --------------------------------------------------
 
   useEffect(() => {
     void loadWallet();
     void loadCurrencies();
   }, [loadWallet, loadCurrencies]);
 
+  // --------------------------------------------------
+  // VÉRIFICATION AUTOMATIQUE TOUTES LES 10 SECONDES
+  // --------------------------------------------------
+
   useEffect(() => {
-    if (!activePayment?.cryptoTransactionId) return;
+    if (!transactionId) return;
 
     if (
       paymentStatus &&
@@ -336,10 +428,18 @@ export default function WalletPage() {
 
     const interval = window.setInterval(() => {
       void refreshPaymentStatus();
-    }, 8000);
+    }, 10000);
 
     return () => window.clearInterval(interval);
-  }, [activePayment, paymentStatus, refreshPaymentStatus]);
+  }, [
+    transactionId,
+    paymentStatus?.status,
+    refreshPaymentStatus,
+  ]);
+
+  // --------------------------------------------------
+  // CRÉATION DU PAIEMENT
+  // --------------------------------------------------
 
   const startCheckout = async (pack: CoinPack) => {
     if (!selectedCurrency) {
@@ -353,8 +453,6 @@ export default function WalletPage() {
     setCreatingPayment(true);
     setCryptoError("");
     setNotice("");
-    setActivePayment(null);
-    setPaymentStatus(null);
 
     try {
       const {
@@ -385,24 +483,28 @@ export default function WalletPage() {
 
       if (
         !data?.cryptoTransactionId ||
-        !data?.payAddress ||
-        !data?.payAmount ||
         !data?.payCurrency
       ) {
         throw new Error(
-          data?.error || "Réponse de paiement incomplète."
+          data?.error ||
+            "Réponse de paiement incomplète."
         );
       }
 
       setActivePayment({
         cryptoTransactionId: data.cryptoTransactionId,
         merchantOrderId: data.merchantOrderId,
-        paymentId: data.paymentId,
+        paymentId: data.paymentId ?? "",
         payCurrency: data.payCurrency,
-        payAmount: String(data.payAmount),
-        payAddress: data.payAddress,
+        payAmount:
+          data.payAmount == null
+            ? null
+            : String(data.payAmount),
+        payAddress: data.payAddress ?? null,
         expiration: data.expiration ?? null,
-        priceXof: Number(data.priceXof ?? pack.price_fcfa),
+        priceXof: Number(
+          data.priceXof ?? pack.price_fcfa
+        ),
         coinsToCredit: Number(
           data.coinsToCredit ??
             pack.coins + (pack.bonus ?? 0)
@@ -415,13 +517,18 @@ export default function WalletPage() {
         status: data.paymentStatus ?? "waiting",
         provider_status: data.paymentStatus ?? "waiting",
         actually_paid: null,
-        pay_amount: Number(data.payAmount),
+        pay_amount:
+          data.payAmount == null
+            ? null
+            : Number(data.payAmount),
         pay_currency: data.payCurrency,
         confirmed_at: null,
       });
 
       setNotice(
-        "Ta demande de paiement a été créée. Envoie exactement le montant indiqué à l'adresse affichée."
+        data.payAddress && data.payAmount
+          ? "Ta demande de paiement a été créée. Envoie exactement le montant indiqué à l'adresse affichée."
+          : "Ta demande est réservée. Attends la confirmation de création de l'adresse de paiement avant tout transfert."
       );
     } catch (err) {
       console.error(
@@ -434,10 +541,18 @@ export default function WalletPage() {
           ? err.message
           : "Impossible de créer le paiement crypto."
       );
+
+      // Une réservation peut déjà exister côté serveur.
+      // On recharge le portefeuille sans relancer un paiement.
+      await loadWallet(true);
     } finally {
       setCreatingPayment(false);
     }
   };
+
+  // --------------------------------------------------
+  // COPIE DE L'ADRESSE
+  // --------------------------------------------------
 
   const copyAddress = async () => {
     if (!activePayment?.payAddress) return;
@@ -455,6 +570,10 @@ export default function WalletPage() {
       );
     }
   };
+
+  // --------------------------------------------------
+  // FERMETURE DE LA VUE PAIEMENT
+  // --------------------------------------------------
 
   const cancelPaymentView = () => {
     setActivePayment(null);
@@ -477,6 +596,10 @@ export default function WalletPage() {
     "refunded",
   ].includes(currentStatus);
 
+  // --------------------------------------------------
+  // CHARGEMENT
+  // --------------------------------------------------
+
   if (loading) {
     return (
       <main className="flex min-h-[100dvh] items-center justify-center bg-moshi-bg">
@@ -484,6 +607,10 @@ export default function WalletPage() {
       </main>
     );
   }
+
+  // --------------------------------------------------
+  // INTERFACE
+  // --------------------------------------------------
 
   return (
     <main className="min-h-[100dvh] bg-moshi-bg pb-10">
@@ -514,6 +641,8 @@ export default function WalletPage() {
           />
         </button>
       </header>
+
+      {/* SOLDE */}
 
       <div className="p-6">
         <section className="moshi-gradient relative overflow-hidden rounded-3xl p-6 text-white shadow-xl shadow-purple-200/50">
@@ -553,6 +682,8 @@ export default function WalletPage() {
         </section>
       </div>
 
+      {/* ERREURS */}
+
       {error && (
         <div className="mx-6 mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
@@ -581,6 +712,8 @@ export default function WalletPage() {
         </div>
       )}
 
+      {/* ACHAT DES COINS */}
+
       {!activePayment ? (
         <section className="px-6">
           <div className="mb-4">
@@ -592,6 +725,8 @@ export default function WalletPage() {
               Choisis un pack et règle avec ta cryptomonnaie.
             </p>
           </div>
+
+          {/* CRYPTOMONNAIES */}
 
           <div className="mb-5 rounded-2xl border border-gray-100 bg-white p-4">
             <div className="mb-3 flex items-center gap-2">
@@ -658,6 +793,8 @@ export default function WalletPage() {
               </p>
             )}
           </div>
+
+          {/* PACKS */}
 
           <div className="mb-4 flex items-center justify-between gap-2">
             <div>
@@ -788,6 +925,7 @@ export default function WalletPage() {
           )}
         </section>
       ) : (
+        /* SUIVI DU PAIEMENT */
         <section className="mx-6 space-y-4">
           <div className="rounded-2xl border border-gray-100 bg-white p-5">
             <div className="mb-4 flex items-center gap-2">
@@ -798,68 +936,87 @@ export default function WalletPage() {
               </h2>
             </div>
 
-            <div className="rounded-xl bg-purple-50 p-4">
-              <p className="text-xs text-purple-700">
-                Montant à envoyer
-              </p>
+            {activePayment.payAmount && activePayment.payAddress ? (
+              <>
+                <div className="rounded-xl bg-purple-50 p-4">
+                  <p className="text-xs text-purple-700">
+                    Montant à envoyer
+                  </p>
 
-              <p className="mt-1 break-all text-2xl font-extrabold text-purple-900">
-                {activePayment.payAmount}{" "}
-                {activePayment.payCurrency.toUpperCase()}
-              </p>
+                  <p className="mt-1 break-all text-2xl font-extrabold text-purple-900">
+                    {activePayment.payAmount}{" "}
+                    {activePayment.payCurrency.toUpperCase()}
+                  </p>
 
-              <p className="mt-2 text-xs text-purple-700">
-                Réseau :{" "}
-                {currencies.find(
-                  (item) =>
-                    item.code === activePayment.payCurrency
-                )?.network ||
-                  activePayment.payCurrency.toUpperCase()}
-              </p>
-            </div>
+                  <p className="mt-2 text-xs text-purple-700">
+                    Réseau :{" "}
+                    {currencies.find(
+                      (item) =>
+                        item.code === activePayment.payCurrency
+                    )?.network ||
+                      activePayment.payCurrency.toUpperCase()}
+                  </p>
+                </div>
 
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-semibold text-gray-600">
-                Adresse de réception
-              </p>
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-semibold text-gray-600">
+                    Adresse de réception
+                  </p>
 
-              <div className="break-all rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-medium text-gray-800">
-                {activePayment.payAddress}
-              </div>
+                  <div className="break-all rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-medium text-gray-800">
+                    {activePayment.payAddress}
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => void copyAddress()}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white transition hover:bg-gray-800"
-              >
-                {copied ? (
-                  <Check size={17} />
-                ) : (
-                  <Copy size={17} />
+                  <button
+                    type="button"
+                    onClick={() => void copyAddress()}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white transition hover:bg-gray-800"
+                  >
+                    {copied ? (
+                      <Check size={17} />
+                    ) : (
+                      <Copy size={17} />
+                    )}
+
+                    {copied
+                      ? "Adresse copiée"
+                      : "Copier l'adresse"}
+                  </button>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-orange-100 bg-orange-50 p-3">
+                  <p className="text-xs leading-relaxed text-orange-800">
+                    Envoie uniquement cette cryptomonnaie sur le réseau indiqué.
+                    Un mauvais réseau ou une adresse incorrecte peut entraîner
+                    une perte définitive des fonds.
+                  </p>
+                </div>
+
+                {activePayment.expiration && (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                    <Clock size={15} />
+
+                    Expiration estimée :{" "}
+                    {new Date(
+                      activePayment.expiration
+                    ).toLocaleString("fr-FR")}
+                  </div>
                 )}
+              </>
+            ) : (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-center gap-2 text-amber-800">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <p className="text-sm font-bold">
+                    Préparation du paiement
+                  </p>
+                </div>
 
-                {copied
-                  ? "Adresse copiée"
-                  : "Copier l'adresse"}
-              </button>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-orange-100 bg-orange-50 p-3">
-              <p className="text-xs leading-relaxed text-orange-800">
-                Envoie uniquement cette cryptomonnaie sur le réseau indiqué.
-                Un mauvais réseau ou une adresse incorrecte peut entraîner
-                une perte définitive des fonds.
-              </p>
-            </div>
-
-            {activePayment.expiration && (
-              <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-                <Clock size={15} />
-
-                Expiration estimée :{" "}
-                {new Date(
-                  activePayment.expiration
-                ).toLocaleString("fr-FR")}
+                <p className="mt-2 text-xs leading-relaxed text-amber-800">
+                  La référence est réservée. Moshi attend la confirmation
+                  du prestataire avant d'afficher une adresse et un montant.
+                  Ne fais aucun transfert et ne crée pas une deuxième demande.
+                </p>
               </div>
             )}
 
@@ -873,6 +1030,8 @@ export default function WalletPage() {
               </p>
             </div>
           </div>
+
+          {/* ÉTAT DU PAIEMENT */}
 
           <div className="rounded-2xl border border-gray-100 bg-white p-5">
             <div className="flex items-center gap-3">
@@ -937,10 +1096,16 @@ export default function WalletPage() {
             <button
               type="button"
               onClick={() => void refreshPaymentStatus()}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gray-100 px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-200"
+              disabled={reconciling}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gray-100 px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-200 disabled:opacity-50"
             >
-              <RefreshCw size={16} />
-              Vérifier maintenant
+              <RefreshCw
+                size={16}
+                className={reconciling ? "animate-spin" : ""}
+              />
+              {reconciling
+                ? "Vérification..."
+                : "Vérifier maintenant"}
             </button>
           </div>
 
@@ -953,6 +1118,8 @@ export default function WalletPage() {
           </button>
         </section>
       )}
+
+      {/* SÉCURITÉ */}
 
       <section className="mx-6 mt-6 rounded-2xl border border-gray-100 bg-white p-4">
         <div className="flex items-center gap-3">
