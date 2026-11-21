@@ -15,7 +15,6 @@ import {
   Heart,
   MoreVertical,
   Trash2,
-  Video,
   BadgeCheck,
   Settings,
   MessageCircle,
@@ -64,6 +63,10 @@ function formatNumber(num: number): string {
   }
 
   return num.toString();
+}
+
+function getVideoPlaybackUrl(videoId: string): string {
+  return `/api/videos/${encodeURIComponent(videoId)}`;
 }
 
 export default function ProfileView({
@@ -206,7 +209,14 @@ export default function ProfileView({
           .filter((video): video is VideoData => Boolean(video));
       }
 
-      setVideos(loadedVideos);
+      // Toutes les vidéos du profil utilisent désormais la route serveur.
+      // On ne transmet plus directement les URL de stockage au lecteur.
+      const videosWithProtectedUrls = loadedVideos.map((video) => ({
+        ...video,
+        url: getVideoPlaybackUrl(video.id),
+      }));
+
+      setVideos(videosWithProtectedUrls);
     } catch (error) {
       console.error("Erreur chargement vidéos du profil :", error);
       setVideos([]);
