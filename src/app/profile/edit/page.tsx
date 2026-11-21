@@ -1,7 +1,12 @@
 
 "use client";
 
-import { useEffect, useState, useRef, type ChangeEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
@@ -11,14 +16,48 @@ import {
   Loader2,
   Globe,
   Link as LinkIcon,
-  ChevronRight,
   UserRound,
   Instagram,
   Video,
   Youtube,
   Facebook,
   Save,
+  CheckCircle2,
 } from "lucide-react";
+
+const COUNTRIES = [
+  "Togo",
+  "Bénin",
+  "Côte d'Ivoire",
+  "Ghana",
+  "Burkina Faso",
+  "Sénégal",
+  "Mali",
+  "Niger",
+  "Nigeria",
+  "Cameroun",
+  "Gabon",
+  "Congo",
+  "République démocratique du Congo",
+  "Guinée",
+  "Guinée-Bissau",
+  "Liberia",
+  "Sierra Leone",
+  "Gambie",
+  "Mauritanie",
+  "France",
+  "Belgique",
+  "Canada",
+  "États-Unis",
+  "Royaume-Uni",
+  "Allemagne",
+  "Espagne",
+  "Portugal",
+  "Maroc",
+  "Algérie",
+  "Tunisie",
+  "Afrique du Sud",
+];
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -28,8 +67,8 @@ export default function EditProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-
   const [userId, setUserId] = useState<string | null>(null);
+
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
@@ -40,6 +79,7 @@ export default function EditProfilePage() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [facebookUrl, setFacebookUrl] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -91,10 +131,11 @@ export default function EditProfilePage() {
         setTiktokUrl(data.tiktok_url || "");
         setYoutubeUrl(data.youtube_url || "");
         setFacebookUrl(data.facebook_url || "");
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Erreur inconnue";
-        if (active) alert("Impossible de charger le profil : " + message);
+      } catch (error) {
+        console.error("Chargement du profil :", error);
+        if (active) {
+          alert("Impossible de charger les informations du profil.");
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -107,12 +148,15 @@ export default function EditProfilePage() {
     };
   }, [supabase, router]);
 
-  async function handleAvatarUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function handleAvatarUpload(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
     if (!file || !userId) return;
 
-    if (!file.type.startsWith("image/")) {
-      alert("Choisis un fichier image.");
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      alert("Choisis une image JPG, PNG ou WebP.");
       return;
     }
 
@@ -124,42 +168,58 @@ export default function EditProfilePage() {
     setUploading(true);
 
     try {
-      const fileExt = file.name.split(".").pop() || "jpg";
-      const filePath = `${userId}/avatar.${fileExt}`;
+      const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const filePath = `${userId}/avatar.${extension}`;
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type,
+        });
 
       if (uploadError) throw uploadError;
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const { data } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
+      const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
 
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({ avatar_url: publicUrl })
+        .update({
+          avatar_url: publicUrl,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", userId);
 
       if (updateError) throw updateError;
 
-      setAvatarUrl(`${publicUrl}?t=${Date.now()}`);
-      alert("Photo de profil mise à jour.");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Erreur inconnue";
-      alert("Erreur photo : " + message);
+      setAvatarUrl(publicUrl);
+      setSuccess("Photo de profil mise à jour.");
+    } catch (error) {
+      console.error("Erreur photo :", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Impossible de modifier la photo."
+      );
     } finally {
       setUploading(false);
-      e.target.value = "";
+      event.target.value = "";
     }
   }
 
-  function normalizeUrl(value: string) {
+  function normalizeUrl(value: string): string | null {
     const trimmed = value.trim();
+
     if (!trimmed) return null;
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+    if (/^https?:\/\//i.test(trimmed)) {
+      return trimmed;
+    }
+
     return `https://${trimmed}`;
   }
 
@@ -171,23 +231,30 @@ export default function EditProfilePage() {
       .toLowerCase()
       .replace(/\s/g, "");
 
-    if (!normalizedUsername) {
-      alert("Le nom d'utilisateur est obligatoire.");
-      return;
-    }
-
-    if (normalizedUsername.length < 3) {
+    if (!normalizedUsername || normalizedUsername.length < 3) {
       alert("Le nom d'utilisateur doit contenir au moins 3 caractères.");
       return;
     }
 
+    if (!country.trim()) {
+      alert("Choisis ton pays.");
+      return;
+    }
+
+    if (bio.length > 150) {
+      alert("La biographie ne doit pas dépasser 150 caractères.");
+      return;
+    }
+
     setSaving(true);
+    setSuccess("");
 
     try {
       const profileData = {
         username: normalizedUsername,
         full_name: fullName.trim(),
-        bio: bio.slice(0, 150),
+        bio: bio.trim().slice(0, 150),
+        country,
         link_url: normalizeUrl(linkUrl),
         instagram_url: normalizeUrl(instagramUrl),
         tiktok_url: normalizeUrl(tiktokUrl),
@@ -203,13 +270,16 @@ export default function EditProfilePage() {
 
       if (error) throw error;
 
-      alert("Profil mis à jour !");
+      setSuccess("Ton profil a été mis à jour.");
       router.replace(`/profile/${userId}`);
       router.refresh();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Erreur inconnue";
-      alert("Erreur lors de l'enregistrement : " + message);
+    } catch (error) {
+      console.error("Erreur sauvegarde profil :", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Impossible d'enregistrer les modifications."
+      );
     } finally {
       setSaving(false);
     }
@@ -227,19 +297,19 @@ export default function EditProfilePage() {
   if (loading) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-moshi-bg">
-        <Loader2 className="h-10 w-10 animate-spin text-moshi-purple" />
+        <Loader2 className="h-8 w-8 animate-spin text-moshi-purple" />
       </div>
     );
   }
 
   return (
-    <main className="min-h-[100dvh] bg-moshi-bg pb-12">
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-4 shadow-sm backdrop-blur">
+    <main className="min-h-[100dvh] bg-moshi-bg pb-10">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
         <button
           type="button"
           onClick={handleBack}
           aria-label="Retour au profil"
-          className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-gray-100"
+          className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-gray-100"
         >
           <ArrowLeft className="h-5 w-5 text-moshi-text" />
         </button>
@@ -252,7 +322,7 @@ export default function EditProfilePage() {
           type="button"
           onClick={handleSave}
           disabled={saving || uploading}
-          className="flex items-center gap-2 rounded-xl bg-moshi-purple px-3 py-2 text-sm font-bold text-white transition disabled:opacity-50"
+          className="flex items-center gap-2 rounded-xl bg-moshi-purple px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
         >
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -263,8 +333,15 @@ export default function EditProfilePage() {
         </button>
       </header>
 
-      <div className="mx-auto max-w-xl space-y-5 px-4 py-6">
-        <section className="flex flex-col items-center rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+      <div className="mx-auto max-w-xl space-y-4 px-4 py-5">
+        {success && (
+          <div className="flex items-center gap-2 rounded-xl bg-green-50 p-3 text-sm text-green-700">
+            <CheckCircle2 className="h-5 w-5 shrink-0" />
+            {success}
+          </div>
+        )}
+
+        <section className="flex flex-col items-center rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="relative">
             <div className="h-28 w-28 rounded-full bg-gradient-to-br from-pink-400 via-purple-500 to-blue-400 p-[3px]">
               <div className="relative h-full w-full overflow-hidden rounded-full border-4 border-white bg-gray-100">
@@ -295,7 +372,7 @@ export default function EditProfilePage() {
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
               aria-label="Changer la photo"
-              className="absolute bottom-0 right-0 flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-moshi-purple text-white shadow-md disabled:opacity-50"
+              className="absolute bottom-0 right-0 flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-moshi-purple text-white shadow-md"
             >
               <Camera className="h-5 w-5" />
             </button>
@@ -303,22 +380,22 @@ export default function EditProfilePage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp"
               onChange={handleAvatarUpload}
               className="hidden"
             />
           </div>
 
-          <p className="mt-4 text-sm font-bold text-gray-900">
+          <p className="mt-3 text-sm font-bold text-gray-900">
             Photo de profil
           </p>
           <p className="mt-1 text-center text-xs text-gray-500">
-            Image JPG, PNG ou WebP · 5 Mo maximum
+            JPG, PNG ou WebP · 5 Mo maximum
           </p>
         </section>
 
         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="mb-5 flex items-center gap-3">
+          <div className="mb-4 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
               <UserRound className="h-5 w-5" />
             </div>
@@ -332,18 +409,6 @@ export default function EditProfilePage() {
 
           <div className="space-y-4">
             <div>
-              <label className={labelClass}>Nom complet</label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className={inputClass}
-                placeholder="Ex : Moshi Shop"
-                maxLength={80}
-              />
-            </div>
-
-            <div>
               <label className={labelClass}>Nom d'utilisateur</label>
               <div className="relative">
                 <span className="absolute left-4 top-[22px] text-sm font-bold text-gray-400">
@@ -352,19 +417,28 @@ export default function EditProfilePage() {
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setUsername(
-                      e.target.value.toLowerCase().replace(/\s/g, "")
+                      event.target.value.toLowerCase().replace(/\s/g, "")
                     )
                   }
                   className={`${inputClass} pl-9`}
-                  placeholder="moshishop"
+                  placeholder="moshi"
                   maxLength={30}
                 />
               </div>
-              <p className="mt-2 text-xs text-gray-400">
-                Ton identifiant permet aux autres de te retrouver.
-              </p>
+            </div>
+
+            <div>
+              <label className={labelClass}>Nom complet</label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                className={inputClass}
+                placeholder="Ton nom complet"
+                maxLength={80}
+              />
             </div>
           </div>
         </section>
@@ -377,7 +451,7 @@ export default function EditProfilePage() {
 
           <textarea
             value={bio}
-            onChange={(e) => setBio(e.target.value.slice(0, 150))}
+            onChange={(event) => setBio(event.target.value.slice(0, 150))}
             rows={4}
             maxLength={150}
             className={`${inputClass} resize-none`}
@@ -390,7 +464,7 @@ export default function EditProfilePage() {
         </section>
 
         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-3">
+          <div className="mb-3 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
               <Globe className="h-5 w-5" />
             </div>
@@ -402,34 +476,25 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          <input
-            type="text"
+          <select
             value={country}
-            readOnly
-            className={`${inputClass} cursor-not-allowed bg-gray-100 text-gray-500`}
-          />
-
-          <button
-            type="button"
-            onClick={() =>
-              router.push("/support/report-problem?type=country")
-            }
-            className="mt-3 flex w-full items-center justify-between rounded-xl border border-gray-200 p-4 text-left transition hover:border-moshi-purple/40 hover:bg-purple-50/30"
+            onChange={(event) => setCountry(event.target.value)}
+            className={inputClass}
+            aria-label="Choisir ton pays"
           >
-            <div>
-              <p className="text-sm font-bold text-moshi-purple">
-                Demander un changement de pays
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                L’équipe Moshi examinera ta demande.
-              </p>
-            </div>
-            <ChevronRight className="h-5 w-5 text-gray-400" />
-          </button>
+            {!COUNTRIES.includes(country) && (
+              <option value={country}>{country}</option>
+            )}
+            {COUNTRIES.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
         </section>
 
         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-3">
+          <div className="mb-3 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
               <LinkIcon className="h-5 w-5" />
             </div>
@@ -442,9 +507,9 @@ export default function EditProfilePage() {
           </div>
 
           <input
-            type="url"
+            type="text"
             value={linkUrl}
-            onChange={(e) => setLinkUrl(e.target.value)}
+            onChange={(event) => setLinkUrl(event.target.value)}
             className={inputClass}
             placeholder="https://monsite.com"
           />
@@ -456,16 +521,16 @@ export default function EditProfilePage() {
             Ajoute tes comptes pour permettre aux visiteurs de te retrouver.
           </p>
 
-          <div className="mt-5 space-y-4">
+          <div className="mt-4 space-y-4">
             <div>
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                 <Instagram className="h-4 w-4" />
                 Instagram
               </label>
               <input
-                type="url"
+                type="text"
                 value={instagramUrl}
-                onChange={(e) => setInstagramUrl(e.target.value)}
+                onChange={(event) => setInstagramUrl(event.target.value)}
                 className={inputClass}
                 placeholder="https://instagram.com/toncompte"
               />
@@ -477,9 +542,9 @@ export default function EditProfilePage() {
                 TikTok
               </label>
               <input
-                type="url"
+                type="text"
                 value={tiktokUrl}
-                onChange={(e) => setTiktokUrl(e.target.value)}
+                onChange={(event) => setTiktokUrl(event.target.value)}
                 className={inputClass}
                 placeholder="https://tiktok.com/@toncompte"
               />
@@ -491,9 +556,9 @@ export default function EditProfilePage() {
                 YouTube
               </label>
               <input
-                type="url"
+                type="text"
                 value={youtubeUrl}
-                onChange={(e) => setYoutubeUrl(e.target.value)}
+                onChange={(event) => setYoutubeUrl(event.target.value)}
                 className={inputClass}
                 placeholder="https://youtube.com/@toncompte"
               />
@@ -505,9 +570,9 @@ export default function EditProfilePage() {
                 Facebook
               </label>
               <input
-                type="url"
+                type="text"
                 value={facebookUrl}
-                onChange={(e) => setFacebookUrl(e.target.value)}
+                onChange={(event) => setFacebookUrl(event.target.value)}
                 className={inputClass}
                 placeholder="https://facebook.com/toncompte"
               />
@@ -519,7 +584,7 @@ export default function EditProfilePage() {
           type="button"
           onClick={handleSave}
           disabled={saving || uploading}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-moshi-purple py-4 text-sm font-bold text-white shadow-lg shadow-purple-900/10 transition hover:opacity-90 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-moshi-purple py-4 text-sm font-bold text-white shadow-lg shadow-purple-900/10 disabled:opacity-50"
         >
           {saving ? (
             <Loader2 className="h-5 w-5 animate-spin" />
