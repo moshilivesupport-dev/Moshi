@@ -21,12 +21,10 @@ import {
   Coins,
   Store,
   Palette,
-  Globe,
   Lock,
   Download,
   Headphones,
   Video,
-  Smartphone,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -55,7 +53,6 @@ type SettingItem = {
   href?: string;
   icon: typeof UserRound;
   iconStyle: string;
-  value?: string;
   disabled?: boolean;
 };
 
@@ -74,18 +71,13 @@ function SettingLink({ item }: { item: SettingItem }) {
         <p className="text-sm font-semibold text-gray-900">
           {item.title}
         </p>
+
         {item.description && (
           <p className="mt-0.5 text-xs text-gray-500">
             {item.description}
           </p>
         )}
       </div>
-
-      {item.value && (
-        <span className="rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-moshi-purple">
-          {item.value}
-        </span>
-      )}
 
       {item.href && (
         <ChevronRight className="h-5 w-5 shrink-0 text-moshi-purple" />
@@ -113,7 +105,9 @@ function SettingLink({ item }: { item: SettingItem }) {
   return (
     <div
       aria-disabled="true"
-      className="flex min-h-[62px] items-center gap-3 px-4 py-3 opacity-70"
+      className={`flex min-h-[62px] items-center gap-3 px-4 py-3 ${
+        item.disabled ? "opacity-70" : ""
+      }`}
     >
       {content}
     </div>
@@ -175,6 +169,7 @@ export default function SettingsPage() {
         }
 
         if (!active) return;
+
         setUserId(user.id);
 
         const { data, error: profileError } = await supabase
@@ -248,6 +243,7 @@ export default function SettingsPage() {
       setSuccess("Préférences enregistrées.");
     } catch (err) {
       console.error("Sauvegarde préférences :", err);
+
       setError(
         err instanceof Error
           ? err.message
@@ -323,14 +319,14 @@ export default function SettingsPage() {
         {error && (
           <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">
             <AlertCircle className="h-5 w-5 shrink-0" />
-            {error}
+            <span>{error}</span>
           </div>
         )}
 
         {success && (
           <div className="flex items-center gap-2 rounded-xl border border-green-100 bg-green-50 p-3 text-sm text-green-700">
             <Check className="h-5 w-5 shrink-0" />
-            {success}
+            <span>{success}</span>
           </div>
         )}
 
@@ -339,17 +335,17 @@ export default function SettingsPage() {
           items={[
             {
               title: "Informations du compte",
-              description: "Identité et informations de connexion",
-              href: "/profile",
+              description: "Consulter ton profil et tes informations",
+              href: userId ? `/profile/${userId}` : "/",
               icon: UserRound,
               iconStyle: "bg-indigo-50 text-indigo-600",
             },
             {
               title: "Sécurité",
               description: "Protection et sécurité du compte",
+              href: "/settings/security",
               icon: ShieldCheck,
               iconStyle: "bg-blue-50 text-blue-600",
-              disabled: true,
             },
             {
               title: "Portefeuille",
@@ -403,10 +399,11 @@ export default function SettingsPage() {
               </Link>
             </div>
 
-            <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex items-center gap-3 px-4 py-3 opacity-70">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
                 <Palette className="h-5 w-5" />
               </div>
+
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-gray-900">
                   Apparence
@@ -415,6 +412,7 @@ export default function SettingsPage() {
                   Personnalisation de l'affichage
                 </p>
               </div>
+
               <span className="text-[10px] font-semibold text-gray-400">
                 Bientôt
               </span>
@@ -500,6 +498,7 @@ export default function SettingsPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
                 <Video className="h-5 w-5" />
               </div>
+
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-gray-900">
                   Qualité vidéo
@@ -508,6 +507,7 @@ export default function SettingsPage() {
                   Qualité de lecture et consommation de données
                 </p>
               </div>
+
               <span className="text-[10px] font-semibold text-gray-400">
                 Bientôt
               </span>
@@ -534,10 +534,10 @@ export default function SettingsPage() {
             },
             {
               title: "Utilisateurs bloqués",
-              description: "Gérer les comptes bloqués",
+              description: "Consulter et débloquer des comptes",
+              href: "/settings/blocked",
               icon: UserRound,
               iconStyle: "bg-red-50 text-red-500",
-              disabled: true,
             },
             {
               title: "Télécharger mes données",
