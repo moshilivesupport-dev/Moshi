@@ -27,8 +27,11 @@ import {
   ChevronRight,
   Plus,
   Minus,
+  Send,
 } from "lucide-react";
 import { getFlag } from "@/lib/utils";
+
+const COMMENTS_PER_PAGE = 20;
 
 type Product = {
   id: string;
@@ -74,7 +77,15 @@ export default function ProductDetailPage() {
   const [activeImage, setActiveImage] = useState(0);
 
   const [comments, setComments] = useState<ProductComment[]>([]);
+  const [commentsTotal, setCommentsTotal] = useState(0);
+  const [commentsPage, setCommentsPage] = useState(0);
   const [commentText, setCommentText] = useState("");
+
+  const [editingCommentId, setEditingCommentId] =
+    useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] =
+    useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
 
   const [likes, setLikes] = useState(0);
   const [liked, setLiked] = useState(false);
@@ -96,16 +107,27 @@ export default function ProductDetailPage() {
   const [saving, setSaving] = useState(false);
   const [quantity, setQuantity] = useState(1);
 
+  const totalCommentPages = Math.ceil(
+    commentsTotal / COMMENTS_PER_PAGE
+  );
+
   const loadSocial = useCallback(
-    async (userId?: string) => {
+    async (userId?: string, page = 0) => {
+      const from = page * COMMENTS_PER_PAGE;
+      const to = from + COMMENTS_PER_PAGE - 1;
+
       const [
-        { data: likeRows },
-        { data: myLike },
-        { data: commentRows },
+        { data: likeRows, error: likesError },
+        { data: myLike, error: myLikeError },
+        {
+          data: commentRows,
+          count: commentCount,
+          error: commentsError,
+        },
       ] = await Promise.all([
         supabase
           .from("product_likes")
-          .select("id")
+          .select("id", { count: "exact" })
           .eq("product_id", id),
 
         userId
@@ -115,31 +137,47 @@ export default function ProductDetailPage() {
               .eq("product_id", id)
               .eq("user_id", userId)
               .maybeSingle()
-          : Promise.resolve({ data: null }),
+          : Promise.resolve({
+              data: null,
+              error: null,
+            }),
 
         supabase
           .from("product_comments")
-          .select("id,user_id,content,created_at")
+          .select("id,user_id,content,created_at", {
+            count: "exact",
+          })
           .eq("product_id", id)
           .order("created_at", { ascending: false })
-          .limit(100),
+          .range(from, to),
       ]);
+
+      if (likesError) console.error(likesError);
+      if (myLikeError) console.error(myLikeError);
+      if (commentsError) {
+        console.error(commentsError);
+        return;
+      }
 
       setLikes(likeRows?.length ?? 0);
       setLiked(!!myLike);
+      setCommentsTotal(commentCount ?? 0);
 
       const rows = commentRows || [];
       const userIds = [
-        ...new Set(rows.map((row: any) => row.user_id)),
+        ...new Set(rows.map((row) => row.user_id)),
       ];
 
-      let names: Record<string, string> = {};
+      const names: Record<string, string> = {};
 
       if (userIds.length) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id,username,full_name")
-          .in("id", userIds);
+        const { data: profiles, error: profilesError } =
+          await supabase
+            .from("profiles")
+            .select("id,username,full_name")
+            .in("id", userIds);
+
+        if (profilesError) console.error(profilesError);
 
         for (const profile of profiles || []) {
           names[profile.id] =
@@ -150,7 +188,7 @@ export default function ProductDetailPage() {
       }
 
       setComments(
-        rows.map((row: any) => ({
+        rows.map((row) => ({
           ...row,
           author: names[row.user_id] || "Membre Moshi",
         }))
@@ -165,22 +203,19 @@ export default function ProductDetailPage() {
     const load = async () => {
       setLoading(true);
 
-      const [
-        { data: auth },
-        { data, error },
-      ] = await Promise.all([
-        supabase.auth.getUser(),
-        supabase
-          .from("products")
-          .select("*")
-          .eq("id", id)
-          .maybeSingle(),
-      ]);
+      const [{ data: auth }, { data, error }] =
+        await Promise.all([
+          supabase.auth.getUser(),
+          supabase
+            .from("products")
+            .select("*")
+            .eq("id", id)
+            .maybeSingle(),
+        ]);
 
       if (!alive) return;
 
       const user = auth.user;
-
       setCurrentUser(user);
 
       if (error || !data) {
@@ -198,29 +233,27 @@ export default function ProductDetailPage() {
       setEditStock(String(data.stock ?? 0));
       setEditImage(data.image_url);
 
-      const [
-        { data: profile },
-        { data: photos },
-      ] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("username,full_name,country")
-          .eq("id", data.seller_id)
-          .maybeSingle(),
+      const [{ data: profile }, { data: photos }] =
+        await Promise.all([
+          supabase
+            .from("profiles")
+            .select("username,full_name,country")
+            .eq("id", data.seller_id)
+            .maybeSingle(),
 
-        supabase
-          .from("product_images")
-          .select("url,position")
-          .eq("product_id", id)
-          .order("position", { ascending: true }),
-      ]);
+          supabase
+            .from("product_images")
+            .select("url,position")
+            .eq("product_id", id)
+            .order("position", { ascending: true }),
+        ]);
 
       if (!alive) return;
 
       setSellerProfile(profile);
 
       const urls = (photos || [])
-        .map((photo: any) => photo.url)
+        .map((photo) => photo.url)
         .filter(Boolean);
 
       const allImages = [
@@ -231,7 +264,7 @@ export default function ProductDetailPage() {
 
       setImages(allImages);
 
-      await loadSocial(user?.id);
+      await loadSocial(user?.id, 0);
 
       if (alive) setLoading(false);
     };
@@ -242,6 +275,19 @@ export default function ProductDetailPage() {
       alive = false;
     };
   }, [id, supabase, loadSocial]);
+
+  const changeCommentsPage = async (nextPage: number) => {
+    if (
+      nextPage < 0 ||
+      nextPage >= totalCommentPages ||
+      commentBusy
+    ) {
+      return;
+    }
+
+    setCommentsPage(nextPage);
+    await loadSocial(currentUser?.id, nextPage);
+  };
 
   const addToCart = async (goToCart = false) => {
     if (!currentUser) {
@@ -345,7 +391,7 @@ export default function ProductDetailPage() {
 
     if (!content || content.length > 2000) return;
 
-    setBusy(true);
+    setCommentBusy(true);
 
     const { error } = await supabase
       .from("product_comments")
@@ -356,20 +402,105 @@ export default function ProductDetailPage() {
       });
 
     if (error) {
-      alert(error.message);
+      alert("Impossible de publier : " + error.message);
     } else {
       setCommentText("");
-      await loadSocial(currentUser.id);
+      setCommentsPage(0);
+      await loadSocial(currentUser.id, 0);
     }
 
-    setBusy(false);
+    setCommentBusy(false);
+  };
+
+  const startEditComment = (comment: ProductComment) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentText(comment.content);
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentText("");
+  };
+
+  const saveEditedComment = async (commentId: string) => {
+    const content = editingCommentText.trim();
+
+    if (!content || content.length > 2000) {
+      alert("Le commentaire doit contenir entre 1 et 2 000 caractères.");
+      return;
+    }
+
+    if (!currentUser) {
+      router.push("/auth/login");
+      return;
+    }
+
+    setCommentBusy(true);
+
+    const { data, error } = await supabase
+      .from("product_comments")
+      .update({ content })
+      .eq("id", commentId)
+      .eq("user_id", currentUser.id)
+      .select("id")
+      .maybeSingle();
+
+    if (error || !data) {
+      alert(
+        error?.message ||
+          "Modification impossible. Vérifie tes autorisations."
+      );
+    } else {
+      setEditingCommentId(null);
+      setEditingCommentText("");
+      await loadSocial(currentUser.id, commentsPage);
+    }
+
+    setCommentBusy(false);
+  };
+
+  const deleteComment = async (commentId: string) => {
+    if (
+      !confirm("Veux-tu vraiment supprimer ce commentaire ?")
+    ) {
+      return;
+    }
+
+    if (!currentUser) {
+      router.push("/auth/login");
+      return;
+    }
+
+    setCommentBusy(true);
+
+    const { error } = await supabase
+      .from("product_comments")
+      .delete()
+      .eq("id", commentId)
+      .eq("user_id", currentUser.id);
+
+    if (error) {
+      alert("Suppression impossible : " + error.message);
+    } else {
+      const nextTotal = Math.max(0, commentsTotal - 1);
+      const nextPages = Math.ceil(
+        nextTotal / COMMENTS_PER_PAGE
+      );
+      const nextPage = Math.min(
+        commentsPage,
+        Math.max(0, nextPages - 1)
+      );
+
+      setCommentsPage(nextPage);
+      await loadSocial(currentUser.id, nextPage);
+    }
+
+    setCommentBusy(false);
   };
 
   const handleDelete = async () => {
     if (
-      !confirm(
-        "Supprimer ce produit définitivement ?"
-      )
+      !confirm("Supprimer ce produit définitivement ?")
     ) {
       return;
     }
@@ -726,7 +857,7 @@ export default function ProductDetailPage() {
 
               <span className="inline-flex items-center gap-2 text-gray-500">
                 <MessageCircle className="w-5 h-5" />
-                {comments.length} commentaire(s)
+                {commentsTotal} commentaire(s)
               </span>
             </div>
 
@@ -765,10 +896,18 @@ export default function ProductDetailPage() {
               )}
             </section>
 
-            <section className="space-y-3">
-              <h2 className="font-bold">
-                Commentaires sur ce produit
-              </h2>
+            <section
+              id="comments"
+              className="space-y-3 scroll-mt-20"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold">
+                  Commentaires ({commentsTotal})
+                </h2>
+                <span className="text-xs text-gray-400">
+                  {COMMENTS_PER_PAGE} par page
+                </span>
+              </div>
 
               {currentUser && !isOwner && (
                 <div className="bg-white rounded-2xl p-3 space-y-2">
@@ -790,40 +929,180 @@ export default function ProductDetailPage() {
 
                     <button
                       onClick={submitComment}
-                      disabled={busy || !commentText.trim()}
-                      className="moshi-gradient text-white px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-50"
+                      disabled={
+                        commentBusy || !commentText.trim()
+                      }
+                      className="moshi-gradient text-white px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-50 flex items-center gap-2"
                     >
+                      {commentBusy ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
                       Publier
                     </button>
                   </div>
                 </div>
               )}
 
+              {!currentUser && (
+                <button
+                  onClick={() => router.push("/auth/login")}
+                  className="w-full bg-white rounded-xl p-3 text-sm text-moshi-purple font-semibold"
+                >
+                  Connecte-toi pour commenter
+                </button>
+              )}
+
               {comments.length === 0 ? (
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 bg-white rounded-xl p-4">
                   Aucun commentaire pour le moment.
                 </p>
               ) : (
-                comments.map((comment) => (
-                  <article
-                    key={comment.id}
-                    className="bg-white rounded-xl p-3"
+                comments.map((comment) => {
+                  const isCommentAuthor =
+                    currentUser?.id === comment.user_id;
+
+                  const isEditingThisComment =
+                    editingCommentId === comment.id;
+
+                  return (
+                    <article
+                      key={comment.id}
+                      className="bg-white rounded-xl p-3 space-y-2"
+                    >
+                      <div className="flex justify-between items-start gap-3">
+                        <p className="text-xs font-bold">
+                          {comment.author}
+                          {isCommentAuthor && (
+                            <span className="ml-2 text-moshi-purple font-normal">
+                              Toi
+                            </span>
+                          )}
+                        </p>
+
+                        {isCommentAuthor &&
+                          !isEditingThisComment && (
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() =>
+                                  startEditComment(comment)
+                                }
+                                disabled={commentBusy}
+                                aria-label="Modifier mon commentaire"
+                                className="text-xs text-moshi-purple font-semibold disabled:opacity-50"
+                              >
+                                Modifier
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  deleteComment(comment.id)
+                                }
+                                disabled={commentBusy}
+                                aria-label="Supprimer mon commentaire"
+                                className="text-xs text-red-500 font-semibold disabled:opacity-50"
+                              >
+                                Supprimer
+                              </button>
+                            </div>
+                          )}
+                      </div>
+
+                      {isEditingThisComment ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editingCommentText}
+                            onChange={(e) =>
+                              setEditingCommentText(
+                                e.target.value
+                              )
+                            }
+                            maxLength={2000}
+                            rows={3}
+                            className="w-full rounded-lg border p-3 text-sm resize-none outline-none focus:border-moshi-purple"
+                          />
+
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">
+                              {editingCommentText.length}/2000
+                            </span>
+
+                            <div className="flex gap-2">
+                              <button
+                                onClick={cancelEditComment}
+                                disabled={commentBusy}
+                                className="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 text-xs font-bold"
+                              >
+                                Annuler
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  saveEditedComment(comment.id)
+                                }
+                                disabled={
+                                  commentBusy ||
+                                  !editingCommentText.trim()
+                                }
+                                className="px-3 py-2 rounded-lg moshi-gradient text-white text-xs font-bold disabled:opacity-50"
+                              >
+                                {commentBusy
+                                  ? "Enregistrement..."
+                                  : "Enregistrer"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm whitespace-pre-line break-words">
+                          {comment.content}
+                        </p>
+                      )}
+
+                      <p className="text-[10px] text-gray-400">
+                        {new Date(
+                          comment.created_at
+                        ).toLocaleString("fr-FR")}
+                      </p>
+                    </article>
+                  );
+                })
+              )}
+
+              {totalCommentPages > 1 && (
+                <div className="flex items-center justify-between bg-white rounded-xl p-3">
+                  <button
+                    onClick={() =>
+                      changeCommentsPage(commentsPage - 1)
+                    }
+                    disabled={
+                      commentsPage === 0 || commentBusy
+                    }
+                    className="flex items-center gap-1 text-sm font-semibold text-moshi-purple disabled:text-gray-300"
                   >
-                    <p className="text-xs font-bold mb-1">
-                      {comment.author}
-                    </p>
+                    <ChevronLeft className="w-4 h-4" />
+                    Précédent
+                  </button>
 
-                    <p className="text-sm whitespace-pre-line">
-                      {comment.content}
-                    </p>
+                  <span className="text-xs text-gray-500">
+                    Page {commentsPage + 1} / {totalCommentPages}
+                  </span>
 
-                    <p className="text-[10px] text-gray-400 mt-2">
-                      {new Date(
-                        comment.created_at
-                      ).toLocaleString("fr-FR")}
-                    </p>
-                  </article>
-                ))
+                  <button
+                    onClick={() =>
+                      changeCommentsPage(commentsPage + 1)
+                    }
+                    disabled={
+                      commentsPage + 1 >= totalCommentPages ||
+                      commentBusy
+                    }
+                    className="flex items-center gap-1 text-sm font-semibold text-moshi-purple disabled:text-gray-300"
+                  >
+                    Suivant
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               )}
             </section>
           </>
