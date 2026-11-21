@@ -20,6 +20,7 @@ import {
   Settings,
   MessageCircle,
   Loader2,
+  ArrowLeft,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import FollowListModal from "@/components/profile/FollowListModal";
@@ -74,23 +75,19 @@ export default function ProfileView({
 
   const returnToLiveId = searchParams.get("returnToLive");
 
-  const returnHref = returnToLiveId
+  const fallbackHref = returnToLiveId
     ? `/live/${encodeURIComponent(returnToLiveId)}`
     : "/";
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("videos");
-
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
-
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [messageLoading, setMessageLoading] = useState(false);
-
   const [followListType, setFollowListType] =
     useState<FollowListType | null>(null);
 
@@ -99,6 +96,30 @@ export default function ProfileView({
     following_count: 0,
     total_likes: 0,
   });
+
+  // Retour intelligent
+  const handleProfileBack = () => {
+    if (returnToLiveId) {
+      router.push(fallbackHref);
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      router.push("/");
+      return;
+    }
+
+    // On ne revient pas vers une page extérieure à Moshi.
+    const hasInternalReferrer =
+      document.referrer.startsWith(window.location.origin);
+
+    if (window.history.length > 1 && hasInternalReferrer) {
+      router.back();
+      return;
+    }
+
+    router.push("/");
+  };
 
   // Chargement des vidéos du profil
   const loadVideos = useCallback(async () => {
@@ -362,11 +383,8 @@ export default function ProfileView({
         return;
       }
 
-      if (user.id === profile.id) {
-        return;
-      }
+      if (user.id === profile.id) return;
 
-      // Récupérer les conversations auxquelles l'utilisateur actuel participe.
       const { data: myMemberships, error: myMembershipError } =
         await supabase
           .from("conversation_members")
@@ -379,7 +397,6 @@ export default function ProfileView({
         (item) => item.conversation_id
       );
 
-      // Rechercher une conversation commune avec le profil visité.
       if (myConversationIds.length > 0) {
         const { data: targetMemberships, error: targetMembershipError } =
           await supabase
@@ -398,7 +415,6 @@ export default function ProfileView({
         }
       }
 
-      // Aucune conversation commune : créer la conversation à deux.
       const { data: conversationId, error: rpcError } =
         await supabase.rpc("create_conversation", {
           participant_ids: [user.id, profile.id],
@@ -426,9 +442,7 @@ export default function ProfileView({
 
   // Suppression d'une vidéo
   const handleDeleteVideo = async (videoId: string) => {
-    if (!confirm("Supprimer cette vidéo définitivement ?")) {
-      return;
-    }
+    if (!confirm("Supprimer cette vidéo définitivement ?")) return;
 
     try {
       const { error } = await supabase
@@ -444,7 +458,6 @@ export default function ProfileView({
       );
 
       setMenuOpenId(null);
-
       void loadStats();
     } catch (error) {
       console.error("Erreur suppression vidéo :", error);
@@ -500,7 +513,6 @@ export default function ProfileView({
   };
 
   const name = profile.full_name || profile.username || "Utilisateur";
-
   const handle = profile.username ? `@${profile.username}` : "";
 
   const isVendeur =
@@ -530,19 +542,15 @@ export default function ProfileView({
     <>
       <div className="min-h-[100dvh] bg-moshi-bg text-moshi-text pb-24">
         <header className="px-4 pt-6 pb-2 flex items-center justify-between">
-          <Link
-            href={returnHref}
-            className="flex items-center gap-2 text-sm font-semibold text-moshi-purple"
+          <button
+            type="button"
+            onClick={handleProfileBack}
+            aria-label="Retour à la page précédente"
+            className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold text-moshi-purple hover:bg-white/70 active:scale-95 transition"
           >
-            {returnToLiveId ? (
-              <>
-                <Video className="w-5 h-5" />
-                Retour au live
-              </>
-            ) : (
-              "← Retour"
-            )}
-          </Link>
+            <ArrowLeft className="h-5 w-5" />
+            {returnToLiveId ? "Retour au live" : "Retour"}
+          </button>
 
           <div className="flex gap-2">
             {isOwnProfile && (
