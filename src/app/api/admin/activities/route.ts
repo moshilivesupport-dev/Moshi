@@ -9,6 +9,8 @@ const PAGE_SIZE = 25;
 const ALLOWED_ACTIONS = [
   "user_suspended",
   "user_reactivated",
+  "verification_approved",
+  "verification_rejected",
 ] as const;
 
 export async function GET(request: Request) {
@@ -30,6 +32,7 @@ export async function GET(request: Request) {
     );
 
     const requestedAction = url.searchParams.get("action");
+
     const action = ALLOWED_ACTIONS.includes(
       requestedAction as (typeof ALLOWED_ACTIONS)[number]
     )
@@ -39,7 +42,7 @@ export async function GET(request: Request) {
     const search = (url.searchParams.get("q") || "")
       .trim()
       .slice(0, 80)
-      .replace(/[^\p{L}\p{N}@.+\-_\s]/gu, " ");
+      .replace(/[^\p{L}\p{N}@.+\-_ \s]/gu, " ");
 
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
