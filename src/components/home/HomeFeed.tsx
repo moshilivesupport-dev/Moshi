@@ -24,9 +24,6 @@ import { getFlag } from "@/lib/utils";
 import CommentsSheet from "@/components/video/CommentsSheet";
 import VideoActionsMenu from "@/components/video/VideoActionsMenu";
 
-// Safari peut refuser l'autoplay sonore avant un geste utilisateur.
-// Une fois l'interaction effectuée, les vidéos suivantes retentent
-// automatiquement la lecture avec le son.
 let moshiAudioUnlocked = false;
 
 interface FeedItem {
@@ -64,7 +61,6 @@ function formatNumber(num: number) {
   return String(safeNumber);
 }
 
-// Transforme les hashtags en liens cliquables.
 function renderCaption(caption: string): ReactNode[] {
   const parts = caption.split(/(#[\p{L}\p{N}_]+)/gu);
 
@@ -149,7 +145,6 @@ function FeedVideo({
     };
   }, [isVisible, item.id, onQualifiedView]);
 
-  // Lecture automatique avec son lorsque le navigateur l'autorise.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -202,8 +197,6 @@ function FeedVideo({
     };
   }, []);
 
-  // Premier toucher : déverrouille la lecture sonore.
-  // On ne met pas immédiatement la vidéo en pause.
   const handlePointerDown = (
     event: React.PointerEvent<HTMLElement>
   ) => {
@@ -231,13 +224,11 @@ function FeedVideo({
   ) => {
     if ((event.target as HTMLElement).closest("button, a")) return;
 
-    // Le premier toucher sert uniquement à autoriser le son.
     if (firstGestureRef.current) {
       firstGestureRef.current = false;
       return;
     }
 
-    // Double toucher : J'aime.
     if (tapTimerRef.current) {
       clearTimeout(tapTimerRef.current);
       tapTimerRef.current = null;
@@ -245,7 +236,6 @@ function FeedVideo({
       return;
     }
 
-    // Toucher simple : pause / reprise.
     tapTimerRef.current = setTimeout(() => {
       setIsPaused((previous) => !previous);
       tapTimerRef.current = null;
@@ -281,10 +271,7 @@ function FeedVideo({
         }}
       />
 
-      {/* Le dégradé ne couvre plus toute la vidéo. */}
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[42%] bg-gradient-to-t from-black/85 via-black/30 to-transparent"
-      />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[42%] bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
 
       {isPaused && isVisible && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
@@ -489,7 +476,8 @@ export default function HomeFeed({
       const videos: FeedItem[] = (videosData || []).map((video) => ({
         id: video.id,
         type: "video",
-        url: video.url,
+        // Toutes les vidéos passent désormais par notre route serveur.
+        url: `/api/videos/${encodeURIComponent(video.id)}`,
         caption: video.caption,
         like_count: video.like_count || 0,
         comment_count: video.comment_count || 0,
