@@ -58,6 +58,7 @@ type ProductComment = {
   user_id: string;
   content: string;
   created_at: string;
+  parent_id: string | null;
   author?: string;
 };
 
@@ -77,9 +78,15 @@ export default function ProductDetailPage() {
   const [activeImage, setActiveImage] = useState(0);
 
   const [comments, setComments] = useState<ProductComment[]>([]);
+  const [replies, setReplies] = useState<
+    Record<string, ProductComment[]>
+  >({});
   const [commentsTotal, setCommentsTotal] = useState(0);
   const [commentsPage, setCommentsPage] = useState(0);
   const [commentText, setCommentText] = useState("");
+
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
 
   const [editingCommentId, setEditingCommentId] =
     useState<string | null>(null);
@@ -144,16 +151,19 @@ export default function ProductDetailPage() {
 
         supabase
           .from("product_comments")
-          .select("id,user_id,content,created_at", {
-            count: "exact",
-          })
+          .select(
+            "id,user_id,content,created_at,parent_id",
+            { count: "exact" }
+          )
           .eq("product_id", id)
+          .is("parent_id", null)
           .order("created_at", { ascending: false })
           .range(from, to),
       ]);
 
       if (likesError) console.error(likesError);
       if (myLikeError) console.error(myLikeError);
+
       if (commentsError) {
         console.error(commentsError);
         return;
@@ -164,8 +174,30 @@ export default function ProductDetailPage() {
       setCommentsTotal(commentCount ?? 0);
 
       const rows = commentRows || [];
+
+      const parentIds = rows.map((row) => row.id);
+
+      const replyRowsResult = parentIds.length
+        ? await supabase
+            .from("product_comments")
+            .select(
+              "id,user_id,content,created_at,parent_id"
+            )
+            .in("parent_id", parentIds)
+            .order("created_at", { ascending: true })
+        : { data: [], error: null };
+
+      if (replyRowsResult.error) {
+        console.error(replyRowsResult.error);
+      }
+
+      const replyRows = replyRowsResult.data || [];
+
       const userIds = [
-        ...new Set(rows.map((row) => row.user_id)),
+        ...new Set([
+          ...rows.map((row) => row.user_id),
+          ...replyRows.map((row) => row.user_id),
+        ]),
       ];
 
       const names: Record<string, string> = {};
@@ -187,12 +219,33 @@ export default function ProductDetailPage() {
         }
       }
 
-      setComments(
-        rows.map((row) => ({
+      const formattedComments: ProductComment[] = rows.map(
+        (row) => ({
           ...row,
           author: names[row.user_id] || "Membre Moshi",
-        }))
+        })
       );
+
+      const groupedReplies: Record<
+        string,
+        ProductComment[]
+      > = {};
+
+      for (const reply of replyRows) {
+        if (!reply.parent_id) continue;
+
+        if (!groupedReplies[reply.parent_id]) {
+          groupedReplies[reply.parent_id] = [];
+        }
+
+        groupedReplies[reply.parent_id].push({
+          ...reply,
+          author: names[reply.user_id] || "Membre Moshi",
+        });
+      }
+
+      setComments(formattedComments);
+      setReplies(groupedReplies);
     },
     [id, supabase]
   );
@@ -399,6 +452,7 @@ export default function ProductDetailPage() {
         product_id: id,
         user_id: currentUser.id,
         content,
+        parent_id: null,
       });
 
     if (error) {
@@ -407,6 +461,38 @@ export default function ProductDetailPage() {
       setCommentText("");
       setCommentsPage(0);
       await loadSocial(currentUser.id, 0);
+    }
+
+    setCommentBusy(false);
+  };
+
+  const submitReply = async (parentId: string) => {
+    if (!currentUser) {
+      router.push("/auth/login");
+      return;
+    }
+
+    const content = replyText.trim();
+
+    if (!content || content.length > 2000) return;
+
+    setCommentBusy(true);
+
+    const { error } = await supabase
+      .from("product_comments")
+      .insert({
+        product_id: id,
+        user_id: currentUser.id,
+        parent_id: parentId,
+        content,
+      });
+
+    if (error) {
+      alert("Impossible de publier la réponse : " + error.message);
+    } else {
+      setReplyText("");
+      setReplyingTo(null);
+      await loadSocial(currentUser.id, commentsPage);
     }
 
     setCommentBusy(false);
@@ -426,7 +512,9 @@ export default function ProductDetailPage() {
     const content = editingCommentText.trim();
 
     if (!content || content.length > 2000) {
-      alert("Le commentaire doit contenir entre 1 et 2 000 caractères.");
+      alert(
+        "Le commentaire doit contenir entre 1 et 2 000 caractères."
+      );
       return;
     }
 
@@ -461,7 +549,9 @@ export default function ProductDetailPage() {
 
   const deleteComment = async (commentId: string) => {
     if (
-      !confirm("Veux-tu vraiment supprimer ce commentaire ?")
+      !confirm(
+        "Veux-tu vraiment supprimer ce commentaire ? Les réponses associées seront également supprimées."
+      )
     ) {
       return;
     }
@@ -579,6 +669,8 @@ export default function ProductDetailPage() {
       return;
     }
 
+    if (!currentUser || !product) return;
+
     setSaving(true);
 
     const { error } = await supabase
@@ -590,14 +682,14 @@ export default function ProductDetailPage() {
         stock: Number(editStock),
         image_url: editImage,
       })
-      .eq("id", product!.id)
+      .eq("id", product.id)
       .eq("seller_id", currentUser.id);
 
     if (error) {
       alert("Erreur : " + error.message);
     } else {
       setProduct({
-        ...product!,
+        ...product,
         title: editTitle.trim(),
         description: editDescription.trim(),
         price: Number(editPrice),
@@ -966,10 +1058,13 @@ export default function ProductDetailPage() {
                   const isEditingThisComment =
                     editingCommentId === comment.id;
 
+                  const commentReplies =
+                    replies[comment.id] || [];
+
                   return (
                     <article
                       key={comment.id}
-                      className="bg-white rounded-xl p-3 space-y-2"
+                      className="bg-white rounded-xl p-3 space-y-3"
                     >
                       <div className="flex justify-between items-start gap-3">
                         <p className="text-xs font-bold">
@@ -1060,11 +1155,177 @@ export default function ProductDetailPage() {
                         </p>
                       )}
 
-                      <p className="text-[10px] text-gray-400">
-                        {new Date(
-                          comment.created_at
-                        ).toLocaleString("fr-FR")}
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] text-gray-400">
+                          {new Date(
+                            comment.created_at
+                          ).toLocaleString("fr-FR")}
+                        </p>
+
+                        <span className="text-[11px] text-gray-400">
+                          {commentReplies.length} réponse(s)
+                        </span>
+                      </div>
+
+                      <div className="ml-2 border-l-2 border-moshi-purple/20 pl-3 space-y-3">
+                        {commentReplies.map((reply) => {
+                          const isReplyAuthor =
+                            currentUser?.id === reply.user_id;
+
+                          const isEditingThisReply =
+                            editingCommentId === reply.id;
+
+                          return (
+                            <div
+                              key={reply.id}
+                              className="bg-gray-50 rounded-xl p-3 space-y-2"
+                            >
+                              <div className="flex justify-between items-start gap-2">
+                                <p className="text-xs font-bold">
+                                  {reply.author}
+                                  {isReplyAuthor && (
+                                    <span className="ml-2 text-moshi-purple font-normal">
+                                      Toi
+                                    </span>
+                                  )}
+                                </p>
+
+                                {isReplyAuthor &&
+                                  !isEditingThisReply && (
+                                    <div className="flex gap-3">
+                                      <button
+                                        onClick={() =>
+                                          startEditComment(reply)
+                                        }
+                                        disabled={commentBusy}
+                                        className="text-xs text-moshi-purple font-semibold"
+                                      >
+                                        Modifier
+                                      </button>
+
+                                      <button
+                                        onClick={() =>
+                                          deleteComment(reply.id)
+                                        }
+                                        disabled={commentBusy}
+                                        className="text-xs text-red-500 font-semibold"
+                                      >
+                                        Supprimer
+                                      </button>
+                                    </div>
+                                  )}
+                              </div>
+
+                              {isEditingThisReply ? (
+                                <div className="space-y-2">
+                                  <textarea
+                                    value={editingCommentText}
+                                    onChange={(e) =>
+                                      setEditingCommentText(
+                                        e.target.value
+                                      )
+                                    }
+                                    maxLength={2000}
+                                    rows={2}
+                                    className="w-full rounded-lg border p-2 text-sm resize-none"
+                                  />
+
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      onClick={cancelEditComment}
+                                      disabled={commentBusy}
+                                      className="text-xs px-3 py-2 rounded-lg bg-gray-200"
+                                    >
+                                      Annuler
+                                    </button>
+
+                                    <button
+                                      onClick={() =>
+                                        saveEditedComment(reply.id)
+                                      }
+                                      disabled={
+                                        commentBusy ||
+                                        !editingCommentText.trim()
+                                      }
+                                      className="text-xs px-3 py-2 rounded-lg moshi-gradient text-white font-bold"
+                                    >
+                                      Enregistrer
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-sm whitespace-pre-line break-words">
+                                  {reply.content}
+                                </p>
+                              )}
+
+                              <p className="text-[10px] text-gray-400">
+                                {new Date(
+                                  reply.created_at
+                                ).toLocaleString("fr-FR")}
+                              </p>
+                            </div>
+                          );
+                        })}
+
+                        {currentUser && (
+                          <button
+                            onClick={() => {
+                              setReplyingTo(
+                                replyingTo === comment.id
+                                  ? null
+                                  : comment.id
+                              );
+                              setReplyText("");
+                            }}
+                            disabled={commentBusy}
+                            className="text-xs font-bold text-moshi-purple"
+                          >
+                            {replyingTo === comment.id
+                              ? "Annuler"
+                              : "Répondre"}
+                          </button>
+                        )}
+
+                        {replyingTo === comment.id && (
+                          <div className="space-y-2">
+                            <textarea
+                              value={replyText}
+                              onChange={(e) =>
+                                setReplyText(e.target.value)
+                              }
+                              maxLength={2000}
+                              rows={2}
+                              placeholder="Écris ta réponse..."
+                              className="w-full rounded-xl border p-3 text-sm resize-none outline-none focus:border-moshi-purple"
+                            />
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-gray-400">
+                                {replyText.length}/2000
+                              </span>
+
+                              <button
+                                onClick={() =>
+                                  submitReply(comment.id)
+                                }
+                                disabled={
+                                  commentBusy ||
+                                  !replyText.trim()
+                                }
+                                className="moshi-gradient text-white rounded-xl px-4 py-2 text-xs font-bold disabled:opacity-50 flex items-center gap-2"
+                              >
+                                {commentBusy ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Send className="w-3 h-3" />
+                                )}
+                                Publier la réponse
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </article>
                   );
                 })
