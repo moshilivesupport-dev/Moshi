@@ -17,13 +17,18 @@ import {
   User,
   UserCheck,
   XCircle,
+  Globe,
+  Loader2,
 } from "lucide-react";
 
 type ActivityAction =
   | "user_suspended"
   | "user_reactivated"
   | "verification_approved"
-  | "verification_rejected";
+  | "verification_rejected"
+  | "country_change_in_progress"
+  | "country_change_approved"
+  | "country_change_rejected";
 
 type Profile = {
   id: string;
@@ -45,13 +50,16 @@ type ActivityLog = {
   target: Profile | null;
 };
 
-type ActivitiesResponse = {
-  activities: ActivityLog[];
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
+type ApiResponse = {
+  activities?: ActivityLog[];
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  totalPages?: number;
+  error?: string;
 };
+
+const PAGE_SIZE = 25;
 
 const ACTIONS: {
   value: string;
@@ -60,30 +68,86 @@ const ACTIONS: {
   { value: "all", label: "Toutes les activités" },
   { value: "user_suspended", label: "Comptes suspendus" },
   { value: "user_reactivated", label: "Comptes réactivés" },
+  { value: "verification_approved", label: "Certifications approuvées" },
+  { value: "verification_rejected", label: "Certifications refusées" },
   {
-    value: "verification_approved",
-    label: "Certifications approuvées",
+    value: "country_change_in_progress",
+    label: "Pays : en cours",
   },
   {
-    value: "verification_rejected",
-    label: "Certifications refusées",
+    value: "country_change_approved",
+    label: "Pays : approuvés",
+  },
+  {
+    value: "country_change_rejected",
+    label: "Pays : refusés",
   },
 ];
 
-const ACTION_LABELS: Record<ActivityAction, string> = {
-  user_suspended: "Suspension de compte",
-  user_reactivated: "Réactivation de compte",
-  verification_approved: "Certification approuvée",
-  verification_rejected: "Certification refusée",
+const ACTION_CONFIG: Record<
+  ActivityAction,
+  {
+    label: string;
+    description: string;
+    color: string;
+    icon: typeof Activity;
+  }
+> = {
+  user_suspended: {
+    label: "Compte suspendu",
+    description: "Un compte utilisateur a été suspendu.",
+    color: "text-red-400 bg-red-500/10 border-red-500/20",
+    icon: Ban,
+  },
+  user_reactivated: {
+    label: "Compte réactivé",
+    description: "Un compte utilisateur a été réactivé.",
+    color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+    icon: UserCheck,
+  },
+  verification_approved: {
+    label: "Certification approuvée",
+    description: "Une demande de certification a été approuvée.",
+    color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+    icon: BadgeCheck,
+  },
+  verification_rejected: {
+    label: "Certification refusée",
+    description: "Une demande de certification a été refusée.",
+    color: "text-red-400 bg-red-500/10 border-red-500/20",
+    icon: XCircle,
+  },
+  country_change_in_progress: {
+    label: "Changement de pays en cours",
+    description: "Une demande de changement de pays est en cours de traitement.",
+    color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
+    icon: Clock,
+  },
+  country_change_approved: {
+    label: "Changement de pays approuvé",
+    description: "Le pays d'un compte utilisateur a été modifié.",
+    color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+    icon: Globe,
+  },
+  country_change_rejected: {
+    label: "Changement de pays refusé",
+    description: "Une demande de changement de pays a été refusée.",
+    color: "text-red-400 bg-red-500/10 border-red-500/20",
+    icon: XCircle,
+  },
 };
 
-function getDisplayName(profile: Profile | null) {
-  if (!profile) return "Utilisateur inconnu";
+function getDisplayName(profile: Profile | null, fallbackId: string | null) {
+  if (!profile) {
+    return fallbackId
+      ? `Utilisateur ${fallbackId.slice(0, 8)}`
+      : "Utilisateur inconnu";
+  }
 
   return (
     profile.full_name ||
     (profile.username ? `@${profile.username}` : null) ||
-    "Utilisateur"
+    `Utilisateur ${profile.id.slice(0, 8)}`
   );
 }
 
@@ -100,55 +164,6 @@ function formatDate(value: string) {
   }).format(date);
 }
 
-function getActionIcon(action: ActivityAction) {
-  switch (action) {
-    case "user_suspended":
-      return Ban;
-    case "user_reactivated":
-      return UserCheck;
-    case "verification_approved":
-      return BadgeCheck;
-    case "verification_rejected":
-      return XCircle;
-    default:
-      return Activity;
-  }
-}
-
-function getActionColor(action: ActivityAction) {
-  switch (action) {
-    case "user_suspended":
-    case "verification_rejected":
-      return "border-red-500/20 bg-red-500/10 text-red-300";
-
-    case "user_reactivated":
-    case "verification_approved":
-      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
-
-    default:
-      return "border-white/10 bg-white/5 text-gray-300";
-  }
-}
-
-function getActionDescription(action: ActivityAction) {
-  switch (action) {
-    case "user_suspended":
-      return "Un compte utilisateur a été suspendu.";
-
-    case "user_reactivated":
-      return "Un compte utilisateur a été réactivé.";
-
-    case "verification_approved":
-      return "Une demande de certification a été acceptée.";
-
-    case "verification_rejected":
-      return "Une demande de certification a été refusée.";
-
-    default:
-      return "Une opération administrative a été effectuée.";
-  }
-}
-
 function ProfileIdentity({
   profile,
   fallbackId,
@@ -158,11 +173,11 @@ function ProfileIdentity({
   fallbackId: string | null;
   label: string;
 }) {
-  const displayName = getDisplayName(profile);
+  const displayName = getDisplayName(profile, fallbackId);
 
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-[#202a3a]">
+      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-slate-700 bg-slate-800">
         {profile?.avatar_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -171,31 +186,89 @@ function ProfileIdentity({
             className="h-full w-full object-cover"
           />
         ) : (
-          <User size={18} className="text-gray-400" />
+          <div className="flex h-full w-full items-center justify-center text-slate-400">
+            <User size={18} />
+          </div>
         )}
       </div>
 
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
-          {label}
-        </p>
-
         <p className="truncate text-sm font-semibold text-white">
           {displayName}
         </p>
-
-        {profile?.role && (
-          <p className="text-xs capitalize text-gray-500">
-            {profile.role}
-          </p>
-        )}
-
-        {!profile && fallbackId && (
-          <p className="truncate text-xs text-gray-500">
-            ID : {fallbackId}
-          </p>
-        )}
+        <p className="text-xs text-slate-500">{label}</p>
       </div>
+    </div>
+  );
+}
+
+function MetadataDetails({
+  metadata,
+  action,
+}: {
+  metadata: Record<string, unknown> | null;
+  action: ActivityAction;
+}) {
+  if (!metadata) return null;
+
+  const oldCountry =
+    typeof metadata.old_country === "string"
+      ? metadata.old_country
+      : null;
+
+  const newCountry =
+    typeof metadata.new_country === "string"
+      ? metadata.new_country
+      : null;
+
+  const ticketId =
+    typeof metadata.ticket_id === "string"
+      ? metadata.ticket_id
+      : null;
+
+  const verificationId =
+    typeof metadata.verification_request_id === "string"
+      ? metadata.verification_request_id
+      : null;
+
+  if (
+    !oldCountry &&
+    !newCountry &&
+    !ticketId &&
+    !verificationId
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        Détails de l'opération
+      </p>
+
+      {oldCountry && newCountry && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-lg bg-slate-800 px-3 py-1.5 text-slate-300">
+            {oldCountry}
+          </span>
+          <ArrowRight size={15} className="text-cyan-400" />
+          <span className="rounded-lg bg-cyan-500/10 px-3 py-1.5 font-semibold text-cyan-300">
+            {newCountry}
+          </span>
+        </div>
+      )}
+
+      {ticketId && (
+        <p className="mt-2 break-all text-xs text-slate-500">
+          Demande de changement de pays : {ticketId}
+        </p>
+      )}
+
+      {verificationId && (
+        <p className="mt-2 break-all text-xs text-slate-500">
+          Demande de certification : {verificationId}
+        </p>
+      )}
     </div>
   );
 }
@@ -214,8 +287,8 @@ export default function AdminActivitiesPage() {
   const [error, setError] = useState("");
 
   const loadActivities = useCallback(
-    async (showRefresh = false) => {
-      if (showRefresh) {
+    async (options?: { silent?: boolean }) => {
+      if (options?.silent) {
         setRefreshing(true);
       } else {
         setLoading(true);
@@ -228,12 +301,12 @@ export default function AdminActivitiesPage() {
           page: String(page),
         });
 
-        if (search.trim()) {
-          params.set("q", search.trim());
-        }
-
         if (action !== "all") {
           params.set("action", action);
+        }
+
+        if (search.trim()) {
+          params.set("q", search.trim());
         }
 
         const response = await fetch(
@@ -241,42 +314,32 @@ export default function AdminActivitiesPage() {
           {
             method: "GET",
             cache: "no-store",
-            headers: {
-              Accept: "application/json",
-            },
           }
         );
 
-        const result = await response.json();
+        const result: ApiResponse = await response.json();
 
         if (!response.ok) {
           throw new Error(
-            result.error ||
-              "Impossible de charger le journal administratif."
+            result.error || "Impossible de charger le journal."
           );
         }
 
-        const data = result as ActivitiesResponse;
-
-        setActivities(data.activities ?? []);
-        setTotal(data.total ?? 0);
-        setTotalPages(data.totalPages ?? 1);
+        setActivities(result.activities ?? []);
+        setTotal(result.total ?? 0);
+        setTotalPages(result.totalPages ?? 1);
       } catch (err) {
-        console.error("Admin activities:", err);
-
         setError(
           err instanceof Error
             ? err.message
             : "Une erreur est survenue."
         );
-
-        setActivities([]);
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [page, search, action]
+    [page, action, search]
   );
 
   useEffect(() => {
@@ -289,52 +352,66 @@ export default function AdminActivitiesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, action]);
+  }, [action, search]);
 
-  const suspendedCount = activities.filter(
+  const handleRefresh = () => {
+    loadActivities({ silent: true });
+  };
+
+  const currentPageSuspensions = activities.filter(
     (item) => item.action === "user_suspended"
   ).length;
 
-  const reactivatedCount = activities.filter(
-    (item) => item.action === "user_reactivated"
+  const currentPageCertifications = activities.filter(
+    (item) =>
+      item.action === "verification_approved" ||
+      item.action === "verification_rejected"
   ).length;
 
-  const approvedCount = activities.filter(
-    (item) => item.action === "verification_approved"
-  ).length;
-
-  const rejectedCount = activities.filter(
-    (item) => item.action === "verification_rejected"
+  const currentPageCountryChanges = activities.filter(
+    (item) =>
+      item.action === "country_change_approved" ||
+      item.action === "country_change_rejected" ||
+      item.action === "country_change_in_progress"
   ).length;
 
   return (
-    <main className="min-h-screen bg-[#080b12] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <main className="min-h-screen bg-slate-950 px-4 py-6 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-8">
+          <Link
+            href="/admin"
+            className="mb-6 inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+          >
+            <ArrowLeft size={16} />
+            Retour au tableau de bord
+          </Link>
 
-        {/* HEADER */}
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-300">
-              <Activity size={25} />
-            </div>
-
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.25em] text-purple-300">
-                MOSHI ADMIN
-              </p>
+              <div className="mb-3 flex items-center gap-2 text-cyan-400">
+                <ShieldCheck size={19} />
+                <span className="text-xs font-bold uppercase tracking-[0.2em]">
+                  MOSHI ADMINISTRATION
+                </span>
+              </div>
 
-              <h1 className="text-xl font-bold sm:text-2xl">
+              <h1 className="text-2xl font-bold sm:text-3xl">
                 Journal administratif
               </h1>
-            </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                Consulte les actions réalisées par les administrateurs
+                sur les comptes, les certifications et les changements
+                de pays.
+              </p>
+            </div>
+
             <button
               type="button"
-              onClick={() => loadActivities(true)}
-              disabled={refreshing || loading}
-              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={handleRefresh}
+              disabled={loading || refreshing}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-semibold transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw
                 size={16}
@@ -342,400 +419,270 @@ export default function AdminActivitiesPage() {
               />
               Actualiser
             </button>
-
-            <Link
-              href="/admin"
-              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold transition hover:bg-white/10"
-            >
-              <ArrowLeft size={16} />
-              Tableau de bord
-            </Link>
           </div>
         </header>
 
-        {/* INTRODUCTION */}
-        <section className="mt-8">
-          <h2 className="text-2xl font-bold sm:text-3xl">
-            Historique des opérations
-          </h2>
-
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-400">
-            Retrouvez les décisions prises par les administrateurs
-            sur les comptes et les demandes de certification.
-            Chaque événement enregistré conserve son responsable,
-            son motif et sa date.
-          </p>
-        </section>
-
-        {/* STATISTICS */}
-        <section className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-2xl border border-white/10 bg-[#111722] p-4 sm:p-5">
+        <section className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-400 sm:text-sm">
-                Total filtré
-              </span>
-              <Activity size={19} className="text-purple-300" />
+              <p className="text-sm text-slate-400">Total des opérations</p>
+              <Activity className="text-cyan-400" size={20} />
             </div>
-
-            <p className="mt-3 text-2xl font-bold tabular-nums sm:text-3xl">
-              {total}
+            <p className="mt-3 text-3xl font-bold tabular-nums">
+              {total.toLocaleString("fr-FR")}
             </p>
-
-            <p className="mt-1 text-xs text-gray-500">
-              Événements enregistrés
+            <p className="mt-1 text-xs text-slate-500">
+              Résultats correspondant aux filtres
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-[#111722] p-4 sm:p-5">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-400 sm:text-sm">
-                Suspensions
-              </span>
-              <Ban size={19} className="text-red-300" />
+              <p className="text-sm text-slate-400">Suspensions</p>
+              <Ban className="text-red-400" size={20} />
             </div>
-
-            <p className="mt-3 text-2xl font-bold tabular-nums sm:text-3xl">
-              {suspendedCount}
+            <p className="mt-3 text-3xl font-bold tabular-nums">
+              {currentPageSuspensions}
             </p>
-
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-slate-500">
               Sur cette page
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-[#111722] p-4 sm:p-5">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-400 sm:text-sm">
-                Réactivations
-              </span>
-              <UserCheck size={19} className="text-emerald-300" />
+              <p className="text-sm text-slate-400">Certifications</p>
+              <BadgeCheck className="text-emerald-400" size={20} />
             </div>
-
-            <p className="mt-3 text-2xl font-bold tabular-nums sm:text-3xl">
-              {reactivatedCount}
+            <p className="mt-3 text-3xl font-bold tabular-nums">
+              {currentPageCertifications}
             </p>
-
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-slate-500">
               Sur cette page
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-[#111722] p-4 sm:p-5">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-400 sm:text-sm">
-                Certifications
-              </span>
-              <BadgeCheck size={19} className="text-blue-300" />
+              <p className="text-sm text-slate-400">Changements de pays</p>
+              <Globe className="text-cyan-400" size={20} />
             </div>
-
-            <p className="mt-3 text-2xl font-bold tabular-nums sm:text-3xl">
-              {approvedCount + rejectedCount}
+            <p className="mt-3 text-3xl font-bold tabular-nums">
+              {currentPageCountryChanges}
             </p>
-
-            <p className="mt-1 text-xs text-gray-500">
-              {approvedCount} acceptées · {rejectedCount} refusées
+            <p className="mt-1 text-xs text-slate-500">
+              Sur cette page
             </p>
           </div>
         </section>
 
-        {/* FILTERS */}
-        <section className="mt-8 rounded-2xl border border-white/10 bg-[#111722] p-4 sm:p-5">
-          <div className="grid gap-4 md:grid-cols-[1fr_260px]">
-            <div>
-              <label
-                htmlFor="activity-search"
-                className="mb-2 block text-xs font-semibold text-gray-400"
-              >
-                Rechercher dans les motifs
-              </label>
-
-              <div className="relative">
-                <Search
-                  size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
-                />
-
-                <input
-                  id="activity-search"
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Rechercher une raison..."
-                  className="w-full rounded-xl border border-white/10 bg-[#080b12] py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-gray-600 focus:border-purple-400/60"
-                />
-              </div>
+        <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+          <div className="grid gap-3 md:grid-cols-[1fr_280px]">
+            <div className="relative">
+              <Search
+                size={18}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+              />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Rechercher dans les motifs..."
+                maxLength={80}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-500"
+              />
             </div>
 
-            <div>
-              <label
-                htmlFor="activity-filter"
-                className="mb-2 block text-xs font-semibold text-gray-400"
-              >
-                Type d'activité
-              </label>
-
-              <select
-                id="activity-filter"
-                value={action}
-                onChange={(event) => setAction(event.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-[#080b12] px-3 py-3 text-sm text-white outline-none focus:border-purple-400/60"
-              >
-                {ACTIONS.map((item) => (
-                  <option
-                    key={item.value}
-                    value={item.value}
-                    className="bg-[#111722]"
-                  >
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-4">
-            <p className="text-xs text-gray-500">
-              {total} résultat{total > 1 ? "s" : ""} trouvé
-              {total > 1 ? "s" : ""}
-            </p>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSearch("");
-                setAction("all");
-                setPage(1);
-              }}
-              className="text-xs font-semibold text-purple-300 transition hover:text-purple-200"
+            <select
+              value={action}
+              onChange={(event) => setAction(event.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-cyan-500"
             >
-              Réinitialiser les filtres
-            </button>
+              {ACTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <span>
+              {total.toLocaleString("fr-FR")} résultat(s)
+            </span>
+            <span>
+              {PAGE_SIZE} opérations maximum par page
+            </span>
           </div>
         </section>
 
-        {/* ACTIVITY LIST */}
-        <section className="mt-8">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        {error && (
+          <div
+            role="alert"
+            className="mb-5 flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300"
+          >
+            <XCircle size={18} className="mt-0.5 shrink-0" />
             <div>
-              <h2 className="text-lg font-bold">
-                Événements enregistrés
-              </h2>
-
-              <p className="mt-1 text-xs text-gray-500">
-                Page {page} sur {totalPages}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <Clock size={15} />
-              Plus récents en premier
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-white/10 bg-[#111722]">
-              <RefreshCw
-                size={25}
-                className="animate-spin text-purple-300"
-              />
-
-              <p className="mt-3 text-sm text-gray-400">
-                Chargement du journal...
-              </p>
-            </div>
-          ) : error ? (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6 text-center">
-              <XCircle
-                size={28}
-                className="mx-auto text-red-300"
-              />
-
-              <p className="mt-3 font-semibold text-red-200">
-                Impossible de charger les activités
-              </p>
-
-              <p className="mt-2 text-sm text-gray-400">
-                {error}
-              </p>
-
+              <p className="font-semibold">Erreur de chargement</p>
+              <p className="mt-1">{error}</p>
               <button
                 type="button"
-                onClick={() => loadActivities(true)}
-                className="mt-4 rounded-xl bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/20"
+                onClick={handleRefresh}
+                className="mt-3 font-semibold underline underline-offset-4"
               >
                 Réessayer
               </button>
             </div>
-          ) : activities.length === 0 ? (
-            <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-[#111722] px-5 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-gray-500">
-                <Activity size={27} />
-              </div>
+          </div>
+        )}
 
-              <h3 className="mt-4 font-bold">
-                Aucune activité trouvée
-              </h3>
-
-              <p className="mt-2 max-w-md text-sm leading-6 text-gray-500">
-                Aucun événement ne correspond à tes filtres.
-                Les nouvelles suspensions, réactivations et décisions
-                de certification apparaîtront ici.
-              </p>
+        {loading ? (
+          <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-slate-800 bg-slate-900">
+            <Loader2 className="mb-3 animate-spin text-cyan-400" size={30} />
+            <p className="text-sm text-slate-400">
+              Chargement du journal administratif...
+            </p>
+          </div>
+        ) : activities.length === 0 ? (
+          <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 px-5 text-center">
+            <div className="mb-4 rounded-2xl bg-slate-800 p-4">
+              <Activity size={28} className="text-slate-400" />
             </div>
-          ) : (
-            <div className="space-y-4">
-              {activities.map((item) => {
-                const Icon = getActionIcon(item.action);
+            <h2 className="text-lg font-semibold">
+              Aucune activité trouvée
+            </h2>
+            <p className="mt-2 max-w-md text-sm text-slate-500">
+              Aucune opération ne correspond à cette recherche.
+              Essaie un autre filtre ou une autre expression.
+            </p>
+          </div>
+        ) : (
+          <section className="space-y-3">
+            {activities.map((item) => {
+              const config = ACTION_CONFIG[item.action];
+              const Icon = config.icon;
 
-                return (
-                  <article
-                    key={item.id}
-                    className="rounded-2xl border border-white/10 bg-[#111722] p-4 transition hover:border-white/20 sm:p-5"
-                  >
-                    {/* EVENT TITLE */}
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${getActionColor(item.action)}`}
-                        >
-                          <Icon size={21} />
-                        </div>
-
-                        <div className="min-w-0">
-                          <h3 className="font-bold">
-                            {ACTION_LABELS[item.action] ||
-                              "Opération administrative"}
-                          </h3>
-
-                          <p className="mt-1 text-xs text-gray-500">
-                            {getActionDescription(item.action)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <span
-                        className={`rounded-full border px-3 py-1.5 text-[10px] font-bold ${getActionColor(item.action)}`}
+              return (
+                <article
+                  key={item.id}
+                  className="rounded-2xl border border-slate-800 bg-slate-900 p-4 transition hover:border-slate-700 sm:p-5"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${config.color}`}
                       >
-                        {ACTION_LABELS[item.action]?.toUpperCase() ||
-                          "ACTIVITÉ"}
-                      </span>
-                    </div>
-
-                    {/* PEOPLE */}
-                    <div className="mt-5 grid gap-5 border-t border-white/10 pt-5 sm:grid-cols-2">
-                      <ProfileIdentity
-                        profile={item.admin}
-                        fallbackId={item.admin_user_id}
-                        label="Administrateur responsable"
-                      />
-
-                      <ProfileIdentity
-                        profile={item.target}
-                        fallbackId={item.target_user_id}
-                        label="Utilisateur concerné"
-                      />
-                    </div>
-
-                    {/* REASON */}
-                    <div className="mt-5 rounded-xl border border-white/[0.06] bg-[#080b12] p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
-                        Motif / note administrative
-                      </p>
-
-                      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-300">
-                        {item.reason || "Aucun motif renseigné."}
-                      </p>
-                    </div>
-
-                    {/* CERTIFICATION METADATA */}
-                    {item.metadata?.verification_request_id && (
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                        <BadgeCheck size={15} className="text-blue-300" />
-
-                        <span>
-                          Référence de demande :
-                        </span>
-
-                        <span className="break-all font-mono text-gray-400">
-                          {String(
-                            item.metadata.verification_request_id
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* DATE */}
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-4">
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <Clock size={15} />
-                        {formatDate(item.created_at)}
+                        <Icon size={20} />
                       </div>
 
-                      <span className="font-mono text-[10px] text-gray-600">
-                        ID : {item.id.slice(0, 8)}
-                      </span>
+                      <div className="min-w-0">
+                        <h2 className="font-semibold text-white">
+                          {config.label}
+                        </h2>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {config.description}
+                        </p>
+                      </div>
                     </div>
-                  </article>
-                );
-              })}
+
+                    <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <Clock size={13} />
+                      {formatDate(item.created_at)}
+                    </span>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 border-t border-slate-800 pt-4 sm:grid-cols-2">
+                    <ProfileIdentity
+                      profile={item.admin}
+                      fallbackId={item.admin_user_id}
+                      label="Administrateur responsable"
+                    />
+
+                    <ProfileIdentity
+                      profile={item.target}
+                      fallbackId={item.target_user_id}
+                      label="Utilisateur concerné"
+                    />
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Motif / réponse administrative
+                    </p>
+                    <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-300">
+                      {item.reason || "Aucun motif renseigné."}
+                    </p>
+                  </div>
+
+                  <MetadataDetails
+                    metadata={item.metadata}
+                    action={item.action}
+                  />
+
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
+                    <span className="text-xs text-slate-600">
+                      Référence : {item.id.slice(0, 12)}
+                    </span>
+
+                    <span className="text-xs text-slate-500">
+                      Événement enregistré dans le journal sécurisé
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        )}
+
+        {!loading && totalPages > 1 && (
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <p className="text-sm text-slate-400">
+              Page{" "}
+              <span className="font-semibold text-white">{page}</span>
+              {" "}sur{" "}
+              <span className="font-semibold text-white">
+                {totalPages}
+              </span>
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1 || loading}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ArrowLeft size={15} />
+                Précédent
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((current) => Math.min(totalPages, current + 1))
+                }
+                disabled={page >= totalPages || loading}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Suivant
+                <ArrowRight size={15} />
+              </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* PAGINATION */}
-          {!loading && !error && totalPages > 1 && (
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#111722] p-4">
-              <p className="text-xs text-gray-500">
-                Page {page} / {totalPages}
-              </p>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() =>
-                    setPage((current) => Math.max(1, current - 1))
-                  }
-                  className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  <ArrowLeft size={16} />
-                  Précédent
-                </button>
-
-                <button
-                  type="button"
-                  disabled={page >= totalPages}
-                  onClick={() =>
-                    setPage((current) =>
-                      Math.min(totalPages, current + 1)
-                    )
-                  }
-                  className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  Suivant
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* SECURITY FOOTER */}
-        <footer className="mt-10 rounded-2xl border border-blue-500/15 bg-blue-500/[0.04] p-4 sm:p-5">
+        <footer className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
           <div className="flex items-start gap-3">
-            <ShieldCheck
-              size={21}
-              className="mt-0.5 shrink-0 text-blue-300"
-            />
-
+            <ShieldCheck size={19} className="mt-0.5 shrink-0 text-emerald-400" />
             <div>
-              <h3 className="text-sm font-bold text-blue-200">
+              <p className="text-sm font-semibold text-slate-300">
                 Journal administratif sécurisé
-              </h3>
-
-              <p className="mt-1 text-xs leading-5 text-gray-500">
-                Cet espace est réservé aux administrateurs autorisés.
-                Les événements affichés proviennent des opérations
-                effectivement enregistrées dans la base de données.
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Les opérations sont enregistrées côté serveur.
+                Cette interface permet uniquement leur consultation.
+                Les événements affichés dépendent des actions réellement
+                enregistrées dans la base de données.
               </p>
             </div>
           </div>
