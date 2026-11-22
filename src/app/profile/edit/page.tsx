@@ -1,8 +1,8 @@
-
 "use client";
 
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -23,6 +23,7 @@ import {
   Facebook,
   Save,
   CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 
 const COUNTRIES = [
@@ -61,7 +62,7 @@ const COUNTRIES = [
 
 export default function EditProfilePage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
@@ -79,7 +80,9 @@ export default function EditProfilePage() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [facebookUrl, setFacebookUrl] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
   const [success, setSuccess] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -99,6 +102,7 @@ export default function EditProfilePage() {
         }
 
         if (!active) return;
+
         setUserId(user.id);
 
         const { data, error } = await supabase
@@ -133,8 +137,11 @@ export default function EditProfilePage() {
         setFacebookUrl(data.facebook_url || "");
       } catch (error) {
         console.error("Chargement du profil :", error);
+
         if (active) {
-          alert("Impossible de charger les informations du profil.");
+          setErrorMessage(
+            "Impossible de charger les informations du profil."
+          );
         }
       } finally {
         if (active) setLoading(false);
@@ -155,20 +162,28 @@ export default function EditProfilePage() {
 
     if (!file || !userId) return;
 
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-      alert("Choisis une image JPG, PNG ou WebP.");
+    if (
+      !["image/jpeg", "image/png", "image/webp"].includes(file.type)
+    ) {
+      setErrorMessage("Choisis une image JPG, PNG ou WebP.");
+      event.target.value = "";
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("La photo ne doit pas dépasser 5 Mo.");
+      setErrorMessage("La photo ne doit pas dépasser 5 Mo.");
+      event.target.value = "";
       return;
     }
 
     setUploading(true);
+    setErrorMessage("");
+    setSuccess("");
 
     try {
-      const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const extension =
+        file.name.split(".").pop()?.toLowerCase() || "jpg";
+
       const filePath = `${userId}/avatar.${extension}`;
 
       const { error: uploadError } = await supabase.storage
@@ -200,7 +215,8 @@ export default function EditProfilePage() {
       setSuccess("Photo de profil mise à jour.");
     } catch (error) {
       console.error("Erreur photo :", error);
-      alert(
+
+      setErrorMessage(
         error instanceof Error
           ? error.message
           : "Impossible de modifier la photo."
@@ -232,22 +248,34 @@ export default function EditProfilePage() {
       .replace(/\s/g, "");
 
     if (!normalizedUsername || normalizedUsername.length < 3) {
-      alert("Le nom d'utilisateur doit contenir au moins 3 caractères.");
+      setErrorMessage(
+        "Le nom d'utilisateur doit contenir au moins 3 caractères."
+      );
+      return;
+    }
+
+    if (!/^[a-z0-9._]+$/.test(normalizedUsername)) {
+      setErrorMessage(
+        "Le nom d'utilisateur peut contenir uniquement des lettres, chiffres, points et tirets bas."
+      );
       return;
     }
 
     if (!country.trim()) {
-      alert("Choisis ton pays.");
+      setErrorMessage("Choisis ton pays.");
       return;
     }
 
     if (bio.length > 150) {
-      alert("La biographie ne doit pas dépasser 150 caractères.");
+      setErrorMessage(
+        "La biographie ne doit pas dépasser 150 caractères."
+      );
       return;
     }
 
     setSaving(true);
     setSuccess("");
+    setErrorMessage("");
 
     try {
       const profileData = {
@@ -271,11 +299,13 @@ export default function EditProfilePage() {
       if (error) throw error;
 
       setSuccess("Ton profil a été mis à jour.");
+
       router.replace(`/profile/${userId}`);
       router.refresh();
     } catch (error) {
       console.error("Erreur sauvegarde profil :", error);
-      alert(
+
+      setErrorMessage(
         error instanceof Error
           ? error.message
           : "Impossible d'enregistrer les modifications."
@@ -334,6 +364,13 @@ export default function EditProfilePage() {
       </header>
 
       <div className="mx-auto max-w-xl space-y-4 px-4 py-5">
+        {errorMessage && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         {success && (
           <div className="flex items-center gap-2 rounded-xl bg-green-50 p-3 text-sm text-green-700">
             <CheckCircle2 className="h-5 w-5 shrink-0" />
@@ -341,6 +378,7 @@ export default function EditProfilePage() {
           </div>
         )}
 
+        {/* PHOTO DE PROFIL */}
         <section className="flex flex-col items-center rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="relative">
             <div className="h-28 w-28 rounded-full bg-gradient-to-br from-pink-400 via-purple-500 to-blue-400 p-[3px]">
@@ -389,16 +427,19 @@ export default function EditProfilePage() {
           <p className="mt-3 text-sm font-bold text-gray-900">
             Photo de profil
           </p>
+
           <p className="mt-1 text-center text-xs text-gray-500">
             JPG, PNG ou WebP · 5 Mo maximum
           </p>
         </section>
 
+        {/* IDENTITÉ */}
         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
               <UserRound className="h-5 w-5" />
             </div>
+
             <div>
               <h2 className="font-bold text-gray-900">Identité</h2>
               <p className="text-xs text-gray-500">
@@ -409,17 +450,23 @@ export default function EditProfilePage() {
 
           <div className="space-y-4">
             <div>
-              <label className={labelClass}>Nom d'utilisateur</label>
+              <label className={labelClass}>
+                Nom d'utilisateur
+              </label>
+
               <div className="relative">
                 <span className="absolute left-4 top-[22px] text-sm font-bold text-gray-400">
                   @
                 </span>
+
                 <input
                   type="text"
                   value={username}
                   onChange={(event) =>
                     setUsername(
-                      event.target.value.toLowerCase().replace(/\s/g, "")
+                      event.target.value
+                        .toLowerCase()
+                        .replace(/\s/g, "")
                     )
                   }
                   className={`${inputClass} pl-9`}
@@ -431,10 +478,13 @@ export default function EditProfilePage() {
 
             <div>
               <label className={labelClass}>Nom complet</label>
+
               <input
                 type="text"
                 value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
+                onChange={(event) =>
+                  setFullName(event.target.value)
+                }
                 className={inputClass}
                 placeholder="Ton nom complet"
                 maxLength={80}
@@ -443,15 +493,19 @@ export default function EditProfilePage() {
           </div>
         </section>
 
+        {/* BIOGRAPHIE */}
         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
           <h2 className="font-bold text-gray-900">Biographie</h2>
+
           <p className="mt-1 text-xs text-gray-500">
             Présente-toi en quelques mots.
           </p>
 
           <textarea
             value={bio}
-            onChange={(event) => setBio(event.target.value.slice(0, 150))}
+            onChange={(event) =>
+              setBio(event.target.value.slice(0, 150))
+            }
             rows={4}
             maxLength={150}
             className={`${inputClass} resize-none`}
@@ -463,11 +517,13 @@ export default function EditProfilePage() {
           </div>
         </section>
 
+        {/* PAYS */}
         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
               <Globe className="h-5 w-5" />
             </div>
+
             <div>
               <h2 className="font-bold text-gray-900">Pays</h2>
               <p className="text-xs text-gray-500">
@@ -485,6 +541,7 @@ export default function EditProfilePage() {
             {!COUNTRIES.includes(country) && (
               <option value={country}>{country}</option>
             )}
+
             {COUNTRIES.map((item) => (
               <option key={item} value={item}>
                 {item}
@@ -493,13 +550,17 @@ export default function EditProfilePage() {
           </select>
         </section>
 
+        {/* LIEN PERSONNEL */}
         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
               <LinkIcon className="h-5 w-5" />
             </div>
+
             <div>
-              <h2 className="font-bold text-gray-900">Lien personnel</h2>
+              <h2 className="font-bold text-gray-900">
+                Lien personnel
+              </h2>
               <p className="text-xs text-gray-500">
                 Ton site ou ta page personnelle
               </p>
@@ -515,8 +576,12 @@ export default function EditProfilePage() {
           />
         </section>
 
+        {/* RÉSEAUX SOCIAUX */}
         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h2 className="font-bold text-gray-900">Réseaux sociaux</h2>
+          <h2 className="font-bold text-gray-900">
+            Réseaux sociaux
+          </h2>
+
           <p className="mt-1 text-xs text-gray-500">
             Ajoute tes comptes pour permettre aux visiteurs de te retrouver.
           </p>
@@ -527,10 +592,13 @@ export default function EditProfilePage() {
                 <Instagram className="h-4 w-4" />
                 Instagram
               </label>
+
               <input
                 type="text"
                 value={instagramUrl}
-                onChange={(event) => setInstagramUrl(event.target.value)}
+                onChange={(event) =>
+                  setInstagramUrl(event.target.value)
+                }
                 className={inputClass}
                 placeholder="https://instagram.com/toncompte"
               />
@@ -541,10 +609,13 @@ export default function EditProfilePage() {
                 <Video className="h-4 w-4" />
                 TikTok
               </label>
+
               <input
                 type="text"
                 value={tiktokUrl}
-                onChange={(event) => setTiktokUrl(event.target.value)}
+                onChange={(event) =>
+                  setTiktokUrl(event.target.value)
+                }
                 className={inputClass}
                 placeholder="https://tiktok.com/@toncompte"
               />
@@ -555,10 +626,13 @@ export default function EditProfilePage() {
                 <Youtube className="h-4 w-4" />
                 YouTube
               </label>
+
               <input
                 type="text"
                 value={youtubeUrl}
-                onChange={(event) => setYoutubeUrl(event.target.value)}
+                onChange={(event) =>
+                  setYoutubeUrl(event.target.value)
+                }
                 className={inputClass}
                 placeholder="https://youtube.com/@toncompte"
               />
@@ -569,10 +643,13 @@ export default function EditProfilePage() {
                 <Facebook className="h-4 w-4" />
                 Facebook
               </label>
+
               <input
                 type="text"
                 value={facebookUrl}
-                onChange={(event) => setFacebookUrl(event.target.value)}
+                onChange={(event) =>
+                  setFacebookUrl(event.target.value)
+                }
                 className={inputClass}
                 placeholder="https://facebook.com/toncompte"
               />
@@ -580,6 +657,7 @@ export default function EditProfilePage() {
           </div>
         </section>
 
+        {/* ENREGISTREMENT */}
         <button
           type="button"
           onClick={handleSave}
@@ -591,7 +669,10 @@ export default function EditProfilePage() {
           ) : (
             <Save className="h-5 w-5" />
           )}
-          {saving ? "Enregistrement..." : "Enregistrer les modifications"}
+
+          {saving
+            ? "Enregistrement..."
+            : "Enregistrer les modifications"}
         </button>
       </div>
     </main>
