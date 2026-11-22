@@ -296,14 +296,14 @@ export default function EditProfilePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-moshi-bg">
+      <main className="fixed inset-0 z-[100] flex h-[100dvh] items-center justify-center overflow-y-auto bg-moshi-bg">
         <Loader2 className="h-8 w-8 animate-spin text-moshi-purple" />
-      </div>
+      </main>
     );
   }
 
   return (
-    <main className="min-h-[100dvh] bg-moshi-bg pb-10">
+    <main className="fixed inset-0 z-[100] h-[100dvh] overflow-y-auto overscroll-contain bg-moshi-bg pb-10">
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
         <button
           type="button"
