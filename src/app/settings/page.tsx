@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -46,6 +45,8 @@ const CURRENCIES = [
 
 type Language = (typeof LANGUAGES)[number]["value"];
 type Currency = (typeof CURRENCIES)[number]["value"];
+type AccountRole = "acheteur" | "vendeur" | "admin";
+type ConversionStatus = "pending" | "approved" | "rejected" | null;
 
 type SettingItem = {
   title: string;
@@ -148,6 +149,11 @@ export default function SettingsPage() {
   const [language, setLanguage] = useState<Language>("fr");
   const [currency, setCurrency] = useState<Currency>("XOF");
 
+  const [role, setRole] = useState<AccountRole>("acheteur");
+  const [conversionStatus, setConversionStatus] =
+    useState<ConversionStatus>(null);
+  const [requestingSeller, setRequestingSeller] = useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -174,7 +180,9 @@ export default function SettingsPage() {
 
         const { data, error: profileError } = await supabase
           .from("profiles")
-          .select("preferred_language,preferred_currency")
+          .select(
+            "preferred_language,preferred_currency,role,seller_status"
+          )
           .eq("id", user.id)
           .maybeSingle();
 
@@ -191,11 +199,41 @@ export default function SettingsPage() {
 
         setLanguage(savedLanguage?.value ?? "fr");
         setCurrency(savedCurrency?.value ?? "XOF");
+
+        const accountRole = data?.role;
+
+        setRole(
+          accountRole === "vendeur" || accountRole === "admin"
+            ? accountRole
+            : "acheteur"
+        );
+
+        const { data: requestData, error: requestError } =
+          await supabase
+            .from("seller_conversion_requests")
+            .select("status")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (requestError) throw requestError;
+        if (!active) return;
+
+        setConversionStatus(
+          requestData?.status === "pending" ||
+            requestData?.status === "approved" ||
+            requestData?.status === "rejected"
+            ? requestData.status
+            : null
+        );
       } catch (err) {
         console.error("Chargement paramètres :", err);
 
         if (active) {
-          setError("Impossible de charger les paramètres du compte.");
+          setError(
+            "Impossible de charger les paramètres du compte."
+          );
         }
       } finally {
         if (active) setLoading(false);
@@ -251,6 +289,43 @@ export default function SettingsPage() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function requestSellerAccess() {
+    if (
+      requestingSeller ||
+      role !== "acheteur" ||
+      conversionStatus === "pending"
+    ) {
+      return;
+    }
+
+    setRequestingSeller(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const { error: requestError } = await supabase.rpc(
+        "submit_seller_conversion_request"
+      );
+
+      if (requestError) throw requestError;
+
+      setConversionStatus("pending");
+      setSuccess(
+        "Ta demande pour devenir vendeur a été envoyée à l'administration."
+      );
+    } catch (err) {
+      console.error("Demande vendeur :", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible d'envoyer ta demande. Réessaie."
+      );
+    } finally {
+      setRequestingSeller(false);
     }
   }
 
@@ -330,6 +405,58 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {/* Conversion acheteur vers vendeur */}
+        {role === "acheteur" && (
+          <section className="rounded-2xl border border-purple-100 bg-white p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-pink-50 text-pink-600">
+                <Store className="h-5 w-5" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-bold text-gray-900">
+                  Devenir vendeur
+                </h2>
+
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  Envoie une demande à l'administration pour
+                  convertir ton compte acheteur en compte vendeur.
+                </p>
+
+                {conversionStatus === "pending" && (
+                  <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                    Demande en attente de validation.
+                  </p>
+                )}
+
+                {conversionStatus === "rejected" && (
+                  <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                    Ta précédente demande a été refusée. Tu peux
+                    en envoyer une nouvelle.
+                  </p>
+                )}
+
+                {conversionStatus !== "pending" && (
+                  <button
+                    type="button"
+                    onClick={() => void requestSellerAccess()}
+                    disabled={requestingSeller || loading}
+                    className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-moshi-purple px-4 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+                  >
+                    {requestingSeller && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
+
+                    {requestingSeller
+                      ? "Envoi..."
+                      : "Demander à devenir vendeur"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         <SettingSection
           title="Compte"
           items={[
@@ -361,16 +488,21 @@ export default function SettingsPage() {
               icon: ShieldCheck,
               iconStyle: "bg-purple-100 text-purple-700",
             },
-            {
-              title: "Statut vendeur",
-              description: "Gérer ton espace vendeur",
-              href: "/seller",
-              icon: Store,
-              iconStyle: "bg-pink-50 text-pink-600",
-            },
+            ...(role === "vendeur"
+              ? [
+                  {
+                    title: "Espace vendeur",
+                    description: "Gérer ta boutique et tes ventes",
+                    href: "/seller",
+                    icon: Store,
+                    iconStyle: "bg-pink-50 text-pink-600",
+                  },
+                ]
+              : []),
           ]}
         />
 
+        {/* Préférences */}
         <section>
           <h2 className="mb-2 px-1 text-sm font-bold text-gray-900">
             Préférences
@@ -522,6 +654,7 @@ export default function SettingsPage() {
           )}
         </section>
 
+        {/* Confidentialité */}
         <SettingSection
           title="Confidentialité"
           items={[
@@ -549,6 +682,7 @@ export default function SettingsPage() {
           ]}
         />
 
+        {/* Assistance */}
         <SettingSection
           title="Assistance"
           items={[
@@ -569,6 +703,7 @@ export default function SettingsPage() {
           ]}
         />
 
+        {/* Session */}
         <section>
           <h2 className="mb-2 px-1 text-sm font-bold text-gray-900">
             Session
@@ -591,7 +726,9 @@ export default function SettingsPage() {
 
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-red-600">
-                  {loggingOut ? "Déconnexion..." : "Se déconnecter"}
+                  {loggingOut
+                    ? "Déconnexion..."
+                    : "Se déconnecter"}
                 </p>
                 <p className="text-xs text-gray-500">
                   Fermer ta session sur cet appareil
