@@ -41,7 +41,9 @@ type R2Multipart = {
     partNumber: number,
     value: ArrayBuffer
   ): Promise<UploadedPart>;
+
   complete(parts: UploadedPart[]): Promise<unknown>;
+
   abort(): Promise<void>;
 };
 
@@ -73,7 +75,10 @@ type R2Bucket = {
 };
 
 function jsonError(message: string, status = 400) {
-  return NextResponse.json({ error: message }, { status });
+  return NextResponse.json(
+    { error: message },
+    { status }
+  );
 }
 
 function getServices() {
@@ -85,12 +90,16 @@ function getServices() {
     throw new Error("Configuration Supabase manquante.");
   }
 
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  const admin = createClient(
+    supabaseUrl,
+    serviceKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
 
   return {
     supabaseUrl,
@@ -112,16 +121,22 @@ async function authenticate(request: NextRequest) {
 
   const { supabaseUrl, anonKey } = getServices();
 
-  const client = createClient(supabaseUrl, anonKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  const client = createClient(
+    supabaseUrl,
+    anonKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
 
   const { data, error } = await client.auth.getUser(token);
 
-  if (error || !data.user) return null;
+  if (error || !data.user) {
+    return null;
+  }
 
   return data.user;
 }
@@ -141,7 +156,9 @@ async function getSession(
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error || !data) {
+    return null;
+  }
 
   return data as UploadSession;
 }
@@ -192,7 +209,10 @@ async function findExistingVideo(
     .maybeSingle();
 
   if (error) {
-    console.error("Vérification de vidéo existante impossible.");
+    console.error(
+      "Vérification de vidéo existante impossible."
+    );
+
     return null;
   }
 
@@ -213,7 +233,9 @@ async function markSession(
     .eq("user_id", userId);
 
   if (error) {
-    console.error("Mise à jour de session impossible.");
+    console.error(
+      "Mise à jour de session impossible."
+    );
   }
 }
 
@@ -242,7 +264,10 @@ export async function POST(request: NextRequest) {
     const user = await authenticate(request);
 
     if (!user) {
-      return jsonError("Session utilisateur invalide.", 401);
+      return jsonError(
+        "Session utilisateur invalide.",
+        401
+      );
     }
 
     const body = await request.json().catch(() => null);
@@ -253,9 +278,9 @@ export async function POST(request: NextRequest) {
 
     const { admin } = getServices();
 
-    // --------------------------------------------------
+    // ==================================================
     // CRÉATION DE SESSION
-    // --------------------------------------------------
+    // ==================================================
 
     if (body.action === "create") {
       const fileSize = Number(body.fileSize);
@@ -273,7 +298,9 @@ export async function POST(request: NextRequest) {
       }
 
       if (!ALLOWED_TYPES.has(mimeType)) {
-        return jsonError("Format vidéo non autorisé.");
+        return jsonError(
+          "Format vidéo non autorisé."
+        );
       }
 
       if (
@@ -294,7 +321,9 @@ export async function POST(request: NextRequest) {
         expectedParts < 1 ||
         expectedParts > MAX_PARTS
       ) {
-        return jsonError("Nombre de parties invalide.");
+        return jsonError(
+          "Nombre de parties invalide."
+        );
       }
 
       const extension =
@@ -318,20 +347,22 @@ export async function POST(request: NextRequest) {
         }
       );
 
-      const { data: session, error: insertError } =
-        await admin
-          .from("video_upload_sessions")
-          .insert({
-            user_id: user.id,
-            object_key: objectKey,
-            upload_id: multipart.uploadId,
-            file_size: fileSize,
-            mime_type: mimeType,
-            expected_parts: expectedParts,
-            status: "initiated",
-          })
-          .select("id,expected_parts")
-          .single();
+      const {
+        data: session,
+        error: insertError,
+      } = await admin
+        .from("video_upload_sessions")
+        .insert({
+          user_id: user.id,
+          object_key: objectKey,
+          upload_id: multipart.uploadId,
+          file_size: fileSize,
+          mime_type: mimeType,
+          expected_parts: expectedParts,
+          status: "initiated",
+        })
+        .select("id,expected_parts")
+        .single();
 
       if (insertError || !session) {
         try {
@@ -360,13 +391,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // --------------------------------------------------
-    // FINALISATION
-    // --------------------------------------------------
+    // ==================================================
+    // FINALISATION DE LA VIDÉO
+    // ==================================================
 
     if (body.action === "complete") {
       const sessionId = String(body.sessionId || "");
+
       const parts = body.parts;
+
       const caption =
         typeof body.caption === "string"
           ? body.caption.trim().slice(0, 2200)
@@ -401,7 +434,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Une finalisation déjà terminée est idempotente.
+      // --------------------------------------------------
+      // Vérifier si la vidéo a déjà été enregistrée.
+      // --------------------------------------------------
+
       const existingVideoId = await findExistingVideo(
         session.object_key,
         user.id
@@ -426,6 +462,10 @@ export async function POST(request: NextRequest) {
           404
         );
       }
+
+      // --------------------------------------------------
+      // Vérifier les parties envoyées.
+      // --------------------------------------------------
 
       if (parts.length !== session.expected_parts) {
         return jsonError(
@@ -454,6 +494,7 @@ export async function POST(request: NextRequest) {
         }
 
         seen.add(partNumber);
+
         normalizedParts.push({
           partNumber,
           etag,
@@ -472,58 +513,86 @@ export async function POST(request: NextRequest) {
         if (
           normalizedParts[index].partNumber !== index + 1
         ) {
-          return jsonError("Une partie est manquante.");
+          return jsonError(
+            "Une partie est manquante."
+          );
         }
       }
+
+      // --------------------------------------------------
+      // R2 : reprise et finalisation sécurisée.
+      // --------------------------------------------------
 
       const bucket = await getBucket();
 
-      const multipart = bucket.resumeMultipartUpload(
-        session.object_key,
-        session.upload_id
-      );
+      let metadata: R2ObjectMetadata | null = null;
 
+      // Première vérification : le fichier existe-t-il déjà ?
       try {
-        await multipart.complete(normalizedParts);
+        metadata = await bucket.head(
+          session.object_key
+        );
       } catch {
-        // Si une autre requête a déjà finalisé l'upload,
-        // on vérifie si la vidéo existe déjà.
-        const existingAfterFailure =
-          await findExistingVideo(
-            session.object_key,
-            user.id
-          );
+        metadata = null;
+      }
 
-        if (existingAfterFailure) {
-          await markSession(
-            session.id,
-            user.id,
-            "completed"
-          );
+      // Si le fichier n'existe pas, terminer le multipart.
+      if (!metadata) {
+        const multipart = bucket.resumeMultipartUpload(
+          session.object_key,
+          session.upload_id
+        );
 
-          return NextResponse.json({
-            success: true,
-            videoId: existingAfterFailure,
-          });
+        try {
+          await multipart.complete(normalizedParts);
+        } catch {
+          // Une autre requête a peut-être déjà terminé
+          // le multipart. On vérifie le fichier final.
+          try {
+            metadata = await bucket.head(
+              session.object_key
+            );
+          } catch {
+            metadata = null;
+          }
+
+          if (!metadata) {
+            console.error(
+              "Erreur de finalisation R2."
+            );
+
+            return jsonError(
+              "Impossible de finaliser la vidéo. Réessaie.",
+              502
+            );
+          }
         }
 
-        console.error("Erreur de finalisation R2.");
+        // Vérification après la finalisation.
+        if (!metadata) {
+          try {
+            metadata = await bucket.head(
+              session.object_key
+            );
+          } catch {
+            metadata = null;
+          }
+        }
+      }
 
+      // R2 ne confirme pas encore la disponibilité du fichier.
+      if (!metadata) {
         return jsonError(
-          "Impossible de finaliser la vidéo. Réessaie.",
-          502
+          "La vidéo est envoyée, mais R2 ne confirme pas encore sa disponibilité. Réessaie.",
+          503
         );
       }
 
-      // Vérification réelle de la taille du fichier final.
-      const metadata = await bucket.head(
-        session.object_key
-      );
+      // --------------------------------------------------
+      // Contrôle de la taille réelle.
+      // --------------------------------------------------
 
-      if (
-        !metadata ||
-        metadata.size !== session.file_size
-      ) {
+      if (metadata.size !== session.file_size) {
         try {
           await bucket.delete(session.object_key);
         } catch {
@@ -544,25 +613,30 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const { data: video, error: videoError } =
-        await admin
-          .from("videos")
-          .insert({
-            user_id: user.id,
-            url: session.object_key,
-            storage_provider: "r2",
-            storage_key: session.object_key,
-            caption,
-            duration_seconds: duration,
-            status: "published",
-            is_public: true,
-          })
-          .select("id")
-          .single();
+      // --------------------------------------------------
+      // Enregistrement dans Supabase.
+      // --------------------------------------------------
+
+      const {
+        data: video,
+        error: videoError,
+      } = await admin
+        .from("videos")
+        .insert({
+          user_id: user.id,
+          url: session.object_key,
+          storage_provider: "r2",
+          storage_key: session.object_key,
+          caption,
+          duration_seconds: duration,
+          status: "published",
+          is_public: true,
+        })
+        .select("id")
+        .single();
 
       if (videoError || !video) {
-        // Une autre requête peut avoir créé la vidéo
-        // entre-temps. L'index unique empêche le doublon.
+        // Une requête concurrente peut avoir créé la vidéo.
         const existingAfterInsert =
           await findExistingVideo(
             session.object_key,
@@ -586,13 +660,18 @@ export async function POST(request: NextRequest) {
           "Enregistrement de la vidéo dans Supabase impossible."
         );
 
-        // On conserve le fichier R2 pour permettre
-        // une reprise sans devoir renvoyer les 500 Mo.
+        // On conserve le fichier R2.
+        // Une nouvelle tentative pourra reprendre ici
+        // sans renvoyer le fichier.
         return jsonError(
           "Vidéo envoyée, mais son enregistrement a échoué. Réessaie la finalisation.",
           500
         );
       }
+
+      // --------------------------------------------------
+      // Marquer la session comme terminée.
+      // --------------------------------------------------
 
       await markSession(
         session.id,
@@ -608,7 +687,10 @@ export async function POST(request: NextRequest) {
 
     return jsonError("Action POST inconnue.");
   } catch (error) {
-    console.error("Erreur API upload vidéo.");
+    console.error(
+      "Erreur API upload vidéo.",
+      error instanceof Error ? error.message : "Erreur inconnue"
+    );
 
     return jsonError(
       "Service d'upload temporairement indisponible.",
@@ -618,7 +700,7 @@ export async function POST(request: NextRequest) {
 }
 
 // ======================================================
-// PUT : ENVOYER UNE PARTIE
+// PUT : ENVOYER UNE PARTIE DU FICHIER
 // ======================================================
 
 export async function PUT(request: NextRequest) {
@@ -626,7 +708,10 @@ export async function PUT(request: NextRequest) {
     const user = await authenticate(request);
 
     if (!user) {
-      return jsonError("Session utilisateur invalide.", 401);
+      return jsonError(
+        "Session utilisateur invalide.",
+        401
+      );
     }
 
     const sessionId =
@@ -643,7 +728,9 @@ export async function PUT(request: NextRequest) {
       partNumber < 1 ||
       partNumber > MAX_PARTS
     ) {
-      return jsonError("Paramètres d'upload invalides.");
+      return jsonError(
+        "Paramètres d'upload invalides."
+      );
     }
 
     const session = await getSession(
@@ -659,7 +746,9 @@ export async function PUT(request: NextRequest) {
     }
 
     if (partNumber > session.expected_parts) {
-      return jsonError("Numéro de partie invalide.");
+      return jsonError(
+        "Numéro de partie invalide."
+      );
     }
 
     const expectedSize =
@@ -668,13 +757,15 @@ export async function PUT(request: NextRequest) {
         : session.file_size -
           PART_SIZE * (session.expected_parts - 1);
 
-    // Content-Length est facultatif : la taille réelle
-    // du corps sera toujours contrôlée ci-dessous.
+    // Content-Length peut être absent.
+    // On vérifie toujours la taille réelle du corps.
     const contentLengthHeader =
       request.headers.get("content-length");
 
     if (contentLengthHeader !== null) {
-      const declaredSize = Number(contentLengthHeader);
+      const declaredSize = Number(
+        contentLengthHeader
+      );
 
       if (
         !Number.isSafeInteger(declaredSize) ||
@@ -715,7 +806,8 @@ export async function PUT(request: NextRequest) {
     });
   } catch (error) {
     console.error(
-      "Erreur pendant l'envoi d'une partie R2."
+      "Erreur pendant l'envoi d'une partie R2.",
+      error instanceof Error ? error.message : "Erreur inconnue"
     );
 
     return jsonError(
@@ -726,7 +818,7 @@ export async function PUT(request: NextRequest) {
 }
 
 // ======================================================
-// DELETE : ANNULER UNE SESSION
+// DELETE : ANNULER UNE SESSION D'UPLOAD
 // ======================================================
 
 export async function DELETE(request: NextRequest) {
@@ -734,7 +826,10 @@ export async function DELETE(request: NextRequest) {
     const user = await authenticate(request);
 
     if (!user) {
-      return jsonError("Session utilisateur invalide.", 401);
+      return jsonError(
+        "Session utilisateur invalide.",
+        401
+      );
     }
 
     const sessionId =
@@ -776,7 +871,10 @@ export async function DELETE(request: NextRequest) {
       success: true,
     });
   } catch (error) {
-    console.error("Erreur annulation upload vidéo.");
+    console.error(
+      "Erreur annulation upload vidéo.",
+      error instanceof Error ? error.message : "Erreur inconnue"
+    );
 
     return jsonError(
       "Impossible d'annuler l'upload.",
