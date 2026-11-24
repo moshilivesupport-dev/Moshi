@@ -12,13 +12,12 @@ type VideoRow = {
   id: string;
   url: string;
   status: string | null;
-  allow_download: boolean | null;
+  allow_download: boolean;
   storage_provider: string | null;
   storage_key: string | null;
 };
 
-type R2ObjectBody = {
-  body: ReadableStream<Uint8Array>;
+type R2Metadata = {
   size: number;
   httpEtag?: string;
   httpMetadata?: {
@@ -28,7 +27,12 @@ type R2ObjectBody = {
   };
 };
 
+type R2ObjectBody = R2Metadata & {
+  body: ReadableStream<Uint8Array>;
+};
+
 type R2Bucket = {
+  head(key: string): Promise<R2Metadata | null>;
   get(
     key: string,
     options?: {
@@ -40,20 +44,13 @@ type R2Bucket = {
   ): Promise<R2ObjectBody | null>;
 };
 
-function getStoragePath(
-  value: string,
-  supabaseUrl: string
-): string | null {
+function getStoragePath(value: string, supabaseUrl: string): string | null {
   try {
-    // Les nouveaux enregistrements Supabase peuvent contenir
-    // directement le chemin du fichier.
     if (!/^https?:\/\//i.test(value)) {
       const path = value.replace(/^\/+/, "");
-
       return path && !path.includes("..") ? path : null;
     }
 
-    // Compatibilité avec les anciennes URL publiques Supabase.
     const parsed = new URL(value);
     const project = new URL(supabaseUrl);
 
@@ -68,12 +65,13 @@ function getStoragePath(
       markerIndex + marker.length
     );
 
-    const bucketPrefix = /^(?:public|sign)\/videos\//;
+    const prefix = /^(?:public|sign)\/videos\//;
 
-    if (!bucketPrefix.test(objectPart)) return null;
+    if (!prefix.test(objectPart)) return null;
 
-    const encodedPath = objectPart.replace(bucketPrefix, "");
-    const path = decodeURIComponent(encodedPath);
+    const path = decodeURIComponent(
+      objectPart.replace(prefix, "")
+    );
 
     if (!path || path.includes("..")) return null;
 
@@ -92,7 +90,6 @@ function getR2Range(
   | "invalid" {
   if (!header) return null;
 
-  // Une seule plage d'octets est acceptée.
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
 
   if (!match || size <= 0) return "invalid";
@@ -165,8 +162,8 @@ async function getR2Bucket(): Promise<R2Bucket | null> {
       }
     ).MOSHI_MEDIA;
 
-    return bucket || null;
-  } catch (error) {
+    return bucket ?? null;
+  } catch {
     console.error("Accès au stockage R2 indisponible.");
     return null;
   }
@@ -197,8 +194,6 @@ export async function GET(
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
-    console.error("Configuration du service vidéo indisponible.");
-
     return NextResponse.json(
       { error: "Service vidéo temporairement indisponible." },
       { status: 503 }
@@ -213,18 +208,16 @@ export async function GET(
   });
 
   try {
-    // 1. Récupération des informations de la vidéo.
     const { data: video, error } = await admin
       .from("videos")
       .select(
-        "id, url, status, allow_download, storage_provider, storage_key"
+        "id,url,status,allow_download,storage_provider,storage_key"
       )
       .eq("id", id)
       .maybeSingle<VideoRow>();
 
     if (error) {
       console.error("Erreur de lecture des informations vidéo.");
-
       return NextResponse.json(
         { error: "Impossible de charger cette vidéo." },
         { status: 500 }
@@ -238,7 +231,6 @@ export async function GET(
       );
     }
 
-    // 2. Vérification du droit de téléchargement.
     if (wantsDownload && video.allow_download !== true) {
       return NextResponse.json(
         {
@@ -249,12 +241,11 @@ export async function GET(
       );
     }
 
-    // 3. Détermination du fournisseur de stockage.
     const provider = video.storage_provider || "supabase";
 
-    // =====================================================
+    // ==========================================
     // CLOUDFLARE R2
-    // =====================================================
+    // ==========================================
     if (provider === "r2") {
       const storageKey = video.storage_key || video.url;
 
@@ -274,59 +265,54 @@ export async function GET(
         );
       }
 
-      // Première lecture pour connaître la taille du fichier
-      // et vérifier son existence.
-      const initialObject = await bucket.get(storageKey);
+      // head() récupère uniquement les métadonnées.
+      const metadata = await bucket.head(storageKey);
 
-      if (!initialObject) {
+      if (!metadata) {
         return NextResponse.json(
           { error: "Fichier vidéo introuvable." },
           { status: 404 }
         );
       }
 
-      const rangeHeader = request.headers.get("range");
       const range = getR2Range(
-        rangeHeader,
-        initialObject.size
+        request.headers.get("range"),
+        metadata.size
       );
 
       if (range === "invalid") {
         return new NextResponse(null, {
           status: 416,
           headers: {
-            "Content-Range": `bytes */${initialObject.size}`,
+            "Content-Range": `bytes */${metadata.size}`,
             "Accept-Ranges": "bytes",
             "Cache-Control": "no-store",
           },
         });
       }
 
-      let object: R2ObjectBody = initialObject;
-      let status = 200;
+      // Une seule lecture du contenu, complète ou partielle.
+      const object = await bucket.get(
+        storageKey,
+        range
+          ? {
+              range: {
+                offset: range.offset,
+                length: range.length,
+              },
+            }
+          : undefined
+      );
 
-      if (range) {
-        // Lecture de la seule partie demandée.
-        const rangedObject = await bucket.get(storageKey, {
-          range: {
-            offset: range.offset,
-            length: range.length,
-          },
-        });
-
-        if (!rangedObject) {
-          return NextResponse.json(
-            { error: "Fichier vidéo indisponible." },
-            { status: 404 }
-          );
-        }
-
-        object = rangedObject;
-        status = 206;
+      if (!object) {
+        return NextResponse.json(
+          { error: "Fichier vidéo indisponible." },
+          { status: 404 }
+        );
       }
 
       const contentType =
-        object.httpMetadata?.contentType ||
+        metadata.httpMetadata?.contentType ||
         "application/octet-stream";
 
       const headers = new Headers();
@@ -334,46 +320,43 @@ export async function GET(
       headers.set("Content-Type", contentType);
       headers.set("Accept-Ranges", "bytes");
       headers.set("X-Content-Type-Options", "nosniff");
-
       headers.set(
         "Cache-Control",
         "public, max-age=3600, s-maxage=3600"
       );
 
-      headers.set("Content-Length", String(object.size));
+      headers.set(
+        "Content-Length",
+        String(range ? range.length : metadata.size)
+      );
 
-      if (object.httpEtag) {
-        headers.set("ETag", object.httpEtag);
+      if (metadata.httpEtag) {
+        headers.set("ETag", metadata.httpEtag);
       }
 
       if (range) {
         headers.set(
           "Content-Range",
-          `bytes ${range.offset}-${range.end}/${initialObject.size}`
+          `bytes ${range.offset}-${range.end}/${metadata.size}`
         );
       }
 
-      if (wantsDownload) {
-        headers.set(
-          "Content-Disposition",
-          `attachment; filename="moshi-${video.id}.mp4"`
-        );
-      } else {
-        headers.set(
-          "Content-Disposition",
-          "inline"
-        );
-      }
+      headers.set(
+        "Content-Disposition",
+        wantsDownload
+          ? `attachment; filename="moshi-${video.id}.mp4"`
+          : "inline"
+      );
 
       return new NextResponse(object.body, {
-        status,
+        status: range ? 206 : 200,
         headers,
       });
     }
 
-    // =====================================================
-    // SUPABASE STORAGE : COMPATIBILITÉ ANCIENNES VIDÉOS
-    // =====================================================
+    // ==========================================
+    // SUPABASE STORAGE : ANCIENNES VIDÉOS
+    // ==========================================
     if (provider !== "supabase") {
       return NextResponse.json(
         { error: "Fournisseur de stockage non reconnu." },
@@ -387,8 +370,6 @@ export async function GET(
     );
 
     if (!storagePath) {
-      console.error("Chemin de stockage Supabase invalide.");
-
       return NextResponse.json(
         { error: "Fichier vidéo indisponible." },
         { status: 404 }
@@ -407,15 +388,8 @@ export async function GET(
         );
 
     if (signingError || !signed?.signedUrl) {
-      console.error(
-        "Impossible de générer l'accès temporaire à la vidéo."
-      );
-
       return NextResponse.json(
-        {
-          error:
-            "Fichier vidéo temporairement indisponible.",
-        },
+        { error: "Fichier vidéo temporairement indisponible." },
         { status: 503 }
       );
     }
