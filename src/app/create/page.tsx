@@ -108,6 +108,7 @@ function getVideoDuration(file: File): Promise<number> {
     }, 15000);
 
     video.preload = "metadata";
+
     video.onloadedmetadata = () => {
       const duration = video.duration;
 
@@ -284,8 +285,11 @@ export default function CreatePage() {
 
     let sessionId: string | null = null;
 
+    // Dès que la finalisation commence, on ne doit plus
+    // annuler automatiquement la session R2.
+    let finalizationStarted = false;
+
     try {
-      // Récupération du jeton de connexion.
       const {
         data: { session },
         error: sessionError,
@@ -339,8 +343,8 @@ export default function CreatePage() {
       }
 
       // 2. Envoi séquentiel des morceaux vers R2.
-      // Un seul morceau est envoyé à la fois pour limiter
-      // l'utilisation de la mémoire sur les téléphones.
+      // Un seul morceau à la fois pour limiter la mémoire
+      // utilisée sur les téléphones.
       const uploadedParts: UploadedPart[] = [];
 
       for (
@@ -384,7 +388,10 @@ export default function CreatePage() {
         );
       }
 
-      // 3. Finalisation R2 et création de la vidéo dans Supabase.
+      // 3. Finalisation R2 et création de la vidéo Supabase.
+      // À partir d'ici, on conserve la session en cas d'erreur.
+      finalizationStarted = true;
+
       const completeResponse = await fetch("/api/videos/upload", {
         method: "POST",
         headers: {
@@ -417,25 +424,28 @@ export default function CreatePage() {
     } catch (err) {
       console.error("Erreur publication vidéo :", err);
 
-      // En cas d'échec, on demande au serveur d'annuler
-      // la session multipart si elle a déjà été créée.
-      if (sessionId) {
+      // Avant la finalisation, on peut annuler le multipart.
+      // Après le début de la finalisation, on conserve la session :
+      // R2 peut déjà avoir terminé et Supabase peut encore être réessayé.
+      if (sessionId && !finalizationStarted) {
         try {
-          await fetch(
-            `/api/videos/upload?sessionId=${encodeURIComponent(
-              sessionId
-            )}`,
-            {
-              method: "DELETE",
-              headers: {
-                Authorization: `Bearer ${
-                  (
-                    await supabase.auth.getSession()
-                  ).data.session?.access_token || ""
-                }`,
-              },
-            }
-          );
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
+          if (session?.access_token) {
+            await fetch(
+              `/api/videos/upload?sessionId=${encodeURIComponent(
+                sessionId
+              )}`,
+              {
+                method: "DELETE",
+                headers: {
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+              }
+            );
+          }
         } catch (cleanupError) {
           console.error(
             "Erreur annulation de l'envoi R2 :",
