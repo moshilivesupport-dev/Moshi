@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -138,6 +137,8 @@ export default function LiveRoomPage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [guestRequestLoading, setGuestRequestLoading] = useState(false);
+  const [guestRequestSent, setGuestRequestSent] = useState(false);
 
   const activeGiftAnimation = giftQueue[0] ?? null;
 
@@ -600,6 +601,47 @@ export default function LiveRoomPage() {
     }
   };
 
+  // DEMANDER À REJOINDRE LE LIVE COMME INVITÉ
+  const handleRequestToJoin = async () => {
+    if (!currentUser) {
+      router.push("/auth/login");
+      return;
+    }
+
+    if (!live?.id || isHost || guestRequestLoading || guestRequestSent) {
+      return;
+    }
+
+    setGuestRequestLoading(true);
+
+    try {
+      const response = await fetch("/api/live/guest-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ liveId: live.id }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Impossible d'envoyer la demande."
+        );
+      }
+
+      setGuestRequestSent(true);
+    } catch (error) {
+      console.error("Erreur demande invité :", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Impossible d'envoyer la demande."
+      );
+    } finally {
+      setGuestRequestLoading(false);
+    }
+  };
+
   // ENVOYER UN CADEAU
   const handleSendGift = async (
     gift: GiftItem,
@@ -896,7 +938,7 @@ export default function LiveRoomPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-black/35 px-2.5 py-2 backdrop-blur-md">
+          <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-black/35 px-2.5 py-2">
             <div className="flex items-center gap-1.5 text-xs font-bold">
               <Eye size={14} />
               <LiveViewerCounter
@@ -1084,13 +1126,31 @@ export default function LiveRoomPage() {
           </button>
         </div>
 
-        <button
-          onClick={() => setIsGiftPanelOpen(true)}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg"
-          aria-label="Envoyer un cadeau"
-        >
-          <Gift size={23} />
-        </button>
+        {isHost && (
+          <button
+            onClick={() => setIsGiftPanelOpen(true)}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg"
+            aria-label="Envoyer un cadeau"
+          >
+            <Gift size={23} />
+          </button>
+        )}
+
+        {!isHost && (
+          <button
+            onClick={() => void handleRequestToJoin()}
+            disabled={guestRequestLoading || guestRequestSent}
+            className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-4 text-xs font-bold disabled:opacity-60"
+            aria-label="Demander à rejoindre le live"
+          >
+            <UserPlus size={17} />
+            {guestRequestLoading
+              ? "Envoi..."
+              : guestRequestSent
+              ? "Demande envoyée"
+              : "Rejoindre"}
+          </button>
+        )}
 
         <button
           onClick={handleShare}
@@ -1101,71 +1161,73 @@ export default function LiveRoomPage() {
         </button>
       </div>
 
-      <nav className="absolute bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/10 bg-black/35 px-2 pb-[max(env(safe-area-inset-bottom),12px)] pt-3 backdrop-blur-xl">
-        <button
-          onClick={() => void mediaControls?.toggleMicrophone()}
-          disabled={!mediaControls}
-          className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white disabled:opacity-40"
-        >
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
-            {mediaControls?.microphoneEnabled ? (
-              <Mic size={22} />
-            ) : (
-              <MicOff size={22} className="text-red-400" />
-            )}
-          </span>
-          <span className="text-[10px] font-semibold">Micro</span>
-        </button>
+      {isHost && (
+        <nav className="absolute bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/10 bg-black/35 px-2 pb-[max(env(safe-area-inset-bottom),12px)] pt-3 backdrop-blur-xl">
+          <button
+            onClick={() => void mediaControls?.toggleMicrophone()}
+            disabled={!mediaControls}
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white disabled:opacity-40"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
+              {mediaControls?.microphoneEnabled ? (
+                <Mic size={22} />
+              ) : (
+                <MicOff size={22} className="text-red-400" />
+              )}
+            </span>
+            <span className="text-[10px] font-semibold">Micro</span>
+          </button>
 
-        <button
-          onClick={() => void mediaControls?.toggleCamera()}
-          disabled={!mediaControls}
-          className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white disabled:opacity-40"
-        >
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
-            {mediaControls?.cameraEnabled ? (
-              <Camera size={22} />
-            ) : (
-              <CameraOff size={22} className="text-red-400" />
-            )}
-          </span>
-          <span className="text-[10px] font-semibold">Caméra</span>
-        </button>
+          <button
+            onClick={() => void mediaControls?.toggleCamera()}
+            disabled={!mediaControls}
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white disabled:opacity-40"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
+              {mediaControls?.cameraEnabled ? (
+                <Camera size={22} />
+              ) : (
+                <CameraOff size={22} className="text-red-400" />
+              )}
+            </span>
+            <span className="text-[10px] font-semibold">Caméra</span>
+          </button>
 
-        <button
-          onClick={() =>
-            window.dispatchEvent(new Event("moshi-open-invite"))
-          }
-          className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white"
-        >
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
-            <UserPlus size={22} />
-          </span>
-          <span className="text-[10px] font-semibold">Inviter</span>
-        </button>
+          <button
+            onClick={() =>
+              window.dispatchEvent(new Event("moshi-open-invite"))
+            }
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
+              <UserPlus size={22} />
+            </span>
+            <span className="text-[10px] font-semibold">Inviter</span>
+          </button>
 
-        <button
-          onClick={() => setIsSoundboardOpen(true)}
-          className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white"
-        >
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
-            <Music size={22} />
-          </span>
-          <span className="text-[10px] font-semibold">Musique</span>
-        </button>
+          <button
+            onClick={() => setIsSoundboardOpen(true)}
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
+              <Music size={22} />
+            </span>
+            <span className="text-[10px] font-semibold">Musique</span>
+          </button>
 
-        <button
-          onClick={() => setIsMoreOpen(true)}
-          className="flex min-w-0 flex-col items-center gap-1 text-white"
-        >
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
-            <MoreHorizontal size={23} />
-          </span>
-          <span className="text-[10px] font-semibold">Plus</span>
-        </button>
-      </nav>
+          <button
+            onClick={() => setIsMoreOpen(true)}
+            className="flex min-w-0 flex-col items-center gap-1 text-white"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
+              <MoreHorizontal size={23} />
+            </span>
+            <span className="text-[10px] font-semibold">Plus</span>
+          </button>
+        </nav>
+      )}
 
-      {isMoreOpen && (
+      {isHost && isMoreOpen && (
         <div
           className="absolute inset-0 z-[70] flex items-end bg-black/55"
           onClick={() => setIsMoreOpen(false)}
@@ -1185,65 +1247,29 @@ export default function LiveRoomPage() {
             </div>
 
             <div className="grid grid-cols-3 gap-4">
-              {isHost ? (
-                <>
-                  <button
-                    onClick={() => router.push("/seller")}
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
-                  >
-                    <Package size={25} />
-                    <span className="text-xs">Produits</span>
-                  </button>
+              <button
+                onClick={() => router.push("/seller")}
+                className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
+              >
+                <Package size={25} />
+                <span className="text-xs">Produits</span>
+              </button>
 
-                  <button
-                    onClick={() => router.push("/seller")}
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
-                  >
-                    <BarChart3 size={25} />
-                    <span className="text-xs">Statistiques</span>
-                  </button>
+              <button
+                onClick={() => router.push("/seller")}
+                className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
+              >
+                <BarChart3 size={25} />
+                <span className="text-xs">Statistiques</span>
+              </button>
 
-                  <button
-                    onClick={() => router.push("/seller/orders")}
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
-                  >
-                    <ClipboardList size={25} />
-                    <span className="text-xs">Commandes</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() =>
-                      alert("La gestion des modérateurs sera disponible ici.")
-                    }
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
-                  >
-                    <Users size={25} />
-                    <span className="text-xs">Modérateurs</span>
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      alert("Les paramètres des commentaires seront disponibles ici.")
-                    }
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
-                  >
-                    <Settings size={25} />
-                    <span className="text-xs">Commentaires</span>
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      alert("Les paramètres du live seront disponibles ici.")
-                    }
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
-                  >
-                    <Settings size={25} />
-                    <span className="text-xs">Paramètres</span>
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => router.push("/seller/orders")}
+                className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 p-4"
+              >
+                <ClipboardList size={25} />
+                <span className="text-xs">Commandes</span>
+              </button>
             </div>
 
             <button
@@ -1270,7 +1296,6 @@ export default function LiveRoomPage() {
         isHost={isHost}
       />
 
-      {/* Gestion des invités acceptés : visible uniquement pour l'hôte */}
       <LiveGuestManager
         liveId={live.id}
         currentUserId={currentUser?.id ?? null}
@@ -1284,7 +1309,7 @@ export default function LiveRoomPage() {
       />
 
       <GiftPanel
-        isOpen={isGiftPanelOpen}
+        isOpen={isHost && isGiftPanelOpen}
         onClose={() => setIsGiftPanelOpen(false)}
         onSendGift={(gift, quantity, recipientId) =>
           handleSendGift(
@@ -1298,7 +1323,7 @@ export default function LiveRoomPage() {
       />
 
       <Soundboard
-        isOpen={isSoundboardOpen}
+        isOpen={isHost && isSoundboardOpen}
         onClose={() => setIsSoundboardOpen(false)}
         liveId={live.id}
         canUseSoundboard={isHost}
