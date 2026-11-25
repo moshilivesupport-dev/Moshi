@@ -3,13 +3,18 @@ import { NextResponse } from "next/server";
 import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { createClient } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+
     const room = searchParams.get("room");
     const name = searchParams.get("name");
+    const viewerOnly = searchParams.get("viewer") === "1";
 
-    if (!room || !room.startsWith("live-") || !name) {
+    if (!room || !room.startsWith("live-") || !name?.trim()) {
       return NextResponse.json(
         { error: "Paramètres invalides." },
         { status: 400 }
@@ -34,7 +39,7 @@ export async function GET(request: Request) {
 
     const { data: live, error: liveError } = await supabase
       .from("lives")
-      .select("id, host_id, status")
+      .select("id,host_id,status")
       .eq("id", liveId)
       .maybeSingle();
 
@@ -49,13 +54,14 @@ export async function GET(request: Request) {
     let isAcceptedGuest = false;
 
     if (!isHost) {
-      const { data: invitation, error: invitationError } = await supabase
-        .from("live_invitations")
-        .select("id")
-        .eq("live_id", live.id)
-        .eq("invitee_id", user.id)
-        .eq("status", "accepted")
-        .maybeSingle();
+      const { data: invitation, error: invitationError } =
+        await supabase
+          .from("live_invitations")
+          .select("id")
+          .eq("live_id", live.id)
+          .eq("invitee_id", user.id)
+          .eq("status", "accepted")
+          .maybeSingle();
 
       if (invitationError) {
         return NextResponse.json(
@@ -67,7 +73,9 @@ export async function GET(request: Request) {
       isAcceptedGuest = !!invitation;
     }
 
-    const canPublish = isHost || isAcceptedGuest;
+    // Le mode spectateur ne permet jamais de publier.
+    const canPublish =
+      !viewerOnly && (isHost || isAcceptedGuest);
 
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
@@ -82,7 +90,7 @@ export async function GET(request: Request) {
 
     const token = new AccessToken(apiKey, apiSecret, {
       identity: user.id,
-      name,
+      name: name.trim().slice(0, 80),
       ttl: "2h",
     });
 
@@ -91,7 +99,7 @@ export async function GET(request: Request) {
       roomJoin: true,
       canPublish,
       canSubscribe: true,
-      canPublishData: true,
+      canPublishData: canPublish,
       ...(canPublish
         ? {
             canPublishSources: isHost
@@ -114,8 +122,8 @@ export async function GET(request: Request) {
       {
         token: jwt,
         roomName: room,
-        isHost,
-        isGuest: isAcceptedGuest,
+        isHost: viewerOnly ? false : isHost,
+        isGuest: viewerOnly ? false : isAcceptedGuest,
         canPublish,
         livekitUrl,
         hostId: live.host_id,
