@@ -8,8 +8,6 @@ import {
   useMemo,
   useCallback,
 } from "react";
-import LiveGuestManager from "@/components/live/LiveGuestManager";
-import LiveTapSync from "@/components/live/LiveTapSync";
 import type { MouseEvent } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useParams, useRouter } from "next/navigation";
@@ -50,6 +48,7 @@ import GiftPanel from "@/components/live/GiftPanel";
 import GiftAnimation from "@/components/live/GiftAnimation";
 import Soundboard from "@/components/live/Soundboard";
 import LiveInvitePanel from "@/components/live/LiveInvitePanel";
+import LiveGuestManager from "@/components/live/LiveGuestManager";
 import LiveMatchPanel from "@/components/live/LiveMatchPanel";
 import LiveViewerCounter from "@/components/live/LiveViewerCounter";
 
@@ -239,7 +238,6 @@ export default function LiveRoomPage() {
 
     setHearts((previous) => [...previous, heart]);
 
-    // Le compteur est enregistré dans Supabase.
     if (currentUser && id) {
       void supabase
         .rpc("increment_live_like", {
@@ -756,7 +754,6 @@ export default function LiveRoomPage() {
       onClick={handleScreenTap}
       data-live-tap-area
     >
-      {/* Synchronisation des cœurs entre les spectateurs */}
       <LiveTapSync liveId={live.id} />
 
       <LiveKitRoomComponent
@@ -1159,7 +1156,7 @@ export default function LiveRoomPage() {
 
         <button
           onClick={() => setIsMoreOpen(true)}
-          className="flex min-w-0 flex-1 flex-col items-center gap-1 text-white"
+          className="flex min-w-0 flex-col items-center gap-1 text-white"
         >
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15">
             <MoreHorizontal size={23} />
@@ -1268,6 +1265,13 @@ export default function LiveRoomPage() {
       )}
 
       <LiveInvitePanel
+        liveId={live.id}
+        currentUserId={currentUser?.id ?? null}
+        isHost={isHost}
+      />
+
+      {/* Gestion des invités acceptés : visible uniquement pour l'hôte */}
+      <LiveGuestManager
         liveId={live.id}
         currentUserId={currentUser?.id ?? null}
         isHost={isHost}
