@@ -15,7 +15,6 @@ import { Track } from "livekit-client";
 import {
   Loader2,
   VideoOff,
-  Mic,
   MicOff,
   CameraOff,
   UserRound,
@@ -33,6 +32,7 @@ type Props = {
   participantName: string;
   isHost: boolean;
   onControlsReady?: (controls: LiveMediaControls | null) => void;
+  onViewerCountChange?: (count: number) => void;
 };
 
 type TokenResponse = {
@@ -50,6 +50,7 @@ export default function LiveKitRoomComponent({
   roomName,
   participantName,
   onControlsReady,
+  onViewerCountChange,
 }: Props) {
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,7 +83,9 @@ export default function LiveKitRoomComponent({
         const data = (await response.json()) as TokenResponse;
 
         if (!response.ok) {
-          throw new Error(data.error || "Impossible de rejoindre le live.");
+          throw new Error(
+            data.error || "Impossible de rejoindre le live."
+          );
         }
 
         if (!data.token || !data.livekitUrl || !data.hostId) {
@@ -97,7 +100,9 @@ export default function LiveKitRoomComponent({
 
         if (!controller.signal.aborted) {
           setError(
-            err instanceof Error ? err.message : "Une erreur est survenue."
+            err instanceof Error
+              ? err.message
+              : "Une erreur est survenue."
           );
         }
       } finally {
@@ -111,8 +116,11 @@ export default function LiveKitRoomComponent({
   }, [roomName, participantName, onControlsReady]);
 
   useEffect(() => {
-    return () => onControlsReady?.(null);
-  }, [onControlsReady]);
+    return () => {
+      onControlsReady?.(null);
+      onViewerCountChange?.(0);
+    };
+  }, [onControlsReady, onViewerCountChange]);
 
   if (loading) {
     return (
@@ -153,6 +161,7 @@ export default function LiveKitRoomComponent({
         hostId={tokenData.hostId}
         canPublish={tokenData.canPublish}
         onControlsReady={onControlsReady}
+        onViewerCountChange={onViewerCountChange}
       />
     </LiveKitRoom>
   );
@@ -176,6 +185,7 @@ function AvatarPlaceholder({
       >
         {initial}
       </div>
+
       {large && (
         <p className="mt-3 text-sm text-white/70">
           Caméra désactivée
@@ -189,10 +199,12 @@ function LiveVideoLayout({
   hostId,
   canPublish,
   onControlsReady,
+  onViewerCountChange,
 }: {
   hostId: string;
   canPublish: boolean;
   onControlsReady?: (controls: LiveMediaControls | null) => void;
+  onViewerCountChange?: (count: number) => void;
 }) {
   const { localParticipant } = useLocalParticipant();
   const participants = useParticipants();
@@ -203,7 +215,8 @@ function LiveVideoLayout({
   );
 
   const visibleTracks = cameraTracks.filter(
-    (track): track is TrackReference => track.publication !== undefined
+    (track): track is TrackReference =>
+      track.publication !== undefined
   );
 
   const findCameraTrack = (identity: string) =>
@@ -216,7 +229,9 @@ function LiveVideoLayout({
   );
 
   const guestParticipants = participants
-    .filter((participant) => participant.identity !== hostId)
+    .filter(
+      (participant) => participant.identity !== hostId
+    )
     .sort((a, b) => a.identity.localeCompare(b.identity));
 
   const [cameraEnabled, setCameraEnabled] = useState(
@@ -226,6 +241,16 @@ function LiveVideoLayout({
   const [microphoneEnabled, setMicrophoneEnabled] = useState(
     localParticipant.isMicrophoneEnabled
   );
+
+  // Nombre de participants réellement connectés à la salle.
+  // On retire l'hôte pour afficher le nombre de spectateurs et invités.
+  useEffect(() => {
+    const count = participants.filter(
+      (participant) => participant.identity !== hostId
+    ).length;
+
+    onViewerCountChange?.(count);
+  }, [participants, hostId, onViewerCountChange]);
 
   async function toggleCamera() {
     if (!canPublish) return;
@@ -280,7 +305,6 @@ function LiveVideoLayout({
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-black">
-      {/* Vidéo principale de l'hôte */}
       <div className="absolute inset-0">
         {hostCameraActive && hostTrack ? (
           <VideoTrack
@@ -302,7 +326,6 @@ function LiveVideoLayout({
         </div>
       </div>
 
-      {/* Invités connectés : leur vignette reste visible même sans caméra */}
       {guestParticipants.length > 0 && (
         <div className="absolute right-3 top-28 z-20 flex max-h-[48vh] flex-col gap-2 overflow-y-auto">
           {guestParticipants.map((participant) => {
@@ -326,17 +349,16 @@ function LiveVideoLayout({
                   />
                 )}
 
-                {/* Nom de l'invité */}
                 <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1 bg-black/70 px-1 py-1">
                   <span className="max-w-[48px] truncate text-[9px] text-white">
                     {participant.name || "Invité"}
                   </span>
+
                   {!participant.isMicrophoneEnabled && (
                     <MicOff size={10} className="shrink-0 text-red-400" />
                   )}
                 </div>
 
-                {/* État caméra */}
                 {!cameraActive && (
                   <div className="absolute right-1 top-1 rounded-full bg-black/70 p-1">
                     <CameraOff size={11} className="text-white" />
@@ -348,11 +370,10 @@ function LiveVideoLayout({
         </div>
       )}
 
-      {/* Nombre d'invités actuellement connectés */}
       {guestParticipants.length > 0 && (
         <div className="absolute right-3 top-[calc(28vh+8px)] z-20 rounded-full border border-white/20 bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">
           <UserRound size={11} className="mr-1 inline" />
-          {guestParticipants.length} invité
+          {guestParticipants.length} participant
           {guestParticipants.length > 1 ? "s" : ""}
         </div>
       )}
