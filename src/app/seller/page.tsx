@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { uploadMoshiMedia } from "@/lib/media";
 import {
   Plus,
   Package,
@@ -33,11 +34,15 @@ interface ProductPhoto {
   id: string;
   file: File;
   preview: string;
-  url?: string;
 }
 
 const MAX_PHOTOS = 8;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 
 const inputClass =
   "w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 outline-none text-sm focus:border-purple-400";
@@ -45,7 +50,6 @@ const inputClass =
 export default function SellerDashboardPage() {
   const router = useRouter();
   const supabase = createClient();
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
@@ -120,14 +124,12 @@ export default function SellerDashboardPage() {
           .order("created_at", { ascending: false });
 
         if (error) throw error;
-
         if (!mounted) return;
 
         setProducts((data || []) as Product[]);
         setIsVendeur(true);
       } catch (error) {
         console.error("Erreur chargement boutique vendeur:", error);
-
         alert(
           error instanceof Error
             ? error.message
@@ -138,7 +140,7 @@ export default function SellerDashboardPage() {
       }
     };
 
-    loadData();
+    void loadData();
 
     return () => {
       mounted = false;
@@ -155,7 +157,6 @@ export default function SellerDashboardPage() {
       .order("created_at", { ascending: false });
 
     if (error) throw error;
-
     setProducts((data || []) as Product[]);
   };
 
@@ -171,13 +172,6 @@ export default function SellerDashboardPage() {
 
     if (!files.length) return;
 
-    const remaining = MAX_PHOTOS - photos.length;
-
-    if (remaining <= 0) {
-      alert(`Tu peux ajouter au maximum ${MAX_PHOTOS} photos.`);
-      return;
-    }
-
     const accepted: ProductPhoto[] = [];
 
     for (const file of files) {
@@ -186,8 +180,8 @@ export default function SellerDashboardPage() {
         break;
       }
 
-      if (!file.type.startsWith("image/")) {
-        alert(`${file.name} n'est pas une image valide.`);
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        alert(`${file.name} : utilise JPG, PNG ou WebP.`);
         continue;
       }
 
@@ -209,11 +203,7 @@ export default function SellerDashboardPage() {
   const removePhoto = (photoId: string) => {
     setPhotos((current) => {
       const photo = current.find((item) => item.id === photoId);
-
-      if (photo) {
-        URL.revokeObjectURL(photo.preview);
-      }
-
+      if (photo) URL.revokeObjectURL(photo.preview);
       return current.filter((item) => item.id !== photoId);
     });
   };
@@ -235,6 +225,7 @@ export default function SellerDashboardPage() {
     }
   };
 
+  // Envoie chaque photo vers R2 et renvoie les URL à enregistrer en base.
   const uploadPhotos = async (): Promise<string[]> => {
     if (!userId) {
       throw new Error("Session utilisateur introuvable.");
@@ -243,36 +234,16 @@ export default function SellerDashboardPage() {
     const uploadedUrls: string[] = [];
 
     for (const photo of photos) {
-      const extension =
-        photo.file.name.split(".").pop()?.toLowerCase() || "jpg";
-
-      const filePath = `${userId}/${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("products")
-        .upload(filePath, photo.file, {
-          cacheControl: "3600",
-          contentType: photo.file.type,
-          upsert: false,
-        });
-
-      if (uploadError) {
+      try {
+        const uploaded = await uploadMoshiMedia(photo.file, "products");
+        uploadedUrls.push(uploaded.url);
+      } catch (error) {
         throw new Error(
-          `Impossible d'envoyer ${photo.file.name} : ${uploadError.message}`
+          `Impossible d'envoyer ${photo.file.name} : ${
+            error instanceof Error ? error.message : "Erreur inconnue."
+          }`
         );
       }
-
-      const { data } = supabase.storage
-        .from("products")
-        .getPublicUrl(filePath);
-
-      if (!data.publicUrl) {
-        throw new Error("Impossible de récupérer l'adresse d'une photo.");
-      }
-
-      uploadedUrls.push(data.publicUrl);
     }
 
     return uploadedUrls;
@@ -300,7 +271,6 @@ export default function SellerDashboardPage() {
     }
 
     const numericStock = Number(stock);
-
     if (!Number.isInteger(numericStock) || numericStock < 0) {
       alert("Saisis une quantité de stock valide.");
       return false;
@@ -364,14 +334,12 @@ export default function SellerDashboardPage() {
       }
 
       await loadProducts(userId);
-
       resetForm();
       setShowForm(false);
 
       alert("Produit publié avec succès !");
     } catch (error) {
       console.error("Erreur publication produit:", error);
-
       alert(
         error instanceof Error
           ? `Publication impossible : ${error.message}`
@@ -400,7 +368,6 @@ export default function SellerDashboardPage() {
       );
     } catch (error) {
       console.error("Erreur suppression produit:", error);
-
       alert(
         error instanceof Error
           ? error.message
@@ -411,7 +378,6 @@ export default function SellerDashboardPage() {
 
   const closeForm = () => {
     if (saving || uploading) return;
-
     resetForm();
     setShowForm(false);
   };
@@ -448,11 +414,9 @@ export default function SellerDashboardPage() {
         {products.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Package className="w-12 h-12 text-gray-300" />
-
             <p className="text-sm text-gray-500">
               Tu n'as pas encore de produits.
             </p>
-
             <button
               onClick={() => setShowForm(true)}
               className="moshi-gradient text-white font-bold px-5 py-3 rounded-xl"
@@ -488,15 +452,12 @@ export default function SellerDashboardPage() {
                   <p className="text-sm font-bold truncate">
                     {product.title}
                   </p>
-
                   <p className="text-sm font-extrabold text-moshi-purple mt-1">
                     {Number(product.price).toLocaleString("fr-FR")} FCFA
                   </p>
-
                   <p className="text-[10px] text-gray-400 mt-1">
                     Stock : {product.stock}
                   </p>
-
                   <p className="text-[10px] mt-1">
                     {product.is_active ? (
                       <span className="text-green-600">Publié</span>
@@ -549,13 +510,11 @@ export default function SellerDashboardPage() {
             </div>
 
             <div className="space-y-4">
-              {/* PHOTOS */}
               <section>
                 <div className="flex justify-between items-center mb-2">
                   <label className="text-sm font-bold">
                     Photos du produit *
                   </label>
-
                   <span
                     className={`text-xs font-semibold ${
                       photos.length >= 2
@@ -568,8 +527,8 @@ export default function SellerDashboardPage() {
                 </div>
 
                 <p className="text-xs text-gray-500 mb-3">
-                  Ajoute au minimum 2 photos. Formats image, 5 Mo maximum par
-                  photo.
+                  Ajoute au minimum 2 photos. JPG, PNG ou WebP, 5 Mo maximum
+                  par photo.
                 </p>
 
                 <div className="grid grid-cols-3 gap-2">
@@ -623,7 +582,7 @@ export default function SellerDashboardPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/jpeg,image/png,image/webp"
                   multiple
                   onChange={handlePhotosChange}
                   className="hidden"
@@ -636,12 +595,10 @@ export default function SellerDashboardPage() {
                 )}
               </section>
 
-              {/* INFORMATIONS PRODUIT */}
               <div>
                 <label className="block text-sm font-semibold mb-2">
                   Nom du produit *
                 </label>
-
                 <input
                   type="text"
                   placeholder="Ex. Chaussures pour homme"
@@ -656,7 +613,6 @@ export default function SellerDashboardPage() {
                 <label className="block text-sm font-semibold mb-2">
                   Description obligatoire *
                 </label>
-
                 <textarea
                   placeholder="Décris précisément ton produit, ses caractéristiques et son état..."
                   value={description}
@@ -665,7 +621,6 @@ export default function SellerDashboardPage() {
                   maxLength={2000}
                   className={`${inputClass} resize-none`}
                 />
-
                 <p className="text-[10px] text-gray-400 text-right mt-1">
                   {description.length}/2000
                 </p>
@@ -676,7 +631,6 @@ export default function SellerDashboardPage() {
                   <label className="block text-sm font-semibold mb-2">
                     Prix (FCFA) *
                   </label>
-
                   <input
                     type="number"
                     min="1"
@@ -692,7 +646,6 @@ export default function SellerDashboardPage() {
                   <label className="block text-sm font-semibold mb-2">
                     Stock *
                   </label>
-
                   <input
                     type="number"
                     min="0"
@@ -709,7 +662,6 @@ export default function SellerDashboardPage() {
                 <label className="block text-sm font-semibold mb-2">
                   Catégorie
                 </label>
-
                 <input
                   type="text"
                   placeholder="Ex. Mode, Beauté, Électronique"
@@ -720,7 +672,6 @@ export default function SellerDashboardPage() {
                 />
               </div>
 
-              {/* LOCALISATION VENDEUR */}
               <div className="border-t border-gray-100 pt-4">
                 <div className="flex items-center gap-2 mb-3">
                   <MapPin size={18} className="text-moshi-purple" />
@@ -734,7 +685,6 @@ export default function SellerDashboardPage() {
                     <label className="block text-sm font-semibold mb-2">
                       Adresse du vendeur *
                     </label>
-
                     <textarea
                       placeholder="Ville, quartier, rue ou adresse de ton établissement..."
                       value={sellerAddress}
@@ -745,7 +695,6 @@ export default function SellerDashboardPage() {
                       maxLength={500}
                       className={`${inputClass} resize-none`}
                     />
-
                     <p className="text-[10px] text-gray-400 mt-1">
                       Indique l'adresse de ton activité ou de ton point de
                       vente.
@@ -756,7 +705,6 @@ export default function SellerDashboardPage() {
                     <label className="block text-sm font-semibold mb-2">
                       Pays du vendeur *
                     </label>
-
                     <input
                       type="text"
                       placeholder="Ex. Togo"
@@ -771,7 +719,6 @@ export default function SellerDashboardPage() {
                 </div>
               </div>
 
-              {/* PUBLICATION */}
               <button
                 onClick={handleSave}
                 disabled={
