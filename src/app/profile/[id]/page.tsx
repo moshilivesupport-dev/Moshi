@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+
+import { notFound, redirect } from "next/navigation";
 import { Eye } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import ProfileView from "@/components/profile/ProfileView";
@@ -23,17 +24,23 @@ interface ProfileData {
 
 export default async function ProfilePage({ params }: PageProps) {
   const { id } = await params;
-
-  if (id === "me" || id === "profile") {
-    notFound();
-  }
-
   const supabase = await createClient();
 
-  const {
-    data: profile,
-    error,
-  } = await supabase
+  // Résoudre le raccourci du profil personnel.
+  if (id === "me" || id === "profile") {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      redirect("/auth/login");
+    }
+
+    redirect(`/profile/${user.id}`);
+  }
+
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select(
       "id, username, full_name, avatar_url, bio, role, is_verified, profile_views_count"
