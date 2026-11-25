@@ -39,7 +39,8 @@ export async function PATCH(
       );
     }
 
-    // Vérifier que l'invitation appartient bien à l'utilisateur.
+    // Vérifier que l'invitation appartient bien à l'utilisateur
+    // et qu'elle est encore en attente.
     const { data: invitation, error: lookupError } = await supabase
       .from("live_invitations")
       .select(
@@ -66,7 +67,7 @@ export async function PATCH(
       );
     }
 
-    // Refuser une invitation.
+    // Refuser une invitation : même traitement pour guest et match.
     if (status === "declined") {
       const { data: declined, error } = await supabase
         .from("live_invitations")
@@ -96,10 +97,14 @@ export async function PATCH(
         );
       }
 
-      return NextResponse.json({ invitation: declined });
+      return NextResponse.json({
+        success: true,
+        invitation: declined,
+      });
     }
 
-    // Vérifier que le live est toujours actif.
+    // Vérifier que le live est toujours actif et que l'inviteur
+    // est toujours bien l'hôte de ce live.
     const { data: live, error: liveError } = await supabase
       .from("lives")
       .select("id, status, host_id")
@@ -126,71 +131,132 @@ export async function PATCH(
       );
     }
 
-    // L'acceptation passe par la fonction SQL atomique.
-    // Elle verrouille le live et contrôle la limite côté serveur.
-    const { data: result, error: acceptError } = await supabase.rpc(
-      "accept_live_invitation",
-      {
-        p_invitation_id: id,
-        p_max_guests: 4,
-      }
-    );
-
-    if (acceptError) {
-      console.error("Invitation acceptance RPC error:", acceptError);
-
-      return NextResponse.json(
-        { error: "Impossible d'accepter cette invitation." },
-        { status: 500 }
+    // INVITATION GUEST :
+    // Utiliser la fonction SQL atomique qui verrouille le live
+    // et limite le nombre d'invités acceptés à 4.
+    if (invitation.invitation_type === "guest") {
+      const { data: result, error: acceptError } = await supabase.rpc(
+        "accept_live_invitation",
+        {
+          p_invitation_id: id,
+          p_max_guests: 4,
+        }
       );
-    }
 
-    if (!result?.success) {
-      const code = result?.error;
+      if (acceptError) {
+        console.error("Invitation acceptance RPC error:", acceptError);
 
-      if (code === "guest_limit_reached") {
+        return NextResponse.json(
+          { error: "Impossible d'accepter cette invitation." },
+          { status: 500 }
+        );
+      }
+
+      // La fonction SQL retourne "ok" et "code",
+      // et non "success" et "error".
+      if (!result?.ok) {
+        const code = result?.code;
+
+        if (code === "guest_limit_reached") {
+          return NextResponse.json(
+            {
+              error: "Ce live a déjà atteint sa limite de 4 invités.",
+              code,
+            },
+            { status: 409 }
+          );
+        }
+
+        if (code === "live_unavailable") {
+          return NextResponse.json(
+            { error: "Ce live n'est plus disponible.", code },
+            { status: 409 }
+          );
+        }
+
+        if (
+          code === "not_found" ||
+          code === "already_processed"
+        ) {
+          return NextResponse.json(
+            {
+              error: "Cette invitation est introuvable ou déjà traitée.",
+              code,
+            },
+            { status: 404 }
+          );
+        }
+
+        if (code === "wrong_invitation_type") {
+          return NextResponse.json(
+            {
+              error: "Cette invitation n'est pas une invitation d'invité.",
+              code,
+            },
+            { status: 409 }
+          );
+        }
+
         return NextResponse.json(
           {
-            error: "Ce live a déjà atteint sa limite de 4 invités.",
-            code,
+            error: "L'invitation n'a pas pu être acceptée.",
+            code: code || "acceptance_failed",
           },
           { status: 409 }
         );
       }
 
-      if (code === "live_unavailable") {
+      return NextResponse.json({
+        success: true,
+        invitation: result.invitation,
+        guest_count: result.guest_count,
+        guest_limit: result.guest_limit,
+      });
+    }
+
+    // INVITATION MATCH :
+    // Elle conserve son traitement direct.
+    // La fonction SQL accept_live_invitation est réservée aux guests.
+    if (invitation.invitation_type === "match") {
+      const { data: accepted, error: acceptError } = await supabase
+        .from("live_invitations")
+        .update({
+          status: "accepted",
+          responded_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("invitee_id", user.id)
+        .eq("invitation_type", "match")
+        .eq("status", "pending")
+        .select()
+        .maybeSingle();
+
+      if (acceptError) {
+        console.error("Match invitation acceptance error:", acceptError);
+
         return NextResponse.json(
-          { error: "Ce live n'est plus disponible.", code },
+          { error: "Impossible d'accepter cette invitation de match." },
+          { status: 500 }
+        );
+      }
+
+      if (!accepted) {
+        return NextResponse.json(
+          { error: "Cette invitation a déjà été traitée." },
           { status: 409 }
         );
       }
 
-      if (
-        code === "not_found" ||
-        code === "already_processed"
-      ) {
-        return NextResponse.json(
-          { error: "Cette invitation est introuvable ou déjà traitée.", code },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json(
-        { error: "L'invitation n'a pas pu être acceptée.", code },
-        { status: 409 }
-      );
+      return NextResponse.json({
+        success: true,
+        invitation: accepted,
+      });
     }
 
-    return NextResponse.json({
-      success: true,
-      invitation: result.invitation ?? {
-        id,
-        live_id: invitation.live_id,
-        inviter_id: invitation.inviter_id,
-        invitee_id: invitation.invitee_id,
-        status: "accepted",
-      },
-    });
+    return NextResponse.json(
+      { error: "Type d'invitation non reconnu." },
+      { status: 400 }
+    );
   } catch (error) {
     console.error("Invitation response API error:", error);
 
