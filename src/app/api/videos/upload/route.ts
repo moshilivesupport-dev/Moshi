@@ -138,10 +138,15 @@ async function getSession(
   return data as UploadSession;
 }
 
+// Correction TypeScript : déclaration explicite du binding R2.
 async function getBucket(): Promise<R2Bucket> {
   const context = await getCloudflareContext({ async: true });
 
-  const bucket = context.env.MOSHI_MEDIA as R2Bucket | undefined;
+  const bucket = (
+    context.env as unknown as {
+      MOSHI_MEDIA?: R2Bucket;
+    }
+  ).MOSHI_MEDIA;
 
   if (!bucket) {
     throw new Error("Le bucket R2 MOSHI_MEDIA est indisponible.");
@@ -266,7 +271,6 @@ async function readFinalObject(
   try {
     return await bucket.head(key);
   } catch {
-    // Une erreur de lecture n'est pas assimilée à une absence certaine.
     throw new Error("Impossible de vérifier le fichier dans R2.");
   }
 }
@@ -296,7 +300,6 @@ async function saveVideo(
 
   if (!error && video) return video.id;
 
-  // Une autre requête a peut-être inséré la même vidéo.
   const existingId = await findExistingVideo(
     session.object_key,
     userId
@@ -333,10 +336,7 @@ export async function POST(request: NextRequest) {
 
     const { admin } = getServices();
 
-    // ==================================================
     // CRÉATION DE SESSION
-    // ==================================================
-
     if (body.action === "create") {
       const fileSize = Number(body.fileSize);
       const mimeType = String(body.mimeType || "");
@@ -427,10 +427,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ==================================================
     // FINALISATION
-    // ==================================================
-
     if (body.action === "complete") {
       const sessionId = String(body.sessionId || "");
 
@@ -463,7 +460,7 @@ export async function POST(request: NextRequest) {
         return jsonError("Cette session a été annulée.", 409);
       }
 
-      // 1. Si la vidéo est déjà en base, renvoyer son identifiant.
+      // Vérifier si la vidéo est déjà enregistrée.
       const existingVideoId = await findExistingVideo(
         session.object_key,
         user.id
@@ -482,14 +479,12 @@ export async function POST(request: NextRequest) {
 
       const bucket = await getBucket();
 
-      // 2. Vérifier R2 AVANT de demander les parties au client.
-      // Cela permet de reprendre après une finalisation R2 réussie.
+      // Vérifier R2 avant de demander les parties au client.
       let metadata = await readFinalObject(
         bucket,
         session.object_key
       );
 
-      // 3. Si l'objet final existe déjà, les parties ne sont plus nécessaires.
       if (metadata) {
         if (metadata.size !== session.file_size) {
           try {
@@ -506,7 +501,6 @@ export async function POST(request: NextRequest) {
           );
         }
       } else {
-        // 4. Sans objet final, la session doit être encore valide.
         if (!isValidSession(session)) {
           return jsonError("Session expirée ou introuvable.", 404);
         }
@@ -530,7 +524,6 @@ export async function POST(request: NextRequest) {
         try {
           await multipart.complete(normalizedParts);
         } catch {
-          // Une autre tentative a peut-être déjà terminé le multipart.
           metadata = await readFinalObject(
             bucket,
             session.object_key
@@ -544,7 +537,6 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // 5. Vérifier que le fichier final est bien disponible.
         if (!metadata) {
           metadata = await readFinalObject(
             bucket,
@@ -575,8 +567,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 6. Enregistrer la vidéo dans Supabase.
-      // Si cela échoue, on conserve le fichier R2 pour une nouvelle tentative.
+      // Enregistrer la vidéo dans Supabase.
       const videoId = await saveVideo(
         session,
         user.id,
@@ -584,7 +575,6 @@ export async function POST(request: NextRequest) {
         duration
       );
 
-      // 7. Marquer la session terminée.
       await markSession(session.id, user.id, "completed");
 
       return NextResponse.json({
