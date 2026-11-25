@@ -207,6 +207,84 @@ function MatchVideoTrack() {
   );
 }
 
+function DonorRanking({
+  title,
+  donors,
+  loading,
+  color,
+}: {
+  title: string;
+  donors: Donor[];
+  loading: boolean;
+  color: "pink" | "blue";
+}) {
+  const accent =
+    color === "pink"
+      ? "text-pink-300"
+      : "text-blue-300";
+
+  return (
+    <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 p-2">
+      <p className={`mb-2 truncate text-[10px] font-extrabold ${accent}`}>
+        {title}
+      </p>
+
+      {loading ? (
+        <Loader2 className="h-4 w-4 animate-spin text-white/50" />
+      ) : donors.length ? (
+        <div className="space-y-2">
+          {donors.map((donor, index) => {
+            const name =
+              donor.profile?.full_name ||
+              donor.profile?.username ||
+              "Donateur";
+
+            return (
+              <div
+                key={donor.id}
+                className="flex min-w-0 items-center gap-2"
+              >
+                <span className="w-3 shrink-0 text-[10px] font-black text-yellow-300">
+                  {index + 1}
+                </span>
+
+                <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full bg-white/10">
+                  {donor.profile?.avatar_url ? (
+                    <Image
+                      src={donor.profile.avatar_url}
+                      alt={name}
+                      fill
+                      unoptimized
+                      className="object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full items-center justify-center text-[10px] font-bold">
+                      {name.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[10px] font-semibold text-white">
+                    {name}
+                  </p>
+                  <p className="text-[9px] text-white/50">
+                    {formatNumber(donor.total_price)} points
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-[9px] text-white/40">
+          Aucun donateur
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function LiveMatchPage() {
   const params = useParams();
   const router = useRouter();
@@ -218,7 +296,8 @@ export default function LiveMatchPage() {
   const [host, setHost] = useState<Profile | null>(null);
   const [opponent, setOpponent] = useState<Profile | null>(null);
   const [opponentLiveId, setOpponentLiveId] = useState("");
-  const [donors, setDonors] = useState<Donor[]>([]);
+  const [donorsA, setDonorsA] = useState<Donor[]>([]);
+  const [donorsB, setDonorsB] = useState<Donor[]>([]);
   const [remaining, setRemaining] = useState(0);
   const [loading, setLoading] = useState(true);
   const [donorsLoading, setDonorsLoading] = useState(true);
@@ -229,58 +308,103 @@ export default function LiveMatchPage() {
     setDonorsLoading(true);
 
     try {
-      const { data, error } = await supabase
-        .from("live_gifts")
-        .select("id,sender_id,total_price")
-        .eq("live_id", id)
-        .order("created_at", { ascending: false })
-        .limit(300);
+      const { data: match, error: matchError } = await supabase
+        .from("lives")
+        .select("host_id,opponent_id")
+        .eq("id", id)
+        .maybeSingle();
 
-      if (error) throw error;
+      if (matchError) throw matchError;
 
-      const totals = new Map<string, number>();
-
-      (data || []).forEach((gift) => {
-        totals.set(
-          gift.sender_id,
-          (totals.get(gift.sender_id) || 0) + Number(gift.total_price || 0)
-        );
-      });
-
-      const ranked = [...totals.entries()]
-        .map(([sender_id, total_price]) => ({
-          id: sender_id,
-          sender_id,
-          total_price,
-        }))
-        .sort((a, b) => b.total_price - a.total_price)
-        .slice(0, 3);
-
-      if (!ranked.length) {
-        setDonors([]);
+      if (!match?.host_id || !match?.opponent_id) {
+        setDonorsA([]);
+        setDonorsB([]);
         return;
       }
 
-      const { data: profiles } = await supabase
+      const { data: gifts, error: giftsError } = await supabase
+        .from("live_gifts")
+        .select("id,sender_id,recipient_id,total_price")
+        .eq("live_id", id)
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (giftsError) throw giftsError;
+
+      const totalsA = new Map<string, number>();
+      const totalsB = new Map<string, number>();
+
+      (gifts || []).forEach((gift) => {
+        const senderId = gift.sender_id;
+        const amount = Number(gift.total_price || 0);
+
+        if (!senderId || amount <= 0) return;
+
+        if (gift.recipient_id === match.host_id) {
+          totalsA.set(
+            senderId,
+            (totalsA.get(senderId) || 0) + amount
+          );
+        }
+
+        if (gift.recipient_id === match.opponent_id) {
+          totalsB.set(
+            senderId,
+            (totalsB.get(senderId) || 0) + amount
+          );
+        }
+      });
+
+      const rank = (totals: Map<string, number>): Donor[] =>
+        [...totals.entries()]
+          .map(([sender_id, total_price]) => ({
+            id: sender_id,
+            sender_id,
+            total_price,
+          }))
+          .sort((a, b) => b.total_price - a.total_price)
+          .slice(0, 3);
+
+      const rankedA = rank(totalsA);
+      const rankedB = rank(totalsB);
+
+      const userIds = [
+        ...new Set([
+          ...rankedA.map((donor) => donor.sender_id),
+          ...rankedB.map((donor) => donor.sender_id),
+        ]),
+      ];
+
+      if (!userIds.length) {
+        setDonorsA([]);
+        setDonorsB([]);
+        return;
+      }
+
+      const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
         .select("id,username,full_name,avatar_url")
-        .in(
-          "id",
-          ranked.map((donor) => donor.sender_id)
-        );
+        .in("id", userIds);
 
-      setDonors(
+      if (profilesError) throw profilesError;
+
+      const profileList = profiles || [];
+
+      const attachProfiles = (ranked: Donor[]): Donor[] =>
         ranked.map((donor) => ({
           ...donor,
           profile:
-            (profiles || []).find(
+            profileList.find(
               (profile) => profile.id === donor.sender_id
             ) || null,
-        }))
-      );
+        }));
+
+      setDonorsA(attachProfiles(rankedA));
+      setDonorsB(attachProfiles(rankedB));
     } catch (error) {
-      console.error("Chargement des donateurs :", error);
-      setDonors([]);
+      console.error("Chargement des classements du Match :", error);
+      setDonorsA([]);
+      setDonorsB([]);
     } finally {
       setDonorsLoading(false);
     }
@@ -535,7 +659,7 @@ export default function LiveMatchPage() {
           <div className="flex min-w-0 items-center gap-2">
             <Crown className="h-4 w-4 shrink-0 text-yellow-400" />
             <span className="truncate text-[10px] font-bold">
-              Top donateurs
+              Classement des supporters
             </span>
           </div>
 
@@ -545,47 +669,20 @@ export default function LiveMatchPage() {
           </div>
         </div>
 
-        <div className="mt-2 flex items-center gap-2">
-          {donorsLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-white/60" />
-          ) : donors.length ? (
-            donors.map((donor, index) => {
-              const name =
-                donor.profile?.full_name ||
-                donor.profile?.username ||
-                "Donateur";
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <DonorRanking
+            title={`ÉQUIPE A · ${hostName}`}
+            donors={donorsA}
+            loading={donorsLoading}
+            color="pink"
+          />
 
-              return (
-                <div
-                  key={donor.id}
-                  className="flex min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-black/50 py-1 pl-1 pr-2"
-                >
-                  <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full bg-white/10">
-                    {donor.profile?.avatar_url ? (
-                      <Image
-                        src={donor.profile.avatar_url}
-                        alt={name}
-                        fill
-                        unoptimized
-                        className="object-cover"
-                      />
-                    ) : (
-                      <span className="flex h-full items-center justify-center text-[10px] font-bold">
-                        {name.charAt(0).toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                  <span className="max-w-16 truncate text-[9px]">
-                    {index + 1}. {name}
-                  </span>
-                </div>
-              );
-            })
-          ) : (
-            <p className="text-[10px] text-white/50">
-              Aucun cadeau pour le moment
-            </p>
-          )}
+          <DonorRanking
+            title={`ÉQUIPE B · ${opponentName}`}
+            donors={donorsB}
+            loading={donorsLoading}
+            color="blue"
+          />
         </div>
 
         <div className="mt-4 overflow-hidden rounded-full border border-white/20 bg-black/60 shadow-lg">
@@ -600,9 +697,7 @@ export default function LiveMatchPage() {
               </span>
             </div>
 
-            <div
-              className="flex flex-1 items-center justify-end gap-1 bg-gradient-to-r from-blue-500 to-cyan-500 px-3"
-            >
+            <div className="flex flex-1 items-center justify-end gap-1 bg-gradient-to-r from-blue-500 to-cyan-500 px-3">
               <span className="text-xs font-black">
                 {formatNumber(scoreB)}
               </span>
@@ -648,7 +743,8 @@ export default function LiveMatchPage() {
             {formatNumber(Number(live.viewer_count || 0))}
           </div>
         </div>
-       <LiveMatchChat liveId={live.id} />
+
+        <LiveMatchChat liveId={live.id} />
       </footer>
     </main>
   );
