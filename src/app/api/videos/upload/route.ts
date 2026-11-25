@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
@@ -138,7 +138,7 @@ async function getSession(
   return data as UploadSession;
 }
 
-// Correction TypeScript : déclaration explicite du binding R2.
+// Accès au binding R2 MOSHI_MEDIA.
 async function getBucket(): Promise<R2Bucket> {
   const context = await getCloudflareContext({ async: true });
 
