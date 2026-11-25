@@ -55,6 +55,31 @@ export default function LiveKitRoomComponent({
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [refreshVersion, setRefreshVersion] = useState(0);
+
+  // Renouvellement du token lorsqu'une invitation guest est acceptée.
+  useEffect(() => {
+    const handleTokenRefresh = (event: Event) => {
+      const customEvent = event as CustomEvent<{ liveId?: string }>;
+      const currentLiveId = roomName.replace(/^live-/, "");
+
+      if (customEvent.detail?.liveId !== currentLiveId) return;
+
+      setRefreshVersion((version) => version + 1);
+    };
+
+    window.addEventListener(
+      "moshi-livekit-refresh",
+      handleTokenRefresh
+    );
+
+    return () => {
+      window.removeEventListener(
+        "moshi-livekit-refresh",
+        handleTokenRefresh
+      );
+    };
+  }, [roomName]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,7 +138,12 @@ export default function LiveKitRoomComponent({
     void getToken();
 
     return () => controller.abort();
-  }, [roomName, participantName, onControlsReady]);
+  }, [
+    roomName,
+    participantName,
+    onControlsReady,
+    refreshVersion,
+  ]);
 
   useEffect(() => {
     return () => {
