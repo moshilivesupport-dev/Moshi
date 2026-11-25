@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Plus, Camera, Video, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { uploadMoshiMedia, deleteMoshiMedia } from "@/lib/media";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -159,7 +160,7 @@ export default function StoriesBar() {
   }, [supabase]);
 
   useEffect(() => {
-    loadStories();
+    void loadStories();
   }, [loadStories]);
 
   const openFilePicker = (type: "image" | "video") => {
@@ -212,32 +213,17 @@ export default function StoriesBar() {
 
     setUploading(true);
 
-    const extension =
-      file.name.split(".").pop()?.toLowerCase() ||
-      (selectedType === "video" ? "mp4" : "jpg");
-
-    const filePath = `${currentUser.id}/${crypto.randomUUID()}.${extension}`;
+    let uploadedKey: string | null = null;
 
     try {
-      const { error: uploadError } = await supabase.storage
-        .from("stories")
-        .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicData } = supabase.storage
-        .from("stories")
-        .getPublicUrl(filePath);
+      const uploaded = await uploadMoshiMedia(file, "stories");
+      uploadedKey = uploaded.key;
 
       const { error: insertError } = await supabase
         .from("stories")
         .insert({
           user_id: currentUser.id,
-          media_url: publicData.publicUrl,
+          media_url: uploaded.url,
           media_type: selectedType,
           expires_at: new Date(
             Date.now() + 24 * 60 * 60 * 1000
@@ -246,15 +232,29 @@ export default function StoriesBar() {
         });
 
       if (insertError) {
-        await supabase.storage.from("stories").remove([filePath]);
         throw insertError;
       }
 
+      uploadedKey = null;
+
       alert("Story publiée avec succès !");
+      setIsMenuOpen(false);
       await loadStories();
     } catch (error: any) {
       console.error("Erreur de publication :", error);
-      alert("Erreur : " + (error?.message || "Publication impossible."));
+
+      if (uploadedKey) {
+        try {
+          await deleteMoshiMedia(uploadedKey);
+        } catch (cleanupError) {
+          console.error("Nettoyage du média impossible :", cleanupError);
+        }
+      }
+
+      alert(
+        "Erreur : " +
+          (error?.message || "Publication impossible.")
+      );
     } finally {
       setUploading(false);
       event.target.value = "";
