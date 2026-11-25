@@ -1,6 +1,7 @@
 
 "use client";
 
+import LiveMatchChat from "@/components/live/LiveMatchChat";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
