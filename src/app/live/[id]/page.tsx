@@ -8,6 +8,7 @@ import {
   useMemo,
   useCallback,
 } from "react";
+import LiveGuestManager from "@/components/live/LiveGuestManager";
 import LiveTapSync from "@/components/live/LiveTapSync";
 import type { MouseEvent } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
