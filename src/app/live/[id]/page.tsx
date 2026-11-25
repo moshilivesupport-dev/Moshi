@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -36,8 +37,6 @@ import {
   Package,
   BarChart3,
   ClipboardList,
-  Settings,
-  Users,
   Copy,
   Check,
 } from "lucide-react";
@@ -48,8 +47,8 @@ import GiftAnimation from "@/components/live/GiftAnimation";
 import Soundboard from "@/components/live/Soundboard";
 import LiveInvitePanel from "@/components/live/LiveInvitePanel";
 import LiveGuestManager from "@/components/live/LiveGuestManager";
+import LiveGuestRequestsPanel from "@/components/live/LiveGuestRequestsPanel";
 import LiveMatchPanel from "@/components/live/LiveMatchPanel";
-import LiveViewerCounter from "@/components/live/LiveViewerCounter";
 
 import type { LiveMediaControls } from "@/components/live/LiveKitRoom";
 
@@ -133,6 +132,9 @@ export default function LiveRoomPage() {
   const [giftQueue, setGiftQueue] = useState<GiftAnimationItem[]>([]);
   const [mediaControls, setMediaControls] =
     useState<LiveMediaControls | null>(null);
+
+  // Nombre réel des spectateurs connectés à la room LiveKit.
+  const [liveViewerCount, setLiveViewerCount] = useState(0);
 
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
@@ -798,11 +800,13 @@ export default function LiveRoomPage() {
     >
       <LiveTapSync liveId={live.id} />
 
+      {/* CONNEXION LIVEKIT ET COMPTEUR RÉEL */}
       <LiveKitRoomComponent
         roomName={`live-${live.id}`}
         participantName={userName}
         isHost={isHost}
         onControlsReady={setMediaControls}
+        onViewerCountChange={setLiveViewerCount}
       />
 
       <div className="pointer-events-none absolute inset-0 z-[5] bg-gradient-to-b from-black/45 via-transparent to-black/65" />
@@ -941,10 +945,9 @@ export default function LiveRoomPage() {
           <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-black/35 px-2.5 py-2">
             <div className="flex items-center gap-1.5 text-xs font-bold">
               <Eye size={14} />
-              <LiveViewerCounter
-                liveId={live.id}
-                currentUserId={currentUser?.id ?? null}
-              />
+              <span className="tabular-nums">
+                {liveViewerCount.toLocaleString("fr-FR")}
+              </span>
             </div>
 
             <div className="flex items-center gap-1.5 text-xs font-bold">
@@ -1297,6 +1300,13 @@ export default function LiveRoomPage() {
       />
 
       <LiveGuestManager
+        liveId={live.id}
+        currentUserId={currentUser?.id ?? null}
+        isHost={isHost}
+      />
+
+      {/* PANNEAU DES DEMANDES POUR L'HÔTE */}
+      <LiveGuestRequestsPanel
         liveId={live.id}
         currentUserId={currentUser?.id ?? null}
         isHost={isHost}
