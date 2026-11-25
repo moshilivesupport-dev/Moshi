@@ -12,6 +12,7 @@ export async function GET(request: Request) {
 
     const room = searchParams.get("room");
     const name = searchParams.get("name");
+    const viewerOnly = searchParams.get("viewer") === "1";
 
     if (!room || !room.startsWith("live-") || !name?.trim()) {
       return NextResponse.json(
@@ -36,31 +37,15 @@ export async function GET(request: Request) {
 
     const liveId = room.slice("live-".length);
 
-    if (!liveId) {
-      return NextResponse.json(
-        { error: "Identifiant du live invalide." },
-        { status: 400 }
-      );
-    }
-
     const { data: live, error: liveError } = await supabase
       .from("lives")
       .select("id, host_id, status")
       .eq("id", liveId)
       .maybeSingle();
 
-    if (liveError) {
-      console.error("LiveKit live lookup:", liveError);
-
+    if (liveError || !live || live.status !== "live") {
       return NextResponse.json(
-        { error: "Impossible de vérifier ce live." },
-        { status: 500 }
-      );
-    }
-
-    if (!live || live.status !== "live") {
-      return NextResponse.json(
-        { error: "Ce live n'est plus disponible." },
+        { error: "Ce live n'est pas disponible." },
         { status: 404 }
       );
     }
@@ -68,25 +53,24 @@ export async function GET(request: Request) {
     const isHost = live.host_id === user.id;
     let isAcceptedGuest = false;
 
-    // Un utilisateur qui n'est pas l'hôte doit avoir une invitation
-    // guest acceptée pour CE live et envoyée par CET hôte.
     if (!isHost) {
-      const {
-        data: invitation,
-        error: invitationError,
-      } = await supabase
-        .from("live_invitations")
-        .select("id")
-        .eq("live_id", live.id)
-        .eq("inviter_id", live.host_id)
-        .eq("invitee_id", user.id)
-        .eq("invitation_type", "guest")
-        .eq("status", "accepted")
-        .limit(1)
-        .maybeSingle();
+      const { data: invitation, error: invitationError } =
+        await supabase
+          .from("live_invitations")
+          .select("id")
+          .eq("live_id", live.id)
+          .eq("inviter_id", live.host_id)
+          .eq("invitee_id", user.id)
+          .eq("invitation_type", "guest")
+          .eq("status", "accepted")
+          .limit(1)
+          .maybeSingle();
 
       if (invitationError) {
-        console.error("LiveKit guest invitation lookup:", invitationError);
+        console.error(
+          "LiveKit guest invitation verification error:",
+          invitationError
+        );
 
         return NextResponse.json(
           { error: "Impossible de vérifier votre invitation." },
@@ -97,17 +81,16 @@ export async function GET(request: Request) {
       isAcceptedGuest = !!invitation;
     }
 
-    // Aucun spectateur ne peut publier.
-    // Seuls l'hôte et les invités acceptés peuvent publier.
-    const canPublish = isHost || isAcceptedGuest;
+    // Un spectateur ne publie jamais.
+    // Un participant à un match ne devient pas automatiquement guest.
+    const canPublish =
+      !viewerOnly && (isHost || isAcceptedGuest);
 
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
 
     if (!apiKey || !apiSecret || !livekitUrl) {
-      console.error("Configuration LiveKit manquante.");
-
       return NextResponse.json(
         { error: "Configuration LiveKit manquante." },
         { status: 500 }
@@ -148,8 +131,8 @@ export async function GET(request: Request) {
       {
         token: jwt,
         roomName: room,
-        isHost,
-        isGuest: isAcceptedGuest,
+        isHost: viewerOnly ? false : isHost,
+        isGuest: viewerOnly ? false : isAcceptedGuest,
         canPublish,
         livekitUrl,
         hostId: live.host_id,
@@ -157,8 +140,6 @@ export async function GET(request: Request) {
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate",
-          Pragma: "no-cache",
-          Expires: "0",
         },
       }
     );
