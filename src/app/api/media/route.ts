@@ -1,6 +1,4 @@
 
-import "server-only";
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
@@ -10,17 +8,17 @@ export const dynamic = "force-dynamic";
 
 type MediaCategory = "avatars" | "stories" | "products";
 
-type R2Object = {
+interface R2ObjectBody {
+  body: ReadableStream<Uint8Array>;
   size: number;
   httpEtag?: string;
   httpMetadata?: {
     contentType?: string;
     cacheControl?: string;
   };
-  body: ReadableStream<Uint8Array>;
-};
+}
 
-type R2Bucket = {
+interface R2Bucket {
   put(
     key: string,
     value: ArrayBuffer,
@@ -29,94 +27,45 @@ type R2Bucket = {
         contentType?: string;
         cacheControl?: string;
       };
-      customMetadata?: Record<string, string>;
     }
   ): Promise<unknown>;
+
+  head(key: string): Promise<{ size: number } | null>;
 
   get(
     key: string,
     options?: {
       range?: {
         offset: number;
-        length: number;
+        length?: number;
       };
     }
-  ): Promise<R2Object | null>;
+  ): Promise<R2ObjectBody | null>;
 
   delete(key: string): Promise<void>;
-};
+}
 
-const IMAGE_TYPES = new Set([
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
+const MAX_PRODUCT_SIZE = 5 * 1024 * 1024;
+const MAX_STORY_SIZE = 30 * 1024 * 1024;
+
+const IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
-]);
+];
 
-const STORY_VIDEO_TYPES = new Set([
+const STORY_VIDEO_TYPES = [
   "video/mp4",
   "video/webm",
   "video/quicktime",
-]);
+];
 
-const LIMITS: Record<MediaCategory, number> = {
-  avatars: 5 * 1024 * 1024,
-  products: 5 * 1024 * 1024,
-  stories: 30 * 1024 * 1024,
-};
-
-function errorResponse(message: string, status = 400) {
+function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
-async function getBucket(): Promise<R2Bucket> {
-  const context = await getCloudflareContext({ async: true });
-
-  const bucket = (
-    context.env as unknown as {
-      MOSHI_MEDIA?: R2Bucket;
-    }
-  ).MOSHI_MEDIA;
-
-  if (!bucket) {
-    throw new Error("Le bucket R2 MOSHI_MEDIA est indisponible.");
-  }
-
-  return bucket;
-}
-
-async function authenticate(request: NextRequest) {
-  const authorization = request.headers.get("authorization");
-
-  if (!authorization?.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authorization.slice(7).trim();
-
-  if (!token) return null;
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !anonKey) {
-    throw new Error("Configuration Supabase manquante.");
-  }
-
-  const supabase = createClient(url, anonKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-
-  const { data, error } = await supabase.auth.getUser(token);
-
-  if (error || !data.user) return null;
-
-  return data.user;
-}
-
-function validCategory(value: string): value is MediaCategory {
+function isCategory(value: string): value is MediaCategory {
   return (
     value === "avatars" ||
     value === "stories" ||
@@ -124,7 +73,7 @@ function validCategory(value: string): value is MediaCategory {
   );
 }
 
-function extensionForMime(mime: string): string | null {
+function getExtension(file: File): string {
   const extensions: Record<string, string> = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -134,306 +83,322 @@ function extensionForMime(mime: string): string | null {
     "video/quicktime": "mov",
   };
 
-  return extensions[mime] ?? null;
+  return extensions[file.type] || "";
 }
 
-function validKey(key: string): boolean {
-  if (!key || key.length > 1024) return false;
-  if (key.startsWith("/") || key.includes("..")) return false;
-  if (key.includes("\\") || key.includes("\0")) return false;
+function isValidKey(key: string): boolean {
+  return /^(avatars|stories|products)\/[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|mp4|webm|mov)$/.test(
+    key
+  );
+}
 
-  const parts = key.split("/");
+async function getBucket(): Promise<R2Bucket> {
+  const context = await getCloudflareContext({ async: true });
+  const env = context.env as unknown as {
+    MOSHI_MEDIA?: R2Bucket;
+  };
 
-  if (parts.length !== 3) return false;
-
-  const [category, userId, filename] = parts;
-
-  if (!validCategory(category)) return false;
-
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      userId
-    )
-  ) {
-    return false;
+  if (!env.MOSHI_MEDIA) {
+    throw new Error("Le stockage R2 MOSHI_MEDIA est introuvable.");
   }
 
-  return /^[a-zA-Z0-9._-]+$/.test(filename);
+  return env.MOSHI_MEDIA;
+}
+
+async function getAuthenticatedUser(request: NextRequest) {
+  const authorization = request.headers.get("authorization");
+
+  if (!authorization?.startsWith("Bearer ")) {
+    throw new Error("Authentification requise.");
+  }
+
+  const token = authorization.slice(7).trim();
+
+  if (!token) {
+    throw new Error("Jeton d'authentification manquant.");
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Configuration Supabase manquante.");
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  });
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser(token);
+
+  if (error || !user) {
+    throw new Error("Session invalide. Reconnecte-toi.");
+  }
+
+  return user;
 }
 
 function parseRange(
   header: string | null,
   size: number
-):
-  | { offset: number; length: number; end: number }
-  | null
-  | "invalid" {
+): { offset: number; length: number } | null {
   if (!header) return null;
 
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  const match = header.match(/^bytes=(\d*)-(\d*)$/);
 
-  if (!match || size <= 0) return "invalid";
-
-  const startText = match[1];
-  const endText = match[2];
-
-  if (!startText && !endText) return "invalid";
+  if (!match) return null;
 
   let start: number;
   let end: number;
 
-  if (!startText) {
-    const suffix = Number(endText);
+  if (match[1] === "") {
+    const suffixLength = Number(match[2]);
 
-    if (!Number.isSafeInteger(suffix) || suffix <= 0) {
-      return "invalid";
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
+      return null;
     }
 
-    start = Math.max(0, size - suffix);
+    start = Math.max(0, size - suffixLength);
     end = size - 1;
   } else {
-    start = Number(startText);
-
-    if (!Number.isSafeInteger(start) || start >= size) {
-      return "invalid";
-    }
-
-    if (!endText) {
-      end = size - 1;
-    } else {
-      end = Number(endText);
-
-      if (!Number.isSafeInteger(end) || end < start) {
-        return "invalid";
-      }
-
-      end = Math.min(end, size - 1);
-    }
+    start = Number(match[1]);
+    end = match[2] === "" ? size - 1 : Number(match[2]);
   }
+
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 0 ||
+    end < start ||
+    start >= size
+  ) {
+    return null;
+  }
+
+  end = Math.min(end, size - 1);
 
   return {
     offset: start,
     length: end - start + 1,
-    end,
   };
 }
 
-// POST : envoyer un média dans R2.
 export async function POST(request: NextRequest) {
   try {
-    const user = await authenticate(request);
-
-    if (!user) {
-      return errorResponse("Session utilisateur invalide.", 401);
-    }
+    const user = await getAuthenticatedUser(request);
 
     const formData = await request.formData();
-
     const file = formData.get("file");
-    const categoryValue = String(formData.get("category") || "");
+    const categoryValue = formData.get("category");
 
     if (!(file instanceof File)) {
-      return errorResponse("Aucun fichier reçu.");
+      return jsonError("Fichier manquant.");
     }
 
-    if (!validCategory(categoryValue)) {
-      return errorResponse("Catégorie de média invalide.");
+    if (
+      typeof categoryValue !== "string" ||
+      !isCategory(categoryValue)
+    ) {
+      return jsonError("Catégorie de média invalide.");
     }
 
     const category = categoryValue;
+    const extension = getExtension(file);
 
-    if (file.size <= 0 || file.size > LIMITS[category]) {
-      return errorResponse(
+    if (!extension) {
+      return jsonError("Format de fichier non accepté.");
+    }
+
+    const isImage = IMAGE_TYPES.includes(file.type);
+    const isStoryVideo =
+      category === "stories" &&
+      STORY_VIDEO_TYPES.includes(file.type);
+
+    if (category === "avatars" && !isImage) {
+      return jsonError("Une photo JPG, PNG ou WebP est nécessaire.");
+    }
+
+    if (category === "products" && !isImage) {
+      return jsonError("Une photo JPG, PNG ou WebP est nécessaire.");
+    }
+
+    if (category === "stories" && !isImage && !isStoryVideo) {
+      return jsonError("Format de story non accepté.");
+    }
+
+    const maxSize =
+      category === "stories"
+        ? MAX_STORY_SIZE
+        : category === "avatars"
+          ? MAX_AVATAR_SIZE
+          : MAX_PRODUCT_SIZE;
+
+    if (file.size <= 0 || file.size > maxSize) {
+      return jsonError(
         `Fichier trop volumineux. Limite : ${Math.round(
-          LIMITS[category] / 1024 / 1024
+          maxSize / 1024 / 1024
         )} Mo.`
       );
     }
 
-    const allowedTypes =
-      category === "stories"
-        ? new Set([...IMAGE_TYPES, ...STORY_VIDEO_TYPES])
-        : IMAGE_TYPES;
-
-    if (!allowedTypes.has(file.type)) {
-      return errorResponse("Format de fichier non accepté.");
-    }
-
-    const extension = extensionForMime(file.type);
-
-    if (!extension) {
-      return errorResponse("Extension de fichier non autorisée.");
-    }
+    const uuid = crypto.randomUUID();
+    const key = `${category}/${user.id}/${uuid}.${extension}`;
 
     const bucket = await getBucket();
 
-    const filename = `${crypto.randomUUID()}.${extension}`;
-    const key = `${category}/${user.id}/${filename}`;
-
-    const bytes = await file.arrayBuffer();
-
-    await bucket.put(key, bytes, {
+    await bucket.put(key, await file.arrayBuffer(), {
       httpMetadata: {
         contentType: file.type,
         cacheControl: "public, max-age=31536000, immutable",
       },
-      customMetadata: {
-        ownerId: user.id,
-        category,
-      },
     });
-
-    const mediaUrl = `/api/media?key=${encodeURIComponent(key)}`;
 
     return NextResponse.json({
       success: true,
       key,
-      url: mediaUrl,
-      category,
-      size: file.size,
-      contentType: file.type,
+      url: `/api/media?key=${encodeURIComponent(key)}`,
     });
   } catch (error) {
-    console.error("Erreur API médias :", error);
+    console.error("Moshi media upload:", error);
 
-    return errorResponse(
+    return jsonError(
       error instanceof Error
         ? error.message
-        : "Impossible d'envoyer le fichier.",
+        : "Erreur pendant l'envoi du média.",
       500
     );
   }
 }
 
-// GET : lire un média public stocké dans R2.
 export async function GET(request: NextRequest) {
   try {
-    const key = request.nextUrl.searchParams.get("key") || "";
+    const key = request.nextUrl.searchParams.get("key");
 
-    if (!validKey(key)) {
-      return errorResponse("Média introuvable.", 404);
+    if (!key || !isValidKey(key)) {
+      return jsonError("Adresse du média invalide.", 400);
     }
 
     const bucket = await getBucket();
-    const object = await bucket.get(key);
+    const metadata = await bucket.head(key);
 
-    if (!object) {
-      return errorResponse("Média introuvable.", 404);
+    if (!metadata) {
+      return jsonError("Média introuvable.", 404);
     }
 
-    const range = parseRange(
-      request.headers.get("range"),
-      object.size
-    );
+    const rangeHeader = request.headers.get("range");
+    const range = parseRange(rangeHeader, metadata.size);
 
-    if (range === "invalid") {
+    if (rangeHeader && !range) {
       return new NextResponse(null, {
         status: 416,
         headers: {
-          "Content-Range": `bytes */${object.size}`,
-          "Accept-Ranges": "bytes",
+          "Content-Range": `bytes */${metadata.size}`,
         },
       });
     }
 
-    // Pour une requête partielle, récupérer uniquement la plage demandée.
-    const selectedObject =
-      range === null
-        ? object
-        : await bucket.get(key, {
-            range: {
-              offset: range.offset,
-              length: range.length,
-            },
-          });
+    const object = await bucket.get(
+      key,
+      range ? { range } : undefined
+    );
 
-    if (!selectedObject) {
-      return errorResponse("Média introuvable.", 404);
+    if (!object) {
+      return jsonError("Média introuvable.", 404);
     }
+
+    const extension = key.split(".").pop()?.toLowerCase();
+
+    const contentTypes: Record<string, string> = {
+      jpg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+      mp4: "video/mp4",
+      webm: "video/webm",
+      mov: "video/quicktime",
+    };
 
     const headers = new Headers();
 
     headers.set(
       "Content-Type",
-      selectedObject.httpMetadata?.contentType ||
-        "application/octet-stream"
+      contentTypes[extension || ""] || "application/octet-stream"
     );
-
-    headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Accept-Ranges", "bytes");
     headers.set(
       "Cache-Control",
       "public, max-age=31536000, immutable"
     );
-
-    headers.set(
-      "Content-Length",
-      String(range ? range.length : object.size)
-    );
-
-    if (selectedObject.httpEtag) {
-      headers.set("ETag", selectedObject.httpEtag);
-    }
+    headers.set("X-Content-Type-Options", "nosniff");
 
     if (range) {
       headers.set(
         "Content-Range",
-        `bytes ${range.offset}-${range.end}/${object.size}`
+        `bytes ${range.offset}-${range.offset + range.length - 1}/${metadata.size}`
       );
+      headers.set("Content-Length", String(range.length));
+
+      return new NextResponse(object.body, {
+        status: 206,
+        headers,
+      });
     }
 
-    return new NextResponse(selectedObject.body, {
-      status: range ? 206 : 200,
+    headers.set("Content-Length", String(metadata.size));
+
+    return new NextResponse(object.body, {
+      status: 200,
       headers,
     });
   } catch (error) {
-    console.error("Erreur de lecture média :", error);
+    console.error("Moshi media read:", error);
 
-    return errorResponse(
-      "Le média est temporairement indisponible.",
-      503
+    return jsonError(
+      "Impossible de récupérer ce média.",
+      500
     );
   }
 }
 
-// DELETE : seul le propriétaire du fichier peut le supprimer.
 export async function DELETE(request: NextRequest) {
   try {
-    const user = await authenticate(request);
+    const user = await getAuthenticatedUser(request);
 
-    if (!user) {
-      return errorResponse("Session utilisateur invalide.", 401);
+    const key = request.nextUrl.searchParams.get("key");
+
+    if (!key || !isValidKey(key)) {
+      return jsonError("Adresse du média invalide.");
     }
 
-    const body = await request.json().catch(() => null);
-    const key = String(body?.key || "");
-
-    if (!validKey(key)) {
-      return errorResponse("Chemin de fichier invalide.");
-    }
-
-    const expectedPrefix = `${key.split("/")[0]}/${user.id}/`;
-
-    if (!key.startsWith(expectedPrefix)) {
-      return errorResponse(
-        "Tu ne peux pas supprimer le fichier d'un autre utilisateur.",
-        403
-      );
+    if (!key.startsWith(`avatars/${user.id}/`) &&
+        !key.startsWith(`stories/${user.id}/`) &&
+        !key.startsWith(`products/${user.id}/`)) {
+      return jsonError("Tu ne peux pas supprimer ce média.", 403);
     }
 
     const bucket = await getBucket();
 
     await bucket.delete(key);
 
-    return NextResponse.json({
-      success: true,
-      deleted: true,
-    });
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Erreur de suppression média :", error);
+    console.error("Moshi media delete:", error);
 
-    return errorResponse(
-      "Impossible de supprimer ce média.",
+    return jsonError(
+      error instanceof Error
+        ? error.message
+        : "Impossible de supprimer le média.",
       500
     );
   }
