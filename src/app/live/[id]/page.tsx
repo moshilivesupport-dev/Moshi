@@ -49,6 +49,7 @@ import LiveInvitePanel from "@/components/live/LiveInvitePanel";
 import LiveGuestManager from "@/components/live/LiveGuestManager";
 import LiveGuestRequestsPanel from "@/components/live/LiveGuestRequestsPanel";
 import LiveMatchPanel from "@/components/live/LiveMatchPanel";
+import LiveTapSync from "@/components/live/LiveTapSync";
 
 import type { LiveMediaControls } from "@/components/live/LiveKitRoom";
 
