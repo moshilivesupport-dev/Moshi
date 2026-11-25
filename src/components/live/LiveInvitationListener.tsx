@@ -211,10 +211,19 @@ export default function LiveInvitationListener() {
       }
 
       const liveId = details.invitation.live_id;
+      const invitationType = details.invitation.invitation_type;
 
       setDetails(null);
 
       if (status === "accepted") {
+        if (invitationType === "guest") {
+          window.dispatchEvent(
+            new CustomEvent("moshi-livekit-refresh", {
+              detail: { liveId },
+            })
+          );
+        }
+
         router.push(`/live/${liveId}`);
       }
     } catch (err) {
