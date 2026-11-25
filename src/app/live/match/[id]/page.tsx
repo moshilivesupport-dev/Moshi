@@ -648,6 +648,7 @@ export default function LiveMatchPage() {
             {formatNumber(Number(live.viewer_count || 0))}
           </div>
         </div>
+       <LiveMatchChat liveId={live.id} />
       </footer>
     </main>
   );
