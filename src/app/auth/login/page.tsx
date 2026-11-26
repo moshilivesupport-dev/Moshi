@@ -52,16 +52,27 @@ const COUNTRIES = [
   { code: "OTHER", flag: "🌍", name: "Autre", dial: "" },
 ];
 
-type UsernameStatus =
-  | "idle"
-  | "checking"
-  | "available"
-  | "taken"
-  | "error";
+type UsernameStatus = "idle" | "checking" | "available" | "taken" | "error";
+
+function getSupabaseErrorMessage(error: {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}) {
+  return [
+    error.code ? `Code ${error.code}` : null,
+    error.message || "Erreur Supabase sans détail",
+    error.details || null,
+    error.hint || null,
+  ].filter(Boolean).join(" — ");
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
+
+  // Le client est créé une seule fois pour toute la durée du composant.
+  const [supabase] = useState(() => createClient());
 
   const [mode, setMode] = useState<"welcome" | "signup" | "login">("welcome");
   const [step, setStep] = useState(1);
@@ -89,9 +100,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   // Vérification du pseudo
-  const [usernameStatus, setUsernameStatus] =
-    useState<UsernameStatus>("idle");
-
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [usernameRetry, setUsernameRetry] = useState(0);
 
@@ -102,7 +111,7 @@ export default function LoginPage() {
     setDialCode(selected?.dial || "");
   }, [country]);
 
-  // Vérification fiable du pseudo
+  // Vérification du pseudo avec délai maximal et diagnostic précis
   useEffect(() => {
     const normalizedUsername = username.trim().toLowerCase();
 
@@ -114,17 +123,25 @@ export default function LoginPage() {
     }
 
     let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const controller = new AbortController();
 
     setUsernameStatus("checking");
 
-    const timer = setTimeout(async () => {
+    const debounceId = setTimeout(async () => {
       try {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+        }, 10000);
+
         const { data, error: queryError } = await supabase
           .from("profiles")
           .select("username")
           .eq("username", normalizedUsername)
           .limit(1)
-          .maybeSingle();
+          .maybeSingle()
+          .abortSignal(controller.signal);
 
         if (cancelled) return;
 
@@ -133,7 +150,7 @@ export default function LoginPage() {
 
           setUsernameStatus("error");
           setUsernameError(
-            "Impossible de vérifier ce pseudo. Vérifie ta connexion et réessaie."
+            `Échec de vérification : ${getSupabaseErrorMessage(queryError)}`
           );
           return;
         }
@@ -150,16 +167,25 @@ export default function LoginPage() {
 
         console.error("Erreur inattendue vérification pseudo :", err);
 
+        const message =
+          err instanceof Error
+            ? err.name === "AbortError"
+              ? "La requête a dépassé le délai de 10 secondes."
+              : err.message
+            : String(err);
+
         setUsernameStatus("error");
-        setUsernameError(
-          "La vérification a échoué. Vérifie ta connexion et réessaie."
-        );
+        setUsernameError(`Échec de vérification : ${message}`);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     }, 500);
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      clearTimeout(debounceId);
+      if (timeoutId) clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [username, usernameRetry, supabase]);
 
@@ -218,16 +244,30 @@ export default function LoginPage() {
       const normalizedUsername = username.trim().toLowerCase();
 
       // Dernière vérification avant la création du compte
-      const { data: existingUsername, error: checkError } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("username", normalizedUsername)
-        .limit(1)
-        .maybeSingle();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      let existingUsername;
+      let checkError;
+
+      try {
+        const result = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("username", normalizedUsername)
+          .limit(1)
+          .maybeSingle()
+          .abortSignal(controller.signal);
+
+        existingUsername = result.data;
+        checkError = result.error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (checkError) {
         throw new Error(
-          "Impossible de vérifier le nom d'utilisateur. Réessaie."
+          `Vérification du pseudo impossible : ${getSupabaseErrorMessage(checkError)}`
         );
       }
 
@@ -271,7 +311,6 @@ export default function LoginPage() {
 
       // Le profil est créé automatiquement par le déclencheur
       // public.handle_new_user() dans Supabase.
-      // Aucune insertion directe dans profiles depuis le navigateur.
 
       alert(
         authData.session
@@ -634,9 +673,7 @@ export default function LoginPage() {
                     value={username}
                     onChange={(e) => {
                       setUsername(
-                        e.target.value
-                          .toLowerCase()
-                          .replace(/\s/g, "")
+                        e.target.value.toLowerCase().replace(/\s/g, "")
                       );
                       setUsernameError(null);
                     }}
@@ -676,7 +713,7 @@ export default function LoginPage() {
                 )}
 
                 {usernameError && (
-                  <div className="text-xs font-medium text-red-500 px-1">
+                  <div className="text-xs font-medium text-red-500 px-1 break-words">
                     {usernameError}
                   </div>
                 )}
@@ -887,7 +924,7 @@ export default function LoginPage() {
                 </div>
 
                 {error && (
-                  <div className="bg-red-50 text-red-500 text-xs font-semibold p-3 rounded-xl">
+                  <div className="bg-red-50 text-red-500 text-xs font-semibold p-3 rounded-xl break-words">
                     {error}
                   </div>
                 )}
