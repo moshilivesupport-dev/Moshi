@@ -136,7 +136,8 @@ export default function LoginPage() {
     setDialCode(selected?.dial || "");
   }, [country]);
 
-  // Vérification du pseudo avec debounce et délai maximal
+  // Vérification du pseudo via RPC sécurisée.
+  // Aucun accès direct à la table profiles n'est nécessaire.
   useEffect(() => {
     const normalizedUsername = username.trim().toLowerCase();
 
@@ -154,12 +155,9 @@ export default function LoginPage() {
     const debounceId = setTimeout(async () => {
       try {
         const result = await withTimeout(
-          supabase
-            .from("profiles")
-            .select("username")
-            .eq("username", normalizedUsername)
-            .limit(1)
-            .maybeSingle(),
+          supabase.rpc("is_username_available", {
+            p_username: normalizedUsername,
+          }),
           10000
         );
 
@@ -177,12 +175,12 @@ export default function LoginPage() {
           return;
         }
 
-        if (data) {
-          setUsernameStatus("taken");
-          setUsernameError("Ce nom d'utilisateur est déjà utilisé.");
-        } else {
+        if (data === true) {
           setUsernameStatus("available");
           setUsernameError(null);
+        } else {
+          setUsernameStatus("taken");
+          setUsernameError("Ce nom d'utilisateur n'est pas disponible.");
         }
       } catch (err) {
         if (cancelled) return;
@@ -259,18 +257,15 @@ export default function LoginPage() {
     try {
       const normalizedUsername = username.trim().toLowerCase();
 
-      // Dernière vérification du pseudo avant la création du compte
+      // Dernière vérification du pseudo avant la création du compte.
       const result = await withTimeout(
-        supabase
-          .from("profiles")
-          .select("username")
-          .eq("username", normalizedUsername)
-          .limit(1)
-          .maybeSingle(),
+        supabase.rpc("is_username_available", {
+          p_username: normalizedUsername,
+        }),
         10000
       );
 
-      const { data: existingUsername, error: checkError } = result;
+      const { data: usernameAvailable, error: checkError } = result;
 
       if (checkError) {
         throw new Error(
@@ -278,9 +273,9 @@ export default function LoginPage() {
         );
       }
 
-      if (existingUsername) {
+      if (usernameAvailable !== true) {
         setUsernameStatus("taken");
-        setUsernameError("Ce nom d'utilisateur est déjà utilisé.");
+        setUsernameError("Ce nom d'utilisateur n'est pas disponible.");
         setStep(2);
         throw new Error("Choisis un autre nom d'utilisateur.");
       }
@@ -962,4 +957,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
