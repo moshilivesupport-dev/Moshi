@@ -52,6 +52,13 @@ const COUNTRIES = [
   { code: "OTHER", flag: "🌍", name: "Autre", dial: "" },
 ];
 
+type UsernameStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "taken"
+  | "error";
+
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -80,8 +87,14 @@ export default function LoginPage() {
   const [loginPassword, setLoginPassword] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
+
+  // Vérification du pseudo
   const [usernameStatus, setUsernameStatus] =
-    useState<"idle" | "checking" | "available" | "taken">("idle");
+    useState<UsernameStatus>("idle");
+
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [usernameRetry, setUsernameRetry] = useState(0);
+
   const [dialCode, setDialCode] = useState("");
 
   useEffect(() => {
@@ -89,32 +102,66 @@ export default function LoginPage() {
     setDialCode(selected?.dial || "");
   }, [country]);
 
+  // Vérification fiable du pseudo
   useEffect(() => {
-    if (username.length < 3) {
+    const normalizedUsername = username.trim().toLowerCase();
+
+    setUsernameError(null);
+
+    if (normalizedUsername.length < 3) {
       setUsernameStatus("idle");
       return;
     }
 
+    let cancelled = false;
+
     setUsernameStatus("checking");
 
     const timer = setTimeout(async () => {
-      const { data, error: usernameError } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("username", username)
-        .maybeSingle();
+      try {
+        const { data, error: queryError } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("username", normalizedUsername)
+          .limit(1)
+          .maybeSingle();
 
-      if (usernameError) {
-        setUsernameStatus("idle");
-        return;
+        if (cancelled) return;
+
+        if (queryError) {
+          console.error("Erreur vérification pseudo :", queryError);
+
+          setUsernameStatus("error");
+          setUsernameError(
+            "Impossible de vérifier ce pseudo. Vérifie ta connexion et réessaie."
+          );
+          return;
+        }
+
+        if (data) {
+          setUsernameStatus("taken");
+          setUsernameError("Ce nom d'utilisateur est déjà utilisé.");
+        } else {
+          setUsernameStatus("available");
+          setUsernameError(null);
+        }
+      } catch (err) {
+        if (cancelled) return;
+
+        console.error("Erreur inattendue vérification pseudo :", err);
+
+        setUsernameStatus("error");
+        setUsernameError(
+          "La vérification a échoué. Vérifie ta connexion et réessaie."
+        );
       }
-
-      if (data) setUsernameStatus("taken");
-      else setUsernameStatus("available");
     }, 500);
 
-    return () => clearTimeout(timer);
-  }, [username, supabase]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [username, usernameRetry, supabase]);
 
   const isPasswordStrong =
     password.length >= 8 &&
@@ -134,7 +181,12 @@ export default function LoginPage() {
       return;
     }
 
-    if (username.length < 3 || usernameStatus !== "available") {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError("Saisis une adresse email valide.");
+      return;
+    }
+
+    if (username.trim().length < 3 || usernameStatus !== "available") {
       setError("Choisis un nom d'utilisateur disponible.");
       return;
     }
@@ -163,7 +215,31 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      const normalizedUsername = username.trim().toLowerCase();
+
+      // Dernière vérification avant la création du compte
+      const { data: existingUsername, error: checkError } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("username", normalizedUsername)
+        .limit(1)
+        .maybeSingle();
+
+      if (checkError) {
+        throw new Error(
+          "Impossible de vérifier le nom d'utilisateur. Réessaie."
+        );
+      }
+
+      if (existingUsername) {
+        setUsernameStatus("taken");
+        setUsernameError("Ce nom d'utilisateur est déjà utilisé.");
+        setStep(2);
+        throw new Error("Choisis un autre nom d'utilisateur.");
+      }
+
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+
       const fullPhone = dialCode
         ? `${dialCode} ${phone.trim()}`.trim()
         : phone.trim();
@@ -174,7 +250,7 @@ export default function LoginPage() {
           password,
           options: {
             data: {
-              username: username.trim().toLowerCase(),
+              username: normalizedUsername,
               full_name: fullName,
               first_name: firstName.trim(),
               last_name: lastName.trim(),
@@ -227,7 +303,7 @@ export default function LoginPage() {
     try {
       const { error: loginError } =
         await supabase.auth.signInWithPassword({
-          email: loginEmail,
+          email: loginEmail.trim().toLowerCase(),
           password: loginPassword,
         });
 
@@ -252,9 +328,11 @@ export default function LoginPage() {
       {/* HEADER */}
       <div className="flex justify-between items-center mb-6">
         <button
+          type="button"
           onClick={() => {
             if (mode === "signup" && step > 1) {
               setStep(step - 1);
+              setError(null);
             } else if (mode === "signup" || mode === "login") {
               setMode("welcome");
               setStep(1);
@@ -313,6 +391,7 @@ export default function LoginPage() {
 
             <div className="w-full max-w-sm space-y-4">
               <button
+                type="button"
                 onClick={() => {
                   setMode("signup");
                   setError(null);
@@ -324,6 +403,7 @@ export default function LoginPage() {
               </button>
 
               <button
+                type="button"
                 onClick={() => {
                   setMode("login");
                   setError(null);
@@ -411,6 +491,7 @@ export default function LoginPage() {
             </form>
 
             <button
+              type="button"
               onClick={() => {
                 setMode("signup");
                 setStep(1);
@@ -444,6 +525,7 @@ export default function LoginPage() {
             {step === 1 && (
               <div className="w-full max-w-sm space-y-4">
                 <button
+                  type="button"
                   onClick={() => setRole("acheteur")}
                   className={cn(
                     "w-full p-5 rounded-2xl border-2 text-left transition-all",
@@ -480,6 +562,7 @@ export default function LoginPage() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setRole("vendeur")}
                   className={cn(
                     "w-full p-5 rounded-2xl border-2 text-left transition-all",
@@ -516,7 +599,11 @@ export default function LoginPage() {
                 </button>
 
                 <button
-                  onClick={() => setStep(2)}
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setStep(2);
+                  }}
                   disabled={!role}
                   className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg shadow-purple-200/50 active:scale-95 transition disabled:opacity-50 mt-4"
                 >
@@ -545,14 +632,22 @@ export default function LoginPage() {
                     type="text"
                     placeholder="Nom d'utilisateur (ex: moshishop)"
                     value={username}
-                    onChange={(e) =>
-                      setUsername(e.target.value.toLowerCase().replace(/\s/g, ""))
-                    }
+                    onChange={(e) => {
+                      setUsername(
+                        e.target.value
+                          .toLowerCase()
+                          .replace(/\s/g, "")
+                      );
+                      setUsernameError(null);
+                    }}
+                    autoComplete="username"
+                    maxLength={30}
                     className={cn(
                       "w-full pl-12 pr-12 py-4 rounded-2xl bg-white border outline-none text-sm font-medium",
                       usernameStatus === "available"
                         ? "border-green-400 focus:border-green-500"
-                        : usernameStatus === "taken"
+                        : usernameStatus === "taken" ||
+                            usernameStatus === "error"
                           ? "border-red-400 focus:border-red-500"
                           : "border-gray-200 focus:border-moshi-purple"
                     )}
@@ -562,21 +657,72 @@ export default function LoginPage() {
                     {usernameStatus === "checking" && (
                       <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
                     )}
+
                     {usernameStatus === "available" && (
                       <Check className="w-5 h-5 text-green-500" />
                     )}
-                    {usernameStatus === "taken" && (
+
+                    {(usernameStatus === "taken" ||
+                      usernameStatus === "error") && (
                       <X className="w-5 h-5 text-red-500" />
                     )}
                   </div>
                 </div>
 
+                {username.length > 0 && username.length < 3 && (
+                  <p className="text-xs text-gray-500 px-1">
+                    Le pseudo doit contenir au moins 3 caractères.
+                  </p>
+                )}
+
+                {usernameError && (
+                  <div className="text-xs font-medium text-red-500 px-1">
+                    {usernameError}
+                  </div>
+                )}
+
+                {usernameStatus === "available" && (
+                  <div className="text-xs font-medium text-green-600 px-1">
+                    Ce nom d'utilisateur est disponible.
+                  </div>
+                )}
+
+                {usernameStatus === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUsernameError(null);
+                      setUsernameRetry((value) => value + 1);
+                    }}
+                    className="text-xs font-semibold text-moshi-purple px-1"
+                  >
+                    Réessayer la vérification
+                  </button>
+                )}
+
+                {usernameStatus === "taken" && (
+                  <p className="text-xs text-red-500 px-1">
+                    Essaie un autre nom d'utilisateur.
+                  </p>
+                )}
+
                 <button
-                  onClick={() => setStep(3)}
-                  disabled={!email || usernameStatus !== "available"}
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setStep(3);
+                  }}
+                  disabled={
+                    !email.trim() ||
+                    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+                    username.trim().length < 3 ||
+                    usernameStatus !== "available"
+                  }
                   className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg shadow-purple-200/50 active:scale-95 transition disabled:opacity-50 mt-4"
                 >
-                  Continuer
+                  {usernameStatus === "checking"
+                    ? "Vérification du pseudo..."
+                    : "Continuer"}
                 </button>
               </div>
             )}
@@ -590,6 +736,7 @@ export default function LoginPage() {
                     placeholder="Prénom"
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
+                    autoComplete="given-name"
                     className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
                   />
 
@@ -598,6 +745,7 @@ export default function LoginPage() {
                     placeholder="Nom"
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
+                    autoComplete="family-name"
                     className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
                   />
                 </div>
@@ -654,14 +802,19 @@ export default function LoginPage() {
                       placeholder="Numéro (sans indicatif)"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
+                      autoComplete="tel-national"
                       className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
                     />
                   </div>
                 </div>
 
                 <button
-                  onClick={() => setStep(4)}
-                  disabled={!firstName || !lastName || !birthDate || !country}
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setStep(4);
+                  }}
+                  disabled={!firstName.trim() || !lastName.trim() || !birthDate || !country}
                   className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg shadow-purple-200/50 active:scale-95 transition disabled:opacity-50 mt-4"
                 >
                   Continuer
@@ -678,6 +831,7 @@ export default function LoginPage() {
                     placeholder="Mot de passe"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
                     className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 focus:border-moshi-purple outline-none text-sm font-medium"
                   />
 
@@ -696,6 +850,7 @@ export default function LoginPage() {
                     placeholder="Confirme le mot de passe"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
                     className={cn(
                       "w-full px-4 py-4 rounded-2xl bg-white border outline-none text-sm font-medium",
                       confirmPassword && password !== confirmPassword
