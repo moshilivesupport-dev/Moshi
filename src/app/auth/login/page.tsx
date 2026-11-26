@@ -68,10 +68,35 @@ function getSupabaseErrorMessage(error: {
   ].filter(Boolean).join(" — ");
 }
 
+// Attend une requête avec une limite de temps.
+// Compatible avec les versions de Supabase qui ne proposent pas abortSignal().
+function withTimeout<T>(
+  request: PromiseLike<T>,
+  timeoutMs: number
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(
+        new Error(`La requête a dépassé le délai de ${timeoutMs / 1000} secondes.`)
+      );
+    }, timeoutMs);
+
+    Promise.resolve(request).then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
 export default function LoginPage() {
   const router = useRouter();
 
-  // Le client est créé une seule fois pour toute la durée du composant.
   const [supabase] = useState(() => createClient());
 
   const [mode, setMode] = useState<"welcome" | "signup" | "login">("welcome");
@@ -111,7 +136,7 @@ export default function LoginPage() {
     setDialCode(selected?.dial || "");
   }, [country]);
 
-  // Vérification du pseudo avec délai maximal et diagnostic précis
+  // Vérification du pseudo avec debounce et délai maximal
   useEffect(() => {
     const normalizedUsername = username.trim().toLowerCase();
 
@@ -123,27 +148,24 @@ export default function LoginPage() {
     }
 
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-    const controller = new AbortController();
 
     setUsernameStatus("checking");
 
     const debounceId = setTimeout(async () => {
       try {
-        timeoutId = setTimeout(() => {
-          controller.abort();
-        }, 10000);
-
-        const { data, error: queryError } = await supabase
-          .from("profiles")
-          .select("username")
-          .eq("username", normalizedUsername)
-          .limit(1)
-          .maybeSingle()
-          .abortSignal(controller.signal);
+        const result = await withTimeout(
+          supabase
+            .from("profiles")
+            .select("username")
+            .eq("username", normalizedUsername)
+            .limit(1)
+            .maybeSingle(),
+          10000
+        );
 
         if (cancelled) return;
+
+        const { data, error: queryError } = result;
 
         if (queryError) {
           console.error("Erreur vérification pseudo :", queryError);
@@ -169,23 +191,17 @@ export default function LoginPage() {
 
         const message =
           err instanceof Error
-            ? err.name === "AbortError"
-              ? "La requête a dépassé le délai de 10 secondes."
-              : err.message
+            ? err.message
             : String(err);
 
         setUsernameStatus("error");
         setUsernameError(`Échec de vérification : ${message}`);
-      } finally {
-        if (timeoutId) clearTimeout(timeoutId);
       }
     }, 500);
 
     return () => {
       cancelled = true;
       clearTimeout(debounceId);
-      if (timeoutId) clearTimeout(timeoutId);
-      controller.abort();
     };
   }, [username, usernameRetry, supabase]);
 
@@ -243,27 +259,18 @@ export default function LoginPage() {
     try {
       const normalizedUsername = username.trim().toLowerCase();
 
-      // Dernière vérification avant la création du compte
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      let existingUsername;
-      let checkError;
-
-      try {
-        const result = await supabase
+      // Dernière vérification du pseudo avant la création du compte
+      const result = await withTimeout(
+        supabase
           .from("profiles")
           .select("username")
           .eq("username", normalizedUsername)
           .limit(1)
-          .maybeSingle()
-          .abortSignal(controller.signal);
+          .maybeSingle(),
+        10000
+      );
 
-        existingUsername = result.data;
-        checkError = result.error;
-      } finally {
-        clearTimeout(timeoutId);
-      }
+      const { data: existingUsername, error: checkError } = result;
 
       if (checkError) {
         throw new Error(
@@ -334,7 +341,9 @@ export default function LoginPage() {
   };
 
   // CONNEXION
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
