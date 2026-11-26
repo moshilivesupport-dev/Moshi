@@ -26,6 +26,13 @@ import VideoActionsMenu from "@/components/video/VideoActionsMenu";
 
 let moshiAudioUnlocked = false;
 
+interface FeedProfile {
+  username: string | null;
+  avatar_url: string | null;
+  full_name: string | null;
+  country?: string | null;
+}
+
 interface FeedItem {
   id: string;
   type: "video" | "live";
@@ -35,12 +42,7 @@ interface FeedItem {
   comment_count: number;
   allow_download: boolean;
   user_id: string;
-  profiles: {
-    username: string | null;
-    avatar_url: string | null;
-    full_name: string | null;
-    country?: string | null;
-  } | null;
+  profiles: FeedProfile | null;
 }
 
 interface HomeFeedProps {
@@ -51,11 +53,15 @@ function formatNumber(num: number) {
   const safeNumber = Math.max(0, Number(num) || 0);
 
   if (safeNumber >= 1_000_000) {
-    return (safeNumber / 1_000_000).toFixed(1).replace(".0", "") + "M";
+    return (
+      (safeNumber / 1_000_000).toFixed(1).replace(".0", "") + "M"
+    );
   }
 
   if (safeNumber >= 1_000) {
-    return (safeNumber / 1_000).toFixed(1).replace(".0", "") + "K";
+    return (
+      (safeNumber / 1_000).toFixed(1).replace(".0", "") + "K"
+    );
   }
 
   return String(safeNumber);
@@ -71,7 +77,9 @@ function renderCaption(caption: string): ReactNode[] {
       return (
         <Link
           key={`${tag}-${index}`}
-          href={`/hashtag/${encodeURIComponent(tag.toLocaleLowerCase())}`}
+          href={`/hashtag/${encodeURIComponent(
+            tag.toLocaleLowerCase()
+          )}`}
           onClick={(event) => event.stopPropagation()}
           className="font-bold text-[#D8A4FF] hover:text-white"
         >
@@ -97,8 +105,10 @@ function FeedVideo({
 }) {
   const sectionRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstGestureRef = useRef(false);
 
   const [isVisible, setIsVisible] = useState(false);
@@ -208,7 +218,6 @@ function FeedVideo({
     if (!moshiAudioUnlocked) {
       moshiAudioUnlocked = true;
       firstGestureRef.current = true;
-
       video.muted = false;
 
       if (isVisible) {
@@ -295,12 +304,19 @@ export default function HomeFeed({
   const [loading, setLoading] = useState(true);
 
   const [liked, setLiked] = useState<Record<string, boolean>>({});
-  const [pendingLikes, setPendingLikes] = useState<Record<string, boolean>>({});
+  const [pendingLikes, setPendingLikes] = useState<
+    Record<string, boolean>
+  >({});
 
   const [saved, setSaved] = useState<Record<string, boolean>>({});
-  const [pendingSaves, setPendingSaves] = useState<Record<string, boolean>>({});
+  const [pendingSaves, setPendingSaves] = useState<
+    Record<string, boolean>
+  >({});
 
-  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+  } | null>(null);
+
   const [authLoaded, setAuthLoaded] = useState(false);
 
   const [emptyMessage, setEmptyMessage] = useState(
@@ -314,6 +330,7 @@ export default function HomeFeed({
   const viewsInFlightRef = useRef<Set<string>>(new Set());
   const viewedVideosRef = useRef<Set<string>>(new Set());
 
+  // Récupération de l'utilisateur connecté.
   useEffect(() => {
     let cancelled = false;
 
@@ -347,6 +364,7 @@ export default function HomeFeed({
     };
   }, [supabase]);
 
+  // Comptabilisation des vues qualifiées.
   const registerVideoView = useCallback(
     async (videoId: string) => {
       if (!currentUser) return;
@@ -362,9 +380,12 @@ export default function HomeFeed({
       viewsInFlightRef.current.add(videoId);
 
       try {
-        const { error } = await supabase.rpc("increment_video_view", {
-          vid_id: videoId,
-        });
+        const { error } = await supabase.rpc(
+          "increment_video_view",
+          {
+            vid_id: videoId,
+          }
+        );
 
         if (error) throw error;
 
@@ -378,6 +399,7 @@ export default function HomeFeed({
     [supabase, currentUser, items]
   );
 
+  // Chargement initial du fil.
   const loadFeed = useCallback(async () => {
     if (!authLoaded) return;
 
@@ -398,10 +420,11 @@ export default function HomeFeed({
           return;
         }
 
-        const { data: follows, error: followsError } = await supabase
-          .from("follows")
-          .select("following_id")
-          .eq("follower_id", currentUser.id);
+        const { data: follows, error: followsError } =
+          await supabase
+            .from("follows")
+            .select("following_id")
+            .eq("follower_id", currentUser.id);
 
         if (followsError) throw followsError;
 
@@ -435,7 +458,8 @@ export default function HomeFeed({
         videosQuery = videosQuery.in("user_id", followedIds);
       }
 
-      const { data: videosData, error: videosError } = await videosQuery;
+      const { data: videosData, error: videosError } =
+        await videosQuery;
 
       if (videosError) throw videosError;
 
@@ -448,7 +472,8 @@ export default function HomeFeed({
         livesQuery = livesQuery.in("host_id", followedIds);
       }
 
-      const { data: livesData, error: livesError } = await livesQuery;
+      const { data: livesData, error: livesError } =
+        await livesQuery;
 
       if (livesError) throw livesError;
 
@@ -458,7 +483,7 @@ export default function HomeFeed({
       ];
 
       const uniqueIds = [...new Set(userIds)];
-      const profilesMap: Record<string, FeedItem["profiles"]> = {};
+      const profilesMap: Record<string, FeedProfile | null> = {};
 
       if (uniqueIds.length > 0) {
         const { data: profiles, error } = await supabase
@@ -473,38 +498,47 @@ export default function HomeFeed({
         });
       }
 
-      const videos: FeedItem[] = (videosData || []).map((video) => ({
-        id: video.id,
-        type: "video",
-        // Toutes les vidéos passent désormais par notre route serveur.
-        url: `/api/videos/${encodeURIComponent(video.id)}`,
-        caption: video.caption,
-        like_count: video.like_count || 0,
-        comment_count: video.comment_count || 0,
-        allow_download: video.allow_download === true,
-        user_id: video.user_id,
-        profiles: profilesMap[video.user_id] || null,
-      }));
+      const videos: FeedItem[] = (videosData || []).map(
+        (video) => ({
+          id: video.id,
+          type: "video",
+          url: `/api/videos/${encodeURIComponent(video.id)}`,
+          caption: video.caption,
+          like_count: video.like_count || 0,
+          comment_count: video.comment_count || 0,
+          allow_download: video.allow_download === true,
+          user_id: video.user_id,
+          profiles: profilesMap[video.user_id] || null,
+        })
+      );
 
-      const lives: FeedItem[] = (livesData || []).map((live) => ({
-        id: live.id,
-        type: "live",
-        url: "",
-        caption: live.title,
-        like_count: 0,
-        comment_count: 0,
-        allow_download: false,
-        user_id: live.host_id,
-        profiles: profilesMap[live.host_id] || null,
-      }));
+      const lives: FeedItem[] = (livesData || []).map(
+        (live) => ({
+          id: live.id,
+          type: "live",
+          url: "",
+          caption: live.title,
+          like_count: 0,
+          comment_count: 0,
+          allow_download: false,
+          user_id: live.host_id,
+          profiles: profilesMap[live.host_id] || null,
+        })
+      );
 
       if (requestId !== loadRequestRef.current) return;
 
-      const feedVideos = mode === "forYou" ? [...videos] : videos;
+      const feedVideos = [...videos];
 
       if (mode === "forYou") {
-        for (let index = feedVideos.length - 1; index > 0; index -= 1) {
-          const randomIndex = Math.floor(Math.random() * (index + 1));
+        for (
+          let index = feedVideos.length - 1;
+          index > 0;
+          index -= 1
+        ) {
+          const randomIndex = Math.floor(
+            Math.random() * (index + 1)
+          );
 
           [feedVideos[index], feedVideos[randomIndex]] = [
             feedVideos[randomIndex],
@@ -526,7 +560,6 @@ export default function HomeFeed({
             .in("video_id", videoIds);
 
           if (error) throw error;
-
           if (requestId !== loadRequestRef.current) return;
 
           const map: Record<string, boolean> = {};
@@ -537,14 +570,14 @@ export default function HomeFeed({
 
           setLiked(map);
 
-          const { data: saves, error: savesError } = await supabase
-            .from("video_saves")
-            .select("video_id")
-            .eq("user_id", currentUser.id)
-            .in("video_id", videoIds);
+          const { data: saves, error: savesError } =
+            await supabase
+              .from("video_saves")
+              .select("video_id")
+              .eq("user_id", currentUser.id)
+              .in("video_id", videoIds);
 
           if (savesError) throw savesError;
-
           if (requestId !== loadRequestRef.current) return;
 
           const savedMap: Record<string, boolean> = {};
@@ -591,6 +624,111 @@ export default function HomeFeed({
     };
   }, [loadFeed]);
 
+  // NOUVEAU : réception des nouvelles vidéos publiées.
+  useEffect(() => {
+    let cancelled = false;
+
+    const channel = supabase
+      .channel(
+        `moshi-new-videos-${mode}-${currentUser?.id ?? "guest"}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "videos",
+        },
+        async (payload) => {
+          const video = payload.new as {
+            id: string;
+            user_id: string;
+            caption: string | null;
+            like_count: number | null;
+            comment_count: number | null;
+            allow_download: boolean | null;
+            status: string;
+          };
+
+          if (
+            cancelled ||
+            !video.id ||
+            !video.user_id ||
+            video.status !== "published"
+          ) {
+            return;
+          }
+
+          // Dans le fil abonnements, on vérifie le suivi.
+          if (mode === "following") {
+            if (!currentUser) return;
+
+            const { data: follow, error } = await supabase
+              .from("follows")
+              .select("following_id")
+              .eq("follower_id", currentUser.id)
+              .eq("following_id", video.user_id)
+              .maybeSingle();
+
+            if (error || !follow || cancelled) return;
+          }
+
+          // Récupération du profil du créateur.
+          const { data: profile, error: profileError } =
+            await supabase
+              .from("profiles")
+              .select(
+                "id, username, avatar_url, full_name, country"
+              )
+              .eq("id", video.user_id)
+              .maybeSingle();
+
+          if (profileError || cancelled) return;
+
+          const newItem: FeedItem = {
+            id: video.id,
+            type: "video",
+            url: `/api/videos/${encodeURIComponent(video.id)}`,
+            caption: video.caption,
+            like_count: Number(video.like_count || 0),
+            comment_count: Number(video.comment_count || 0),
+            allow_download: video.allow_download === true,
+            user_id: video.user_id,
+            profiles: profile || null,
+          };
+
+          setItems((previous) => {
+            if (
+              previous.some(
+                (item) =>
+                  item.id === newItem.id &&
+                  item.type === "video"
+              )
+            ) {
+              return previous;
+            }
+
+            return [newItem, ...previous];
+          });
+
+          setEmptyMessage("Aucune vidéo pour le moment");
+        }
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn(
+            "Synchronisation des nouvelles vidéos indisponible."
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, mode, currentUser]);
+
+  // Synchronisation des compteurs vidéo.
   useEffect(() => {
     const channel = supabase
       .channel(`moshi-feed-counts-${mode}`)
@@ -612,11 +750,15 @@ export default function HomeFeed({
 
           if (!updated.id) return;
 
-          if (updated.status && updated.status !== "published") {
+          if (
+            updated.status &&
+            updated.status !== "published"
+          ) {
             setItems((previous) =>
               previous.filter(
                 (item) =>
-                  item.type !== "video" || item.id !== updated.id
+                  item.type !== "video" ||
+                  item.id !== updated.id
               )
             );
             return;
@@ -624,7 +766,10 @@ export default function HomeFeed({
 
           setItems((previous) =>
             previous.map((item) => {
-              if (item.type !== "video" || item.id !== updated.id) {
+              if (
+                item.type !== "video" ||
+                item.id !== updated.id
+              ) {
                 return item;
               }
 
@@ -656,6 +801,7 @@ export default function HomeFeed({
     };
   }, [supabase, mode]);
 
+  // Synchronisation des J'aime de l'utilisateur.
   useEffect(() => {
     if (!currentUser) return;
 
@@ -670,7 +816,9 @@ export default function HomeFeed({
           filter: `user_id=eq.${currentUser.id}`,
         },
         (payload) => {
-          const row = payload.new as { video_id?: string };
+          const row = payload.new as {
+            video_id?: string;
+          };
 
           if (!row.video_id) return;
 
@@ -689,7 +837,9 @@ export default function HomeFeed({
           filter: `user_id=eq.${currentUser.id}`,
         },
         (payload) => {
-          const row = payload.old as { video_id?: string };
+          const row = payload.old as {
+            video_id?: string;
+          };
 
           if (!row.video_id) return;
 
@@ -706,6 +856,7 @@ export default function HomeFeed({
     };
   }, [supabase, currentUser]);
 
+  // J'aime / Retirer J'aime.
   const toggleLike = async (videoId: string) => {
     if (!currentUser || pendingLikes[videoId]) return;
 
@@ -783,6 +934,7 @@ export default function HomeFeed({
     }
   };
 
+  // Ajouter / retirer des favoris.
   const toggleSave = async (videoId: string) => {
     if (!currentUser || pendingSaves[videoId]) return;
 
@@ -832,6 +984,7 @@ export default function HomeFeed({
     }
   };
 
+  // Actualisation du compteur après un commentaire.
   const handleCommentAdded = useCallback(
     async (videoId: string) => {
       const { data, error } = await supabase
