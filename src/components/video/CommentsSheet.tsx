@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -57,7 +58,7 @@ function errorText(error: unknown): string {
       return "Tu n'as pas l'autorisation de publier ce commentaire.";
     }
 
-    if (/jwt|token/i.test(message)) {
+    if (/jwt|token|session/i.test(message)) {
       return "Ta session a expiré. Reconnecte-toi.";
     }
 
@@ -372,7 +373,6 @@ export default function CommentsSheet({
 
           if (!active) return;
 
-          // Le changement de notre propre compte est déjà optimiste.
           if (row.user_id === currentUser) {
             setMyLikes((previous) => ({
               ...previous,
@@ -438,16 +438,17 @@ export default function CommentsSheet({
     notifyAdded,
   ]);
 
+  // Retourne true uniquement si le commentaire a bien été enregistré.
   const sendComment = async (
     content: string,
     voiceUrl: string | null = null
-  ) => {
-    if (sendingRef.current || !currentUser) return;
+  ): Promise<boolean> => {
+    if (sendingRef.current || !currentUser) return false;
 
     const cleanContent = content.trim();
 
-    if (!cleanContent && !voiceUrl) return;
-    if (cleanContent.length > 500) return;
+    if (!cleanContent && !voiceUrl) return false;
+    if (cleanContent.length > 500) return false;
 
     sendingRef.current = true;
     setSending(true);
@@ -505,9 +506,12 @@ export default function CommentsSheet({
           behavior: "smooth",
         });
       });
+
+      return true;
     } catch (error) {
       console.error("Envoi commentaire :", error);
       setErrorMessage(errorText(error));
+      return false;
     } finally {
       sendingRef.current = false;
       setSending(false);
@@ -679,35 +683,81 @@ export default function CommentsSheet({
     setVoicePreview("");
   };
 
+  // Upload du vocal dans Cloudflare R2 via /api/media.
   const sendVoice = async () => {
-    if (!voiceBlob || !currentUser || voiceUploading) return;
+    if (!voiceBlob || !currentUser || voiceUploading || sending) {
+      return;
+    }
 
     setVoiceUploading(true);
     setErrorMessage("");
 
+    let uploadedKey: string | null = null;
+
     try {
-      const extension = voiceBlob.type.includes("webm")
-        ? "webm"
-        : voiceBlob.type.includes("ogg")
-          ? "ogg"
-          : "m4a";
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
-      const path = `${currentUser}/${crypto.randomUUID()}.${extension}`;
+      if (sessionError) throw sessionError;
 
-      const { error: uploadError } = await supabase.storage
-        .from("comment-audio")
-        .upload(path, voiceBlob, {
-          contentType: voiceBlob.type || "audio/mp4",
-          upsert: false,
-        });
+      const accessToken = session?.access_token;
 
-      if (uploadError) throw uploadError;
+      if (!accessToken) {
+        throw new Error("Ta session a expiré. Reconnecte-toi.");
+      }
 
-      const { data } = supabase.storage
-        .from("comment-audio")
-        .getPublicUrl(path);
+      const formData = new FormData();
+      formData.append("file", voiceBlob, "comment-audio");
+      formData.append("category", "comment-audio");
 
-      await sendComment("", data.publicUrl);
+      const uploadResponse = await fetch("/api/media", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: formData,
+      });
+
+      const uploadResult = await uploadResponse.json().catch(() => null);
+
+      if (
+        !uploadResponse.ok ||
+        !uploadResult?.success ||
+        typeof uploadResult?.key !== "string" ||
+        typeof uploadResult?.url !== "string"
+      ) {
+        throw new Error(
+          uploadResult?.error ||
+            "Impossible d'envoyer le message vocal vers le stockage."
+        );
+      }
+
+      uploadedKey = uploadResult.key;
+
+      // L'URL renvoyée par l'API pointe vers le média stocké dans R2.
+      const commentSaved = await sendComment("", uploadResult.url);
+
+      if (!commentSaved) {
+        // Évite de laisser un fichier vocal orphelin dans R2.
+        try {
+          await fetch(
+            `/api/media?key=${encodeURIComponent(uploadedKey)}`,
+            {
+              method: "DELETE",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          );
+        } catch (cleanupError) {
+          console.error(
+            "Nettoyage du vocal R2 impossible :",
+            cleanupError
+          );
+        }
+      }
     } catch (error) {
       console.error("Envoi vocal :", error);
       setErrorMessage(errorText(error));
