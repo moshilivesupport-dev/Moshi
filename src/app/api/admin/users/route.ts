@@ -1,10 +1,10 @@
-
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 30;
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -20,20 +20,67 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+
+    const page = Math.max(
+      1,
+      Number(url.searchParams.get("page")) || 1
+    );
+
     const search = (url.searchParams.get("q") || "")
       .trim()
       .slice(0, 80)
       .replace(/[,%()]/g, " ");
 
     const requestedRole = url.searchParams.get("role");
+
     const role =
-      requestedRole === "acheteur" || requestedRole === "vendeur"
+      requestedRole === "acheteur" ||
+      requestedRole === "vendeur" ||
+      requestedRole === "admin"
         ? requestedRole
         : null;
 
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
+
+    let adminIdsForFilter: string[] = [];
+
+    /*
+     * Le filtre administrateur doit prendre en compte :
+     * - les profils dont role = admin ;
+     * - les utilisateurs enregistrés dans admin_users.
+     *
+     * Cela évite qu'un administrateur soit invisible si son rôle
+     * n'est pas synchronisé entre les deux emplacements.
+     */
+    if (role === "admin") {
+      const { data: adminRows, error: adminRowsError } =
+        await auth.adminClient
+          .from("admin_users")
+          .select("user_id");
+
+      if (adminRowsError) {
+        console.error(
+          "Admin users filter:",
+          adminRowsError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Impossible de récupérer la liste des administrateurs.",
+          },
+          { status: 500 }
+        );
+      }
+
+      adminIdsForFilter = (adminRows ?? [])
+        .map((item) => item.user_id)
+        .filter(
+          (id): id is string =>
+            typeof id === "string" && UUID_PATTERN.test(id)
+        );
+    }
 
     let query = auth.adminClient
       .from("profiles")
@@ -44,8 +91,20 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false })
       .range(from, to);
 
-    if (role) {
+    if (role === "acheteur" || role === "vendeur") {
       query = query.eq("role", role);
+    }
+
+    if (role === "admin") {
+      if (adminIdsForFilter.length > 0) {
+        const ids = adminIdsForFilter.join(",");
+
+        query = query.or(
+          `role.eq.admin,id.in.(${ids})`
+        );
+      } else {
+        query = query.eq("role", "admin");
+      }
     }
 
     if (search) {
@@ -56,18 +115,26 @@ export async function GET(request: Request) {
       );
     }
 
-    const { data: profiles, error, count } = await query;
+    const {
+      data: profiles,
+      error,
+      count,
+    } = await query;
 
     if (error) {
       console.error("Admin users GET:", error);
 
       return NextResponse.json(
-        { error: "Impossible de charger les utilisateurs." },
+        {
+          error: "Impossible de charger les utilisateurs.",
+        },
         { status: 500 }
       );
     }
 
-    const ids = (profiles ?? []).map((profile) => profile.id);
+    const ids = (profiles ?? []).map(
+      (profile) => profile.id
+    );
 
     const { data: admins, error: adminsError } = ids.length
       ? await auth.adminClient
@@ -77,10 +144,16 @@ export async function GET(request: Request) {
       : { data: [], error: null };
 
     if (adminsError) {
-      console.error("Admin users roles:", adminsError);
+      console.error(
+        "Admin users roles:",
+        adminsError
+      );
 
       return NextResponse.json(
-        { error: "Impossible de vérifier les comptes administrateurs." },
+        {
+          error:
+            "Impossible de vérifier les comptes administrateurs.",
+        },
         { status: 500 }
       );
     }
@@ -91,8 +164,12 @@ export async function GET(request: Request) {
 
     const users = await Promise.all(
       (profiles ?? []).map(async (profile) => {
-        const { data, error: authError } =
-          await auth.adminClient.auth.admin.getUserById(profile.id);
+        const {
+          data,
+          error: authError,
+        } = await auth.adminClient.auth.admin.getUserById(
+          profile.id
+        );
 
         if (authError || !data.user) {
           console.error(
@@ -104,14 +181,26 @@ export async function GET(request: Request) {
           return null;
         }
 
-        const bannedUntil = data.user.banned_until ?? null;
+        const authUser = data.user;
+
+        const bannedUntil =
+          authUser.banned_until ?? null;
+
         const isSuspended =
           Boolean(bannedUntil) &&
-          new Date(bannedUntil as string).getTime() > Date.now();
+          new Date(bannedUntil as string).getTime() >
+            Date.now();
+
+        const isAdmin =
+          adminIds.has(profile.id) ||
+          profile.role === "admin";
 
         return {
           id: profile.id,
-          email: profile.email || data.user.email || null,
+          email:
+            profile.email ||
+            authUser.email ||
+            null,
           username: profile.username,
           full_name: profile.full_name,
           avatar_url: profile.avatar_url,
@@ -121,17 +210,20 @@ export async function GET(request: Request) {
           is_verified: profile.is_verified,
           seller_status: profile.seller_status,
           created_at: profile.created_at,
-          last_sign_in_at: data.user.last_sign_in_at,
+          last_sign_in_at: authUser.last_sign_in_at,
           is_suspended: isSuspended,
           banned_until: bannedUntil,
-          is_admin: adminIds.has(profile.id),
+          is_admin: isAdmin,
         };
       })
     );
 
     return NextResponse.json(
       {
-        users: users.filter(Boolean),
+        users: users.filter(
+          (user): user is NonNullable<typeof user> =>
+            user !== null
+        ),
         page,
         pageSize: PAGE_SIZE,
         total: count ?? 0,
@@ -147,10 +239,15 @@ export async function GET(request: Request) {
       }
     );
   } catch (error) {
-    console.error("Admin users GET error:", error);
+    console.error(
+      "Admin users GET error:",
+      error
+    );
 
     return NextResponse.json(
-      { error: "Une erreur interne est survenue." },
+      {
+        error: "Une erreur interne est survenue.",
+      },
       { status: 500 }
     );
   }
@@ -167,32 +264,59 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    let body: {
+      userId?: unknown;
+      action?: unknown;
+      reason?: unknown;
+    };
 
-    const userId =
-      typeof body.userId === "string" ? body.userId.trim() : "";
-
-    const action =
-      typeof body.action === "string" ? body.action.trim() : "";
-
-    const reason =
-      typeof body.reason === "string" ? body.reason.trim() : "";
-
-    if (!UUID_PATTERN.test(userId)) {
+    try {
+      body = await request.json();
+    } catch {
       return NextResponse.json(
-        { error: "Identifiant utilisateur invalide." },
+        { error: "Corps de requête invalide." },
         { status: 400 }
       );
     }
 
-    if (!["suspend", "reactivate"].includes(action)) {
+    const userId =
+      typeof body.userId === "string"
+        ? body.userId.trim()
+        : "";
+
+    const action =
+      typeof body.action === "string"
+        ? body.action.trim()
+        : "";
+
+    const reason =
+      typeof body.reason === "string"
+        ? body.reason.trim()
+        : "";
+
+    if (!UUID_PATTERN.test(userId)) {
+      return NextResponse.json(
+        {
+          error: "Identifiant utilisateur invalide.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      action !== "suspend" &&
+      action !== "reactivate"
+    ) {
       return NextResponse.json(
         { error: "Action invalide." },
         { status: 400 }
       );
     }
 
-    if (reason.length < 5 || reason.length > 1000) {
+    if (
+      reason.length < 5 ||
+      reason.length > 1000
+    ) {
       return NextResponse.json(
         {
           error:
@@ -204,39 +328,71 @@ export async function POST(request: Request) {
 
     if (userId === auth.user.id) {
       return NextResponse.json(
-        { error: "Tu ne peux pas suspendre ton propre compte." },
-        { status: 403 }
-      );
-    }
-
-    const { data: targetAdmin, error: adminCheckError } =
-      await auth.adminClient
-        .from("admin_users")
-        .select("user_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-    if (adminCheckError) {
-      console.error("Admin target check:", adminCheckError);
-
-      return NextResponse.json(
-        { error: "Impossible de vérifier ce compte." },
-        { status: 500 }
-      );
-    }
-
-    if (targetAdmin) {
-      return NextResponse.json(
         {
           error:
-            "La suspension d'un autre administrateur est interdite depuis ce module.",
+            "Tu ne peux pas suspendre ton propre compte.",
         },
         { status: 403 }
       );
     }
 
-    const { data: target, error: targetError } =
-      await auth.adminClient.auth.admin.getUserById(userId);
+    /*
+     * Protection renforcée :
+     * un compte est considéré administrateur s'il figure
+     * dans admin_users OU si son profil porte role = admin.
+     */
+    const [
+      { data: targetAdmin, error: adminCheckError },
+      { data: targetProfile, error: profileCheckError },
+    ] = await Promise.all([
+      auth.adminClient
+        .from("admin_users")
+        .select("user_id")
+        .eq("user_id", userId)
+        .maybeSingle(),
+
+      auth.adminClient
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .maybeSingle(),
+    ]);
+
+    if (adminCheckError || profileCheckError) {
+      console.error(
+        "Admin target check:",
+        adminCheckError,
+        profileCheckError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Impossible de vérifier les autorisations de ce compte.",
+        },
+        { status: 500 }
+      );
+    }
+
+    if (
+      targetAdmin ||
+      targetProfile?.role === "admin"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "La suspension d'un compte administrateur est interdite depuis ce module.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const {
+      data: target,
+      error: targetError,
+    } = await auth.adminClient.auth.admin.getUserById(
+      userId
+    );
 
     if (targetError || !target.user) {
       return NextResponse.json(
@@ -245,70 +401,104 @@ export async function POST(request: Request) {
       );
     }
 
-    const previousBan = target.user.banned_until ?? null;
+    const previousBan =
+      target.user.banned_until ?? null;
 
     const wasSuspended =
       Boolean(previousBan) &&
-      new Date(previousBan as string).getTime() > Date.now();
+      new Date(previousBan as string).getTime() >
+        Date.now();
 
     if (action === "suspend" && wasSuspended) {
       return NextResponse.json(
-        { error: "Ce compte est déjà suspendu." },
+        {
+          error: "Ce compte est déjà suspendu.",
+        },
         { status: 409 }
       );
     }
 
-    if (action === "reactivate" && !wasSuspended) {
+    if (
+      action === "reactivate" &&
+      !wasSuspended
+    ) {
       return NextResponse.json(
-        { error: "Ce compte n'est pas suspendu." },
+        {
+          error: "Ce compte n'est pas suspendu.",
+        },
         { status: 409 }
       );
     }
 
-    const banDuration = action === "suspend" ? "876000h" : "none";
+    const banDuration =
+      action === "suspend"
+        ? "876000h"
+        : "none";
 
-    const { data: updated, error: updateError } =
-      await auth.adminClient.auth.admin.updateUserById(userId, {
+    const {
+      data: updated,
+      error: updateError,
+    } = await auth.adminClient.auth.admin.updateUserById(
+      userId,
+      {
         ban_duration: banDuration,
-      });
+      }
+    );
 
     if (updateError || !updated.user) {
-      console.error("Admin user status update:", updateError);
+      console.error(
+        "Admin user status update:",
+        updateError
+      );
 
       return NextResponse.json(
-        { error: "Impossible de modifier le statut du compte." },
+        {
+          error:
+            "Impossible de modifier le statut du compte.",
+        },
         { status: 500 }
       );
     }
 
-    const { error: auditError } = await auth.adminClient
-      .from("admin_activity_logs")
-      .insert({
-        admin_user_id: auth.user.id,
-        target_user_id: userId,
-        action:
-          action === "suspend"
-            ? "user_suspended"
-            : "user_reactivated",
-        reason,
-        metadata: {
-          previous_banned_until: previousBan,
-          new_banned_until: updated.user.banned_until ?? null,
-        },
-      });
+    const { error: auditError } =
+      await auth.adminClient
+        .from("admin_activity_logs")
+        .insert({
+          admin_user_id: auth.user.id,
+          target_user_id: userId,
+          action:
+            action === "suspend"
+              ? "user_suspended"
+              : "user_reactivated",
+          reason,
+          metadata: {
+            previous_banned_until: previousBan,
+            new_banned_until:
+              updated.user.banned_until ?? null,
+          },
+        });
 
     if (auditError) {
-      console.error("Admin audit insertion failed:", auditError);
+      console.error(
+        "Admin audit insertion failed:",
+        auditError
+      );
 
-      // Restaurer l'état antérieur si l'historique ne peut pas être écrit.
+      /*
+       * Si l'enregistrement de l'historique échoue,
+       * on tente de restaurer l'état précédent.
+       */
       const remainingHours =
         previousBan &&
-        new Date(previousBan).getTime() > Date.now()
+        new Date(previousBan).getTime() >
+          Date.now()
           ? Math.max(
               1,
               Math.ceil(
-                (new Date(previousBan).getTime() - Date.now()) /
-                  3600000
+                (
+                  new Date(previousBan).getTime() -
+                  Date.now()
+                ) / 3600000
               )
             )
           : null;
@@ -317,13 +507,20 @@ export async function POST(request: Request) {
         ? `${remainingHours}h`
         : "none";
 
-      const { error: rollbackError } =
-        await auth.adminClient.auth.admin.updateUserById(userId, {
+      const {
+        error: rollbackError,
+      } = await auth.adminClient.auth.admin.updateUserById(
+        userId,
+        {
           ban_duration: rollbackDuration,
-        });
+        }
+      );
 
       if (rollbackError) {
-        console.error("Admin status rollback failed:", rollbackError);
+        console.error(
+          "Admin status rollback failed:",
+          rollbackError
+        );
       }
 
       return NextResponse.json(
@@ -344,7 +541,8 @@ export async function POST(request: Request) {
             : "Compte réactivé.",
         user: {
           id: userId,
-          banned_until: updated.user.banned_until ?? null,
+          banned_until:
+            updated.user.banned_until ?? null,
         },
       },
       {
@@ -354,10 +552,15 @@ export async function POST(request: Request) {
       }
     );
   } catch (error) {
-    console.error("Admin users POST error:", error);
+    console.error(
+      "Admin users POST error:",
+      error
+    );
 
     return NextResponse.json(
-      { error: "Une erreur interne est survenue." },
+      {
+        error: "Une erreur interne est survenue.",
+      },
       { status: 500 }
     );
   }
