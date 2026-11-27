@@ -1,43 +1,55 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# OpenNext generated files — never commit
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Tests
+coverage/
+.nyc_output/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# OpenNext / Cloudflare generated files
 .open-next/
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+.open-next-cache/
+.wrangler/
+.dev.vars
 
-# testing
-/coverage
+# Build outputs
+dist/
+build/
 
-# next.js
-/.next/
-/out/
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.template
 
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
+# Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
+# TypeScript
 *.tsbuildinfo
-next-env.d.ts
+
+# Editor and operating system
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Deployment credentials
+.dev.vars.*
+.secrets/
