@@ -739,7 +739,7 @@ export default function CommentsSheet({
       // L'URL renvoyée par l'API pointe vers le média stocké dans R2.
       const commentSaved = await sendComment("", uploadResult.url);
 
-      if (!commentSaved) {
+      if (!commentSaved && uploadedKey) {
         // Évite de laisser un fichier vocal orphelin dans R2.
         try {
           await fetch(
