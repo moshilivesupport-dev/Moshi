@@ -1,43 +1,33 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
-
-const EXPECTED_SUPABASE_HOST = "jifjeaiqdseetbnvdkpm.supabase.co";
+let supabaseClient: ReturnType<typeof createBrowserClient> | null = null;
 
 export function createClient() {
-  if (!SUPABASE_URL) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+
+  if (!supabaseUrl || !supabaseKey) {
     throw new Error(
-      "Configuration manquante : NEXT_PUBLIC_SUPABASE_URL."
+      "Configuration Supabase manquante. Vérifie NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY."
     );
   }
-
-  if (!SUPABASE_KEY) {
-    throw new Error(
-      "Configuration manquante : NEXT_PUBLIC_SUPABASE_ANON_KEY."
-    );
-  }
-
-  let parsedUrl: URL;
 
   try {
-    parsedUrl = new URL(SUPABASE_URL);
-  } catch {
-    throw new Error("L'URL Supabase configurée est invalide.");
-  }
+    const parsedUrl = new URL(supabaseUrl);
 
-  if (
-    parsedUrl.protocol !== "https:" ||
-    parsedUrl.hostname !== EXPECTED_SUPABASE_HOST
-  ) {
+    if (parsedUrl.protocol !== "https:" || !parsedUrl.hostname.endsWith(".supabase.co")) {
+      throw new Error("URL Supabase invalide.");
+    }
+  } catch {
     throw new Error(
-      "Moshi utilise une URL Supabase incorrecte. Vérifie la configuration du nouveau projet."
+      "L'URL Supabase est invalide. Vérifie la variable NEXT_PUBLIC_SUPABASE_URL."
     );
   }
 
-  return createBrowserClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-  );
+  if (!supabaseClient) {
+    supabaseClient = createBrowserClient(supabaseUrl, supabaseKey);
+  }
+
+  return supabaseClient;
 }
