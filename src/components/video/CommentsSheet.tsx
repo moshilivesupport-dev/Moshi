@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -36,6 +35,9 @@ interface Comment {
   user_id: string;
   parent_comment_id: string | null;
   voice_url: string | null;
+  voice_object_key: string | null;
+  voice_content_type: string | null;
+  voice_duration_ms: number | null;
   profiles: CommentProfile | null;
 }
 
@@ -69,11 +71,7 @@ function errorText(error: unknown): string {
 }
 
 function formatDate(date: string) {
-  const difference = Math.max(
-    0,
-    Date.now() - new Date(date).getTime()
-  );
-
+  const difference = Math.max(0, Date.now() - new Date(date).getTime());
   const minutes = Math.floor(difference / 60000);
   const hours = Math.floor(difference / 3600000);
   const days = Math.floor(difference / 86400000);
@@ -84,6 +82,15 @@ function formatDate(date: string) {
   if (days < 7) return `${days} j`;
 
   return new Date(date).toLocaleDateString("fr-FR");
+}
+
+function getVoiceSource(comment: Comment): string | null {
+  if (comment.voice_object_key) {
+    return `/api/comments/voice?commentId=${encodeURIComponent(comment.id)}`;
+  }
+
+  // Compatibilité avec les anciens commentaires vocaux.
+  return comment.voice_url;
 }
 
 export default function CommentsSheet({
@@ -103,6 +110,7 @@ export default function CommentsSheet({
   const sendingRef = useRef(false);
   const likingRef = useRef<Set<string>>(new Set());
   const keyboardHeightRef = useRef(0);
+  const recordingStartedAtRef = useRef<number | null>(null);
 
   const [mounted, setMounted] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -121,6 +129,7 @@ export default function CommentsSheet({
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   const [voicePreview, setVoicePreview] = useState("");
   const [voiceUploading, setVoiceUploading] = useState(false);
+  const [voiceDurationMs, setVoiceDurationMs] = useState(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
@@ -129,9 +138,7 @@ export default function CommentsSheet({
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
 
-      if (voicePreview) {
-        URL.revokeObjectURL(voicePreview);
-      }
+      if (voicePreview) URL.revokeObjectURL(voicePreview);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -140,7 +147,6 @@ export default function CommentsSheet({
     callbackRef.current = onCommentAdded;
   }, [onCommentAdded]);
 
-  // Adaptation du panneau au clavier mobile, notamment sur iOS.
   useEffect(() => {
     if (!window.visualViewport) return;
 
@@ -176,10 +182,7 @@ export default function CommentsSheet({
     knownIdsRef.current.add(comment.id);
 
     setComments((previous) => {
-      if (previous.some((item) => item.id === comment.id)) {
-        return previous;
-      }
-
+      if (previous.some((item) => item.id === comment.id)) return previous;
       return [...previous, comment];
     });
 
@@ -222,7 +225,7 @@ export default function CommentsSheet({
         const { data: rows, error: commentsError } = await supabase
           .from("video_comments")
           .select(
-            "id, content, created_at, user_id, parent_comment_id, voice_url"
+            "id, content, created_at, user_id, parent_comment_id, voice_url, voice_object_key, voice_content_type, voice_duration_ms"
           )
           .eq("video_id", videoId)
           .order("created_at", { ascending: true });
@@ -231,10 +234,7 @@ export default function CommentsSheet({
         if (cancelled()) return;
 
         const commentRows = rows ?? [];
-        const userIds = [
-          ...new Set(commentRows.map((row) => row.user_id)),
-        ];
-
+        const userIds = [...new Set(commentRows.map((row) => row.user_id))];
         const profileMap: Record<string, CommentProfile> = {};
 
         if (userIds.length) {
@@ -260,13 +260,13 @@ export default function CommentsSheet({
           ...row,
           parent_comment_id: row.parent_comment_id ?? null,
           voice_url: row.voice_url ?? null,
+          voice_object_key: row.voice_object_key ?? null,
+          voice_content_type: row.voice_content_type ?? null,
+          voice_duration_ms: row.voice_duration_ms ?? null,
           profiles: profileMap[row.user_id] ?? null,
         }));
 
-        knownIdsRef.current = new Set(
-          loaded.map((item) => item.id)
-        );
-
+        knownIdsRef.current = new Set(loaded.map((item) => item.id));
         setComments(loaded);
 
         const ids = loaded.map((item) => item.id);
@@ -284,8 +284,7 @@ export default function CommentsSheet({
           const mine: Record<string, boolean> = {};
 
           for (const like of (likeRows ?? []) as CommentLike[]) {
-            counts[like.comment_id] =
-              (counts[like.comment_id] ?? 0) + 1;
+            counts[like.comment_id] = (counts[like.comment_id] ?? 0) + 1;
 
             if (user && like.user_id === user.id) {
               mine[like.comment_id] = true;
@@ -313,7 +312,6 @@ export default function CommentsSheet({
 
   useEffect(() => {
     let cancelled = false;
-
     void loadData(() => cancelled);
 
     return () => {
@@ -321,7 +319,6 @@ export default function CommentsSheet({
     };
   }, [loadData]);
 
-  // Synchronisation temps réel des commentaires et des likes.
   useEffect(() => {
     let active = true;
 
@@ -352,12 +349,13 @@ export default function CommentsSheet({
             ...row,
             parent_comment_id: row.parent_comment_id ?? null,
             voice_url: row.voice_url ?? null,
+            voice_object_key: row.voice_object_key ?? null,
+            voice_content_type: row.voice_content_type ?? null,
+            voice_duration_ms: row.voice_duration_ms ?? null,
             profiles: profile ?? null,
           });
 
-          if (inserted && row.user_id !== currentUser) {
-            notifyAdded();
-          }
+          if (inserted && row.user_id !== currentUser) notifyAdded();
         }
       )
       .on(
@@ -370,7 +368,6 @@ export default function CommentsSheet({
         },
         (payload) => {
           const row = payload.new as CommentLike;
-
           if (!active) return;
 
           if (row.user_id === currentUser) {
@@ -397,7 +394,6 @@ export default function CommentsSheet({
         },
         (payload) => {
           const row = payload.old as CommentLike;
-
           if (!active) return;
 
           if (row.user_id === currentUser) {
@@ -419,10 +415,7 @@ export default function CommentsSheet({
       )
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn(
-            "Realtime commentaires indisponible :",
-            status
-          );
+          console.warn("Realtime commentaires indisponible :", status);
         }
       });
 
@@ -430,25 +423,13 @@ export default function CommentsSheet({
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [
-    supabase,
-    videoId,
-    currentUser,
-    addComment,
-    notifyAdded,
-  ]);
+  }, [supabase, videoId, currentUser, addComment, notifyAdded]);
 
-  // Retourne true uniquement si le commentaire a bien été enregistré.
-  const sendComment = async (
-    content: string,
-    voiceUrl: string | null = null
-  ): Promise<boolean> => {
+  const sendComment = async (content: string): Promise<boolean> => {
     if (sendingRef.current || !currentUser) return false;
 
     const cleanContent = content.trim();
-
-    if (!cleanContent && !voiceUrl) return false;
-    if (cleanContent.length > 500) return false;
+    if (!cleanContent || cleanContent.length > 500) return false;
 
     sendingRef.current = true;
     setSending(true);
@@ -471,12 +452,12 @@ export default function CommentsSheet({
         .insert({
           video_id: videoId,
           user_id: user.id,
-          content: cleanContent || "🎤 Message vocal",
+          content: cleanContent,
           parent_comment_id: replyTo?.id ?? null,
-          voice_url: voiceUrl,
+          voice_url: null,
         })
         .select(
-          "id, content, created_at, user_id, parent_comment_id, voice_url"
+          "id, content, created_at, user_id, parent_comment_id, voice_url, voice_object_key, voice_content_type, voice_duration_ms"
         )
         .single();
 
@@ -486,6 +467,9 @@ export default function CommentsSheet({
         ...data,
         parent_comment_id: data.parent_comment_id ?? null,
         voice_url: data.voice_url ?? null,
+        voice_object_key: data.voice_object_key ?? null,
+        voice_content_type: data.voice_content_type ?? null,
+        voice_duration_ms: data.voice_duration_ms ?? null,
         profiles: userProfile,
       });
 
@@ -493,12 +477,6 @@ export default function CommentsSheet({
 
       setNewComment("");
       setReplyTo(null);
-      setVoiceBlob(null);
-
-      if (voicePreview) {
-        URL.revokeObjectURL(voicePreview);
-        setVoicePreview("");
-      }
 
       requestAnimationFrame(() => {
         listRef.current?.scrollTo({
@@ -520,9 +498,7 @@ export default function CommentsSheet({
 
   const toggleCommentLike = async (commentId: string) => {
     if (!currentUser) {
-      setErrorMessage(
-        "Connecte-toi pour aimer un commentaire."
-      );
+      setErrorMessage("Connecte-toi pour aimer un commentaire.");
       return;
     }
 
@@ -592,10 +568,7 @@ export default function CommentsSheet({
     setErrorMessage("");
 
     try {
-      if (
-        !navigator.mediaDevices?.getUserMedia ||
-        !window.MediaRecorder
-      ) {
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
         throw new Error(
           "L'enregistrement vocal n'est pas pris en charge par ce navigateur."
         );
@@ -624,14 +597,20 @@ export default function CommentsSheet({
 
       recorderRef.current = recorder;
       chunksRef.current = [];
+      recordingStartedAtRef.current = Date.now();
 
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
+        if (event.data.size > 0) chunksRef.current.push(event.data);
       };
 
       recorder.onstop = () => {
+        const duration = recordingStartedAtRef.current
+          ? Math.max(1, Date.now() - recordingStartedAtRef.current)
+          : 1;
+
+        recordingStartedAtRef.current = null;
+        setVoiceDurationMs(Math.min(duration, 600000));
+
         const blob = new Blob(chunksRef.current, {
           type: recorder.mimeType || "audio/mp4",
         });
@@ -641,6 +620,11 @@ export default function CommentsSheet({
 
         if (blob.size > 10 * 1024 * 1024) {
           setErrorMessage("Le fichier vocal dépasse 10 Mo.");
+          return;
+        }
+
+        if (blob.size === 0) {
+          setErrorMessage("L'enregistrement est vide. Réessaie.");
           return;
         }
 
@@ -657,7 +641,6 @@ export default function CommentsSheet({
 
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
-
       setRecording(false);
     }
   };
@@ -665,99 +648,76 @@ export default function CommentsSheet({
   const stopRecording = () => {
     const recorder = recorderRef.current;
 
-    if (recorder && recorder.state !== "inactive") {
-      recorder.stop();
-    }
-
+    if (recorder && recorder.state !== "inactive") recorder.stop();
     setRecording(false);
   };
 
   const discardVoice = () => {
     if (recording) stopRecording();
 
-    if (voicePreview) {
-      URL.revokeObjectURL(voicePreview);
-    }
+    if (voicePreview) URL.revokeObjectURL(voicePreview);
 
     setVoiceBlob(null);
     setVoicePreview("");
+    setVoiceDurationMs(0);
   };
 
-  // Upload du vocal dans Cloudflare R2 via /api/media.
   const sendVoice = async () => {
-    if (!voiceBlob || !currentUser || voiceUploading || sending) {
-      return;
-    }
+    if (!voiceBlob || !currentUser || voiceUploading || sending) return;
 
     setVoiceUploading(true);
     setErrorMessage("");
 
-    let uploadedKey: string | null = null;
-
     try {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError) throw sessionError;
-
-      const accessToken = session?.access_token;
-
-      if (!accessToken) {
-        throw new Error("Ta session a expiré. Reconnecte-toi.");
-      }
-
       const formData = new FormData();
       formData.append("file", voiceBlob, "comment-audio");
-      formData.append("category", "comment-audio");
+      formData.append("videoId", videoId);
+      formData.append("parentCommentId", replyTo?.id ?? "");
+      formData.append("durationMs", String(voiceDurationMs));
 
-      const uploadResponse = await fetch("/api/media", {
+      const response = await fetch("/api/comments/voice", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: formData,
       });
 
-      const uploadResult = await uploadResponse.json().catch(() => null);
+      const result = await response.json().catch(() => null);
 
-      if (
-        !uploadResponse.ok ||
-        !uploadResult?.success ||
-        typeof uploadResult?.key !== "string" ||
-        typeof uploadResult?.url !== "string"
-      ) {
+      if (!response.ok || !result?.success || !result?.comment?.id) {
         throw new Error(
-          uploadResult?.error ||
-            "Impossible d'envoyer le message vocal vers le stockage."
+          result?.error || "Impossible d'envoyer le message vocal."
         );
       }
 
-      uploadedKey = uploadResult.key;
+      const row = result.comment;
 
-      // L'URL renvoyée par l'API pointe vers le média stocké dans R2.
-      const commentSaved = await sendComment("", uploadResult.url);
+      const comment: Comment = {
+        id: row.id,
+        content: row.content,
+        created_at: row.created_at,
+        user_id: row.user_id,
+        parent_comment_id: row.parent_comment_id ?? null,
+        voice_url: row.voice_url ?? null,
+        voice_object_key: row.voice_object_key ?? null,
+        voice_content_type: row.voice_content_type ?? null,
+        voice_duration_ms: row.voice_duration_ms ?? null,
+        profiles: userProfile,
+      };
 
-      if (!commentSaved && uploadedKey) {
-        // Évite de laisser un fichier vocal orphelin dans R2.
-        try {
-          await fetch(
-            `/api/media?key=${encodeURIComponent(uploadedKey)}`,
-            {
-              method: "DELETE",
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }
-          );
-        } catch (cleanupError) {
-          console.error(
-            "Nettoyage du vocal R2 impossible :",
-            cleanupError
-          );
-        }
-      }
+      if (addComment(comment)) notifyAdded();
+
+      setReplyTo(null);
+      setVoiceBlob(null);
+      setVoiceDurationMs(0);
+
+      if (voicePreview) URL.revokeObjectURL(voicePreview);
+      setVoicePreview("");
+
+      requestAnimationFrame(() => {
+        listRef.current?.scrollTo({
+          top: listRef.current.scrollHeight,
+          behavior: "smooth",
+        });
+      });
     } catch (error) {
       console.error("Envoi vocal :", error);
       setErrorMessage(errorText(error));
@@ -766,19 +726,12 @@ export default function CommentsSheet({
     }
   };
 
-  const roots = comments.filter(
-    (comment) => !comment.parent_comment_id
-  );
+  const roots = comments.filter((comment) => !comment.parent_comment_id);
 
   const repliesFor = (commentId: string) =>
-    comments.filter(
-      (comment) => comment.parent_comment_id === commentId
-    );
+    comments.filter((comment) => comment.parent_comment_id === commentId);
 
-  const renderComment = (
-    comment: Comment,
-    isReply = false
-  ) => {
+  const renderComment = (comment: Comment, isReply = false) => {
     const name =
       comment.profiles?.username ||
       comment.profiles?.full_name ||
@@ -786,13 +739,12 @@ export default function CommentsSheet({
 
     const replies = isReply ? [] : repliesFor(comment.id);
     const isExpanded = !!expanded[comment.id];
+    const voiceSource = getVoiceSource(comment);
 
     return (
       <div
         key={comment.id}
-        className={`flex gap-3 ${
-          isReply ? "ml-11 mt-3" : "mt-5"
-        }`}
+        className={`flex gap-3 ${isReply ? "ml-11 mt-3" : "mt-5"}`}
       >
         <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100">
           {comment.profiles?.avatar_url ? (
@@ -813,27 +765,23 @@ export default function CommentsSheet({
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-gray-600">
-              @{name}
-            </span>
-
+            <span className="text-xs font-bold text-gray-600">@{name}</span>
             <span className="text-[10px] text-gray-400">
               {formatDate(comment.created_at)}
             </span>
           </div>
 
-          {comment.content &&
-            comment.content !== "🎤 Message vocal" && (
-              <p className="mt-1 break-words text-sm leading-snug text-moshi-text">
-                {comment.content}
-              </p>
-            )}
+          {comment.content && comment.content !== "🎤 Message vocal" && (
+            <p className="mt-1 break-words text-sm leading-snug text-moshi-text">
+              {comment.content}
+            </p>
+          )}
 
-          {comment.voice_url && (
+          {voiceSource && (
             <audio
               controls
               preload="none"
-              src={comment.voice_url}
+              src={voiceSource}
               className="mt-2 h-9 max-w-full"
             />
           )}
@@ -841,9 +789,7 @@ export default function CommentsSheet({
           <div className="mt-2 flex items-center gap-5">
             <button
               type="button"
-              onClick={() =>
-                void toggleCommentLike(comment.id)
-              }
+              onClick={() => void toggleCommentLike(comment.id)}
               className={`flex items-center gap-1 text-xs ${
                 myLikes[comment.id]
                   ? "font-semibold text-pink-500"
@@ -853,11 +799,7 @@ export default function CommentsSheet({
             >
               <Heart
                 size={15}
-                fill={
-                  myLikes[comment.id]
-                    ? "currentColor"
-                    : "none"
-                }
+                fill={myLikes[comment.id] ? "currentColor" : "none"}
               />
               {likes[comment.id] ?? 0}
             </button>
@@ -898,9 +840,7 @@ export default function CommentsSheet({
               </button>
 
               {isExpanded &&
-                replies.map((reply) =>
-                  renderComment(reply, true)
-                )}
+                replies.map((reply) => renderComment(reply, true))}
             </div>
           )}
         </div>
@@ -965,7 +905,6 @@ export default function CommentsSheet({
           ) : roots.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-gray-400">
               <MessageCircle size={34} />
-
               <p className="text-center text-sm">
                 Sois le premier à commenter !
               </p>
@@ -1027,10 +966,7 @@ export default function CommentsSheet({
                 className="rounded-full p-2 text-moshi-purple disabled:opacity-40"
               >
                 {voiceUploading || sending ? (
-                  <Loader2
-                    size={20}
-                    className="animate-spin"
-                  />
+                  <Loader2 size={20} className="animate-spin" />
                 ) : (
                   <Send size={20} />
                 )}
@@ -1074,11 +1010,7 @@ export default function CommentsSheet({
                   onPointerCancel={() => {
                     if (recording) stopRecording();
                   }}
-                  disabled={
-                    sending ||
-                    voiceUploading ||
-                    !!voicePreview
-                  }
+                  disabled={sending || voiceUploading || !!voicePreview}
                   aria-label="Maintenir pour enregistrer un vocal"
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
                     recording
@@ -1086,11 +1018,7 @@ export default function CommentsSheet({
                       : "text-moshi-purple"
                   } disabled:opacity-40`}
                 >
-                  {recording ? (
-                    <Square size={17} />
-                  ) : (
-                    <Mic size={19} />
-                  )}
+                  {recording ? <Square size={17} /> : <Mic size={19} />}
                 </button>
 
                 <input
@@ -1108,18 +1036,10 @@ export default function CommentsSheet({
                       : "Ajouter un commentaire..."
                   }
                   value={newComment}
-                  disabled={
-                    sending || recording || !!voicePreview
-                  }
-                  onChange={(event) =>
-                    setNewComment(event.target.value)
-                  }
-                  onClick={(event) =>
-                    event.stopPropagation()
-                  }
-                  onTouchStart={(event) =>
-                    event.stopPropagation()
-                  }
+                  disabled={sending || recording || !!voicePreview}
+                  onChange={(event) => setNewComment(event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  onTouchStart={(event) => event.stopPropagation()}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
@@ -1131,22 +1051,13 @@ export default function CommentsSheet({
 
                 <button
                   type="button"
-                  onClick={() =>
-                    void sendComment(newComment)
-                  }
-                  disabled={
-                    sending ||
-                    !newComment.trim() ||
-                    recording
-                  }
+                  onClick={() => void sendComment(newComment)}
+                  disabled={sending || !newComment.trim() || recording}
                   aria-label="Envoyer le commentaire"
                   className="flex h-9 w-9 shrink-0 items-center justify-center text-moshi-purple disabled:opacity-40"
                 >
                   {sending ? (
-                    <Loader2
-                      size={20}
-                      className="animate-spin"
-                    />
+                    <Loader2 size={20} className="animate-spin" />
                   ) : (
                     <Send size={20} />
                   )}
