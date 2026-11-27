@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Liste des pays
 const COUNTRIES = [
   { code: "TG", flag: "🇹🇬", name: "Togo", dial: "+228" },
   { code: "BJ", flag: "🇧🇯", name: "Bénin", dial: "+229" },
@@ -68,35 +67,83 @@ function getSupabaseErrorMessage(error: {
   ].filter(Boolean).join(" — ");
 }
 
-// Attend une requête avec une limite de temps.
-// Compatible avec les versions de Supabase qui ne proposent pas abortSignal().
-function withTimeout<T>(
-  request: PromiseLike<T>,
-  timeoutMs: number
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(
-        new Error(`La requête a dépassé le délai de ${timeoutMs / 1000} secondes.`)
-      );
-    }, timeoutMs);
+/**
+ * Vérifie le pseudo via l'API REST Supabase.
+ * La clé publique est explicitement transmise dans le header apikey.
+ * Aucun accès direct à la table profiles n'est effectué depuis le navigateur.
+ */
+async function checkUsernameAvailability(
+  username: string,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
-    Promise.resolve(request).then(
-      (value) => {
-        clearTimeout(timeout);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timeout);
-        reject(error);
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      "Configuration Supabase manquante. Vérifie les variables publiques du projet."
+    );
+  }
+
+  const normalizedUrl = supabaseUrl.replace(/\/+$/, "");
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${normalizedUrl}/rest/v1/rpc/is_username_available`,
+      {
+        method: "POST",
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          p_username: username,
+        }),
+        cache: "no-store",
+        signal,
       }
     );
-  });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
+
+    throw new Error(
+      "Impossible de joindre Supabase. Vérifie ta connexion Internet et réessaie."
+    );
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    let details = body;
+
+    try {
+      const parsed = JSON.parse(body);
+      details = parsed.message || parsed.error_description || body;
+    } catch {
+      // Le serveur n'a pas renvoyé de JSON.
+    }
+
+    throw new Error(
+      `Erreur Supabase (${response.status}) : ${details || response.statusText}`
+    );
+  }
+
+  const result: unknown = await response.json();
+
+  if (typeof result !== "boolean") {
+    throw new Error("Réponse inattendue du serveur lors de la vérification du pseudo.");
+  }
+
+  return result;
 }
 
 export default function LoginPage() {
   const router = useRouter();
-
   const [supabase] = useState(() => createClient());
 
   const [mode, setMode] = useState<"welcome" | "signup" | "login">("welcome");
@@ -105,7 +152,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Données inscription
+  // Inscription
   const [role, setRole] = useState<"acheteur" | "vendeur" | "">("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -118,13 +165,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Données connexion
+  // Connexion
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-
   const [showPassword, setShowPassword] = useState(false);
 
-  // Vérification du pseudo
+  // Vérification pseudo
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [usernameRetry, setUsernameRetry] = useState(0);
@@ -136,8 +182,7 @@ export default function LoginPage() {
     setDialCode(selected?.dial || "");
   }, [country]);
 
-  // Vérification du pseudo via RPC sécurisée.
-  // Aucun accès direct à la table profiles n'est nécessaire.
+  // Vérification automatique avec annulation des anciennes requêtes.
   useEffect(() => {
     const normalizedUsername = username.trim().toLowerCase();
 
@@ -148,34 +193,34 @@ export default function LoginPage() {
       return;
     }
 
+    if (!/^[a-z0-9_.]+$/.test(normalizedUsername)) {
+      setUsernameStatus("error");
+      setUsernameError(
+        "Utilise uniquement des lettres, chiffres, points et tirets bas."
+      );
+      return;
+    }
+
+    const controller = new AbortController();
     let cancelled = false;
 
     setUsernameStatus("checking");
 
-    const debounceId = setTimeout(async () => {
+    const debounceId = window.setTimeout(async () => {
+      const timeoutId = window.setTimeout(
+        () => controller.abort(),
+        10000
+      );
+
       try {
-        const result = await withTimeout(
-          supabase.rpc("is_username_available", {
-            p_username: normalizedUsername,
-          }),
-          10000
+        const available = await checkUsernameAvailability(
+          normalizedUsername,
+          controller.signal
         );
 
         if (cancelled) return;
 
-        const { data, error: queryError } = result;
-
-        if (queryError) {
-          console.error("Erreur vérification pseudo :", queryError);
-
-          setUsernameStatus("error");
-          setUsernameError(
-            `Échec de vérification : ${getSupabaseErrorMessage(queryError)}`
-          );
-          return;
-        }
-
-        if (data === true) {
+        if (available) {
           setUsernameStatus("available");
           setUsernameError(null);
         } else {
@@ -185,29 +230,38 @@ export default function LoginPage() {
       } catch (err) {
         if (cancelled) return;
 
-        console.error("Erreur inattendue vérification pseudo :", err);
-
         const message =
           err instanceof Error
-            ? err.message
-            : String(err);
+            ? err.name === "AbortError"
+              ? "La vérification a dépassé 10 secondes. Réessaie."
+              : err.message
+            : "Erreur réseau pendant la vérification.";
 
         setUsernameStatus("error");
         setUsernameError(`Échec de vérification : ${message}`);
+      } finally {
+        window.clearTimeout(timeoutId);
       }
-    }, 500);
+    }, 600);
 
     return () => {
       cancelled = true;
-      clearTimeout(debounceId);
+      window.clearTimeout(debounceId);
+      controller.abort();
     };
-  }, [username, usernameRetry, supabase]);
+  }, [username, usernameRetry]);
 
   const isPasswordStrong =
     password.length >= 8 &&
     /[A-Z]/.test(password) &&
     /[0-9]/.test(password) &&
     /[^A-Za-z0-9]/.test(password);
+
+  const retryUsernameCheck = useCallback(() => {
+    setUsernameError(null);
+    setUsernameStatus("checking");
+    setUsernameRetry((value) => value + 1);
+  }, []);
 
   // INSCRIPTION
   const handleSignup = async () => {
@@ -226,8 +280,15 @@ export default function LoginPage() {
       return;
     }
 
-    if (username.trim().length < 3 || usernameStatus !== "available") {
-      setError("Choisis un nom d'utilisateur disponible.");
+    const normalizedUsername = username.trim().toLowerCase();
+
+    if (
+      normalizedUsername.length < 3 ||
+      normalizedUsername.length > 30 ||
+      !/^[a-z0-9_.]+$/.test(normalizedUsername)
+    ) {
+      setError("Le nom d'utilisateur doit contenir entre 3 et 30 caractères valides.");
+      setStep(2);
       return;
     }
 
@@ -247,7 +308,7 @@ export default function LoginPage() {
     }
 
     if (!isPasswordStrong) {
-      setError("Le mot de passe n'est pas assez fort.");
+      setError("Le mot de passe doit contenir au moins 8 caractères, une majuscule, un chiffre et un caractère spécial.");
       return;
     }
 
@@ -255,25 +316,20 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const normalizedUsername = username.trim().toLowerCase();
+      // Vérification finale avant de créer le compte.
+      let usernameAvailable: boolean;
 
-      // Dernière vérification du pseudo avant la création du compte.
-      const result = await withTimeout(
-        supabase.rpc("is_username_available", {
-          p_username: normalizedUsername,
-        }),
-        10000
-      );
-
-      const { data: usernameAvailable, error: checkError } = result;
-
-      if (checkError) {
+      try {
+        usernameAvailable = await checkUsernameAvailability(normalizedUsername);
+      } catch (checkError) {
         throw new Error(
-          `Vérification du pseudo impossible : ${getSupabaseErrorMessage(checkError)}`
+          checkError instanceof Error
+            ? `Impossible de vérifier le pseudo : ${checkError.message}`
+            : "Impossible de vérifier le pseudo. Réessaie."
         );
       }
 
-      if (usernameAvailable !== true) {
+      if (!usernameAvailable) {
         setUsernameStatus("taken");
         setUsernameError("Ce nom d'utilisateur n'est pas disponible.");
         setStep(2);
@@ -305,14 +361,13 @@ export default function LoginPage() {
           },
         });
 
-      if (authError) throw authError;
+      if (authError) {
+        throw new Error(getSupabaseErrorMessage(authError));
+      }
 
       if (!authData.user) {
         throw new Error("La création du compte n'a pas abouti.");
       }
-
-      // Le profil est créé automatiquement par le déclencheur
-      // public.handle_new_user() dans Supabase.
 
       alert(
         authData.session
@@ -350,7 +405,9 @@ export default function LoginPage() {
           password: loginPassword,
         });
 
-      if (loginError) throw loginError;
+      if (loginError) {
+        throw new Error(getSupabaseErrorMessage(loginError));
+      }
 
       router.push("/");
       router.refresh();
@@ -367,7 +424,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg flex flex-col px-6 pt-6 pb-10 overflow-y-auto">
-
       {/* HEADER */}
       <div className="flex justify-between items-center mb-6">
         <button
@@ -409,7 +465,6 @@ export default function LoginPage() {
       </div>
 
       <div className="flex-1 flex flex-col items-center">
-
         {/* ACCUEIL */}
         {mode === "welcome" && (
           <>
@@ -437,6 +492,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => {
                   setMode("signup");
+                  setStep(1);
                   setError(null);
                 }}
                 className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-purple-200/50 active:scale-95 transition"
@@ -515,7 +571,7 @@ export default function LoginPage() {
               </div>
 
               {error && (
-                <div className="bg-red-50 text-red-500 text-xs font-semibold p-3 rounded-xl">
+                <div className="bg-red-50 text-red-500 text-xs font-semibold p-3 rounded-xl break-words">
                   {error}
                 </div>
               )}
@@ -731,10 +787,7 @@ export default function LoginPage() {
                 {usernameStatus === "error" && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setUsernameError(null);
-                      setUsernameRetry((value) => value + 1);
-                    }}
+                    onClick={retryUsernameCheck}
                     className="text-xs font-semibold text-moshi-purple px-1"
                   >
                     Réessayer la vérification
@@ -855,7 +908,12 @@ export default function LoginPage() {
                     setError(null);
                     setStep(4);
                   }}
-                  disabled={!firstName.trim() || !lastName.trim() || !birthDate || !country}
+                  disabled={
+                    !firstName.trim() ||
+                    !lastName.trim() ||
+                    !birthDate ||
+                    !country
+                  }
                   className="w-full moshi-gradient text-white font-bold py-4 rounded-2xl shadow-lg shadow-purple-200/50 active:scale-95 transition disabled:opacity-50 mt-4"
                 >
                   Continuer
@@ -949,6 +1007,12 @@ export default function LoginPage() {
                     "S'inscrire"
                   )}
                 </button>
+              </div>
+            )}
+
+            {error && step !== 4 && (
+              <div className="w-full max-w-sm mt-4 bg-red-50 text-red-500 text-xs font-semibold p-3 rounded-xl break-words">
+                {error}
               </div>
             )}
           </>
