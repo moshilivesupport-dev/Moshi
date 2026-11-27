@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
@@ -6,11 +5,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type MediaCategory =
-  | "avatars"
-  | "stories"
-  | "products"
-  | "comment-audio";
+type MediaCategory = "avatars" | "stories" | "products";
 
 interface R2ObjectBody {
   body: ReadableStream<Uint8Array>;
@@ -52,7 +47,6 @@ interface R2Bucket {
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
 const MAX_PRODUCT_SIZE = 5 * 1024 * 1024;
 const MAX_STORY_SIZE = 30 * 1024 * 1024;
-const MAX_COMMENT_AUDIO_SIZE = 10 * 1024 * 1024;
 
 const IMAGE_TYPES = [
   "image/jpeg",
@@ -66,15 +60,6 @@ const STORY_VIDEO_TYPES = [
   "video/quicktime",
 ];
 
-const AUDIO_TYPES = [
-  "audio/mp4",
-  "audio/webm",
-  "audio/ogg",
-  "audio/mpeg",
-  "audio/wav",
-  "audio/aac",
-];
-
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -83,8 +68,7 @@ function isCategory(value: string): value is MediaCategory {
   return (
     value === "avatars" ||
     value === "stories" ||
-    value === "products" ||
-    value === "comment-audio"
+    value === "products"
   );
 }
 
@@ -102,19 +86,13 @@ function getExtension(file: File): string {
     "video/mp4": "mp4",
     "video/webm": "webm",
     "video/quicktime": "mov",
-    "audio/mp4": "m4a",
-    "audio/webm": "webm",
-    "audio/ogg": "ogg",
-    "audio/mpeg": "mp3",
-    "audio/wav": "wav",
-    "audio/aac": "aac",
   };
 
   return extensions[mimeType] || "";
 }
 
 function isValidKey(key: string): boolean {
-  return /^(avatars|stories|products|comment-audio)\/[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|mp4|webm|mov|m4a|ogg|mp3|wav|aac)$/i.test(
+  return /^(avatars|stories|products)\/[a-f0-9-]{36}\/[a-f0-9-]{36}\.(jpg|png|webp|mp4|webm|mov)$/i.test(
     key
   );
 }
@@ -256,10 +234,6 @@ export async function POST(request: NextRequest) {
       category === "stories" &&
       STORY_VIDEO_TYPES.includes(mimeType);
 
-    const isCommentAudio =
-      category === "comment-audio" &&
-      AUDIO_TYPES.includes(mimeType);
-
     if (category === "avatars" && !isImage) {
       return jsonError("Une photo JPG, PNG ou WebP est nécessaire.");
     }
@@ -272,18 +246,12 @@ export async function POST(request: NextRequest) {
       return jsonError("Format de story non accepté.");
     }
 
-    if (category === "comment-audio" && !isCommentAudio) {
-      return jsonError("Format audio non accepté.");
-    }
-
     const maxSize =
-      category === "comment-audio"
-        ? MAX_COMMENT_AUDIO_SIZE
-        : category === "stories"
-          ? MAX_STORY_SIZE
-          : category === "avatars"
-            ? MAX_AVATAR_SIZE
-            : MAX_PRODUCT_SIZE;
+      category === "stories"
+        ? MAX_STORY_SIZE
+        : category === "avatars"
+          ? MAX_AVATAR_SIZE
+          : MAX_PRODUCT_SIZE;
 
     if (file.size <= 0 || file.size > maxSize) {
       return jsonError(
@@ -293,8 +261,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const uuid = crypto.randomUUID();
-    const key = `${category}/${user.id}/${uuid}.${extension}`;
+    const key = `${category}/${user.id}/${crypto.randomUUID()}.${extension}`;
 
     const bucket = await getBucket();
 
@@ -326,6 +293,8 @@ export async function GET(request: NextRequest) {
   try {
     const key = request.nextUrl.searchParams.get("key");
 
+    // Les clés comment-audio ne sont plus acceptées ici.
+    // Elles doivent exclusivement passer par /api/comments/voice.
     if (!key || !isValidKey(key)) {
       return jsonError("Adresse du média invalide.", 400);
     }
@@ -365,15 +334,8 @@ export async function GET(request: NextRequest) {
       png: "image/png",
       webp: "image/webp",
       mp4: "video/mp4",
-      webm: key.startsWith("comment-audio/")
-        ? "audio/webm"
-        : "video/webm",
+      webm: "video/webm",
       mov: "video/quicktime",
-      m4a: "audio/mp4",
-      ogg: "audio/ogg",
-      mp3: "audio/mpeg",
-      wav: "audio/wav",
-      aac: "audio/aac",
     };
 
     const headers = new Headers();
@@ -384,12 +346,10 @@ export async function GET(request: NextRequest) {
     );
 
     headers.set("Accept-Ranges", "bytes");
-
     headers.set(
       "Cache-Control",
       "public, max-age=31536000, immutable"
     );
-
     headers.set("X-Content-Type-Options", "nosniff");
 
     if (range) {
@@ -415,10 +375,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Moshi media read:", error);
 
-    return jsonError(
-      "Impossible de récupérer ce média.",
-      500
-    );
+    return jsonError("Impossible de récupérer ce média.", 500);
   }
 }
 
@@ -436,7 +393,6 @@ export async function DELETE(request: NextRequest) {
       `avatars/${user.id}/`,
       `stories/${user.id}/`,
       `products/${user.id}/`,
-      `comment-audio/${user.id}/`,
     ];
 
     if (!ownedCategories.some((prefix) => key.startsWith(prefix))) {
