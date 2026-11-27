@@ -18,10 +18,10 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-const BUCKET = "verification-documents";
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 type AccountType = "personal" | "seller";
+type FileKind = "identity" | "selfie" | "business";
 
 type ProfileInfo = {
   id: string;
@@ -29,12 +29,15 @@ type ProfileInfo = {
   is_verified: boolean;
 };
 
-type FileKind = "identity" | "selfie" | "business";
-
 type SelectedFiles = {
   identity: File | null;
   selfie: File | null;
   business: File | null;
+};
+
+type UploadedDocument = {
+  key: string;
+  kind: FileKind;
 };
 
 const initialFiles: SelectedFiles = {
@@ -42,6 +45,13 @@ const initialFiles: SelectedFiles = {
   selfie: null,
   business: null,
 };
+
+const allowedTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+];
 
 function FileField({
   title,
@@ -86,7 +96,9 @@ function FileField({
             <span className="truncate">{file.name}</span>
           </span>
         ) : (
-          <span className="text-gray-500">Appuyer pour choisir un fichier</span>
+          <span className="text-gray-500">
+            Appuyer pour choisir un fichier
+          </span>
         )}
       </div>
 
@@ -119,41 +131,58 @@ export default function VerificationRequestPage() {
     let active = true;
 
     async function loadPage() {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      if (authError || !user) {
-        router.replace("/login");
-        return;
-      }
+        if (authError || !user) {
+          router.replace("/login");
+          return;
+        }
 
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, role, is_verified")
-        .eq("id", user.id)
-        .single();
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, role, is_verified")
+          .eq("id", user.id)
+          .single();
 
-      if (profileError || !profileData) {
+        if (profileError || !profileData) {
+          throw new Error("Impossible de récupérer ton profil.");
+        }
+
+        const { data: existingRequests, error: requestError } =
+          await supabase
+            .from("verification_requests")
+            .select("id, status")
+            .eq("user_id", user.id)
+            .in("status", ["pending", "approved"])
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+        if (requestError) {
+          throw new Error(
+            "Impossible de vérifier l'état de ta demande de certification."
+          );
+        }
+
+        const existingRequest = existingRequests?.[0];
+
         if (active) {
-          setError("Impossible de récupérer ton profil.");
+          setProfile(profileData as ProfileInfo);
+          setPending(existingRequest?.status === "pending");
           setLoading(false);
         }
-        return;
-      }
-
-      const { data: pendingRequest } = await supabase
-        .from("verification_requests")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("status", "pending")
-        .maybeSingle();
-
-      if (active) {
-        setProfile(profileData as ProfileInfo);
-        setPending(!!pendingRequest);
-        setLoading(false);
+      } catch (err) {
+        if (active) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Une erreur est survenue."
+          );
+          setLoading(false);
+        }
       }
     }
 
@@ -168,19 +197,12 @@ export default function VerificationRequestPage() {
     setError("");
 
     if (file) {
-      const allowedTypes = [
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-        "application/pdf",
-      ];
-
       if (!allowedTypes.includes(file.type)) {
         setError("Format non accepté. Utilise JPG, PNG, WEBP ou PDF.");
         return;
       }
 
-      if (file.size > MAX_FILE_SIZE) {
+      if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
         setError("Chaque document doit faire moins de 5 Mo.");
         return;
       }
@@ -197,40 +219,57 @@ export default function VerificationRequestPage() {
     }));
   }
 
-  function getExtension(file: File) {
-    const extension = file.name.split(".").pop()?.toLowerCase();
-
-    if (extension && /^[a-z0-9]+$/.test(extension)) {
-      return extension;
-    }
-
-    if (file.type === "image/jpeg") return "jpg";
-    if (file.type === "image/png") return "png";
-    if (file.type === "image/webp") return "webp";
-    if (file.type === "application/pdf") return "pdf";
-
-    return "bin";
-  }
-
   async function uploadDocument(
-    userId: string,
+    accessToken: string,
     kind: FileKind,
     file: File
-  ) {
-    const path = `${userId}/${kind}-${crypto.randomUUID()}.${getExtension(file)}`;
+  ): Promise<string> {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("kind", kind);
 
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, file, {
-        contentType: file.type,
-        upsert: false,
-      });
+    const response = await fetch("/api/verification/documents", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+      cache: "no-store",
+    });
 
-    if (uploadError) {
-      throw new Error(`Échec de l'envoi de ${kind}. ${uploadError.message}`);
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok || !result?.success || !result?.key) {
+      throw new Error(
+        result?.error || `Échec de l'envoi du document : ${kind}.`
+      );
     }
 
-    return path;
+    return result.key as string;
+  }
+
+  async function deleteUploadedDocument(
+    accessToken: string,
+    key: string
+  ) {
+    try {
+      const response = await fetch(
+        `/api/verification/documents?key=${encodeURIComponent(key)}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        console.error("Échec du nettoyage R2 pour :", key);
+      }
+    } catch (cleanupError) {
+      console.error("Erreur de nettoyage R2 :", cleanupError);
+    }
   }
 
   async function submitRequest() {
@@ -252,48 +291,109 @@ export default function VerificationRequestPage() {
     }
 
     if (accountType === "seller" && !files.business) {
-      setError("Ajoute également un document justificatif de ton activité.");
+      setError(
+        "Ajoute également un document justificatif de ton activité."
+      );
       return;
     }
 
     setSubmitting(true);
 
-    const uploadedPaths: string[] = [];
+    const uploadedDocuments: UploadedDocument[] = [];
+
+    let accessToken = "";
 
     try {
       const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
-      if (authError || !user || user.id !== profile.id) {
+      if (sessionError || !session?.access_token || !session.user) {
         throw new Error("Ta session a expiré. Reconnecte-toi.");
       }
 
-      const identityPath = await uploadDocument(
-        user.id,
+      if (session.user.id !== profile.id) {
+        throw new Error("Session invalide. Reconnecte-toi.");
+      }
+
+      accessToken = session.access_token;
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser(accessToken);
+
+      if (authError || !user || user.id !== profile.id) {
+        throw new Error("Impossible de confirmer ton identité.");
+      }
+
+      // Vérification anti-doublon juste avant l'envoi.
+      const { data: existingRequests, error: existingError } =
+        await supabase
+          .from("verification_requests")
+          .select("id, status")
+          .eq("user_id", user.id)
+          .in("status", ["pending", "approved"])
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+      if (existingError) {
+        throw new Error(
+          "Impossible de vérifier les demandes déjà enregistrées."
+        );
+      }
+
+      if (existingRequests?.some((request) => request.status === "pending")) {
+        setPending(true);
+        throw new Error(
+          "Une demande de certification est déjà en cours de traitement."
+        );
+      }
+
+      if (existingRequests?.some((request) => request.status === "approved")) {
+        throw new Error("Ton compte possède déjà une certification approuvée.");
+      }
+
+      const identityKey = await uploadDocument(
+        accessToken,
         "identity",
         files.identity
       );
-      uploadedPaths.push(identityPath);
+      uploadedDocuments.push({
+        key: identityKey,
+        kind: "identity",
+      });
 
-      const selfiePath = await uploadDocument(
-        user.id,
+      const selfieKey = await uploadDocument(
+        accessToken,
         "selfie",
         files.selfie
       );
-      uploadedPaths.push(selfiePath);
+      uploadedDocuments.push({
+        key: selfieKey,
+        kind: "selfie",
+      });
 
-      let businessPath: string | null = null;
+      let businessKey: string | null = null;
 
       if (accountType === "seller" && files.business) {
-        businessPath = await uploadDocument(
-          user.id,
+        businessKey = await uploadDocument(
+          accessToken,
           "business",
           files.business
         );
-        uploadedPaths.push(businessPath);
+
+        uploadedDocuments.push({
+          key: businessKey,
+          kind: "business",
+        });
       }
+
+      const documentObjects = uploadedDocuments.map((document) => ({
+        kind: document.kind,
+        key: document.key,
+      }));
 
       const { error: insertError } = await supabase
         .from("verification_requests")
@@ -301,22 +401,28 @@ export default function VerificationRequestPage() {
           user_id: user.id,
           account_type: accountType,
           status: "pending",
-          id_document_path: identityPath,
-          selfie_path: selfiePath,
-          business_document_path: businessPath,
+          id_document_path: identityKey,
+          selfie_path: selfieKey,
+          business_document_path: businessKey,
+          document_objects: documentObjects,
         });
 
       if (insertError) {
-        throw new Error(insertError.message);
+        throw new Error(
+          insertError.message ||
+            "Impossible d'enregistrer ta demande de certification."
+        );
       }
 
       setSuccess(true);
       setPending(true);
     } catch (err) {
-      if (uploadedPaths.length > 0) {
-        await supabase.storage
-          .from(BUCKET)
-          .remove(uploadedPaths);
+      if (accessToken && uploadedDocuments.length > 0) {
+        await Promise.all(
+          uploadedDocuments.map((document) =>
+            deleteUploadedDocument(accessToken, document.key)
+          )
+        );
       }
 
       setError(
@@ -455,7 +561,8 @@ export default function VerificationRequestPage() {
               Documents obligatoires
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              Formats acceptés : JPG, PNG, WEBP ou PDF. Maximum 5 Mo par fichier.
+              Formats acceptés : JPG, PNG, WEBP ou PDF. Maximum 5 Mo par
+              fichier.
             </p>
           </div>
 
@@ -493,8 +600,8 @@ export default function VerificationRequestPage() {
           <div className="flex gap-3">
             <ShieldCheck className="h-5 w-5 shrink-0 text-blue-600" />
             <p className="text-sm leading-6 text-blue-900">
-              Tes documents sont conservés dans un espace privé. Ils ne
-              doivent pas être accessibles publiquement.
+              Tes documents sont conservés dans un espace privé sur le
+              stockage Moshi. Ils ne sont pas accessibles publiquement.
             </p>
           </div>
         </div>
