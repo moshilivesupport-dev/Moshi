@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -128,7 +127,7 @@ export default function AdminUsersPage() {
     user: AdminUser,
     action: "suspend" | "reactivate"
   ) => {
-    if (user.is_admin) {
+    if (user.is_admin || user.role === "admin") {
       setError("Un compte administrateur ne peut pas être modifié ici.");
       return;
     }
@@ -203,6 +202,10 @@ export default function AdminUsersPage() {
     (user) => user.role === "vendeur"
   ).length;
 
+  const admins = users.filter(
+    (user) => user.is_admin || user.role === "admin"
+  ).length;
+
   const suspended = users.filter(
     (user) => user.is_suspended
   ).length;
@@ -240,7 +243,7 @@ export default function AdminUsersPage() {
           </button>
         </header>
 
-        <section className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <StatCard
             title="Comptes trouvés"
             value={total}
@@ -257,6 +260,12 @@ export default function AdminUsersPage() {
             title="Vendeurs sur cette page"
             value={sellers}
             icon={<Store size={22} />}
+          />
+
+          <StatCard
+            title="Administrateurs sur cette page"
+            value={admins}
+            icon={<ShieldCheck size={22} />}
           />
 
           <StatCard
@@ -307,6 +316,7 @@ export default function AdminUsersPage() {
               <option value="all">Tous les comptes</option>
               <option value="acheteur">Acheteurs</option>
               <option value="vendeur">Vendeurs</option>
+              <option value="admin">Administrateurs</option>
             </select>
           </div>
         </section>
@@ -336,150 +346,157 @@ export default function AdminUsersPage() {
           </div>
         ) : (
           <section className="space-y-4">
-            {users.map((user) => (
-              <article
-                key={user.id}
-                className="rounded-2xl border border-white/10 bg-[#111722] p-4 sm:p-5"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-purple-500/15 text-lg font-bold text-purple-200">
-                      {user.avatar_url ? (
-                        <img
-                          src={user.avatar_url}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        (user.username || user.full_name || "M")
-                          .slice(0, 1)
-                          .toUpperCase()
-                      )}
-                    </div>
+            {users.map((user) => {
+              const isAdmin =
+                user.is_admin || user.role === "admin";
 
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate font-bold">
-                          {user.full_name ||
-                            user.username ||
-                            "Utilisateur Moshi"}
-                        </h2>
-
-                        {user.is_verified && (
-                          <span
-                            title="Compte certifié"
-                            aria-label="Compte certifié"
-                            className="inline-flex items-center"
-                          >
-                            <BadgeCheck
-                              size={17}
-                              className="text-blue-400"
-                              aria-hidden="true"
-                            />
-                          </span>
-                        )}
-
-                        {user.is_admin && (
-                          <span className="rounded-full bg-purple-500/15 px-2 py-1 text-[10px] font-bold text-purple-300">
-                            ADMIN
-                          </span>
+              return (
+                <article
+                  key={user.id}
+                  className="rounded-2xl border border-white/10 bg-[#111722] p-4 sm:p-5"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-purple-500/15 text-lg font-bold text-purple-200">
+                        {user.avatar_url ? (
+                          <img
+                            src={user.avatar_url}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          (user.username || user.full_name || "M")
+                            .slice(0, 1)
+                            .toUpperCase()
                         )}
                       </div>
 
-                      <p className="mt-1 truncate text-xs text-gray-400">
-                        @{user.username || "sans-pseudo"}
-                      </p>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="truncate font-bold">
+                            {user.full_name ||
+                              user.username ||
+                              "Utilisateur Moshi"}
+                          </h2>
+
+                          {user.is_verified && (
+                            <span
+                              title="Compte certifié"
+                              aria-label="Compte certifié"
+                              className="inline-flex items-center"
+                            >
+                              <BadgeCheck
+                                size={17}
+                                className="text-blue-400"
+                                aria-hidden="true"
+                              />
+                            </span>
+                          )}
+
+                          {isAdmin && (
+                            <span className="rounded-full bg-purple-500/15 px-2 py-1 text-[10px] font-bold text-purple-300">
+                              ADMIN
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="mt-1 truncate text-xs text-gray-400">
+                          @{user.username || "sans-pseudo"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge suspended={user.is_suspended} />
+
+                      <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-gray-300">
+                        {isAdmin
+                          ? "Administrateur"
+                          : user.role === "vendeur"
+                          ? "Vendeur"
+                          : user.role === "acheteur"
+                          ? "Acheteur"
+                          : user.role}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge suspended={user.is_suspended} />
+                  <div className="mt-5 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <InfoItem
+                      icon={<Mail size={15} />}
+                      label="E-mail"
+                      value={user.email || "Non renseigné"}
+                    />
 
-                    <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-gray-300">
-                      {user.role === "vendeur"
-                        ? "Vendeur"
-                        : user.role === "acheteur"
-                        ? "Acheteur"
-                        : user.role}
-                    </span>
+                    <InfoItem
+                      icon={<MapPin size={15} />}
+                      label="Pays"
+                      value={user.country || "Non renseigné"}
+                    />
+
+                    <InfoItem
+                      icon={<CalendarDays size={15} />}
+                      label="Inscription"
+                      value={formatDate(user.created_at)}
+                    />
+
+                    <InfoItem
+                      icon={<UserRound size={15} />}
+                      label="Dernière connexion"
+                      value={formatDate(user.last_sign_in_at)}
+                    />
                   </div>
-                </div>
 
-                <div className="mt-5 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <InfoItem
-                    icon={<Mail size={15} />}
-                    label="E-mail"
-                    value={user.email || "Non renseigné"}
-                  />
-
-                  <InfoItem
-                    icon={<MapPin size={15} />}
-                    label="Pays"
-                    value={user.country || "Non renseigné"}
-                  />
-
-                  <InfoItem
-                    icon={<CalendarDays size={15} />}
-                    label="Inscription"
-                    value={formatDate(user.created_at)}
-                  />
-
-                  <InfoItem
-                    icon={<UserRound size={15} />}
-                    label="Dernière connexion"
-                    value={formatDate(user.last_sign_in_at)}
-                  />
-                </div>
-
-                {user.role === "vendeur" && user.seller_status && (
-                  <p className="mt-3 text-xs text-gray-500">
-                    Statut vendeur : {user.seller_status}
-                  </p>
-                )}
-
-                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
-                  <p className="max-w-xl break-all text-[10px] text-gray-600">
-                    ID : {user.id}
-                  </p>
-
-                  {user.is_admin ? (
-                    <span className="text-xs text-purple-300">
-                      Compte administrateur protégé
-                    </span>
-                  ) : user.is_suspended ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void changeStatus(user, "reactivate")
-                      }
-                      disabled={processingId === user.id}
-                      className="flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-2.5 text-xs font-bold text-green-300 transition hover:bg-green-500/20 disabled:opacity-50"
-                    >
-                      <ShieldCheckIcon size={16} />
-
-                      {processingId === user.id
-                        ? "Traitement..."
-                        : "Réactiver le compte"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void changeStatus(user, "suspend")
-                      }
-                      disabled={processingId === user.id}
-                      className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-xs font-bold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
-                    >
-                      <ShieldBan size={16} />
-
-                      {processingId === user.id
-                        ? "Traitement..."
-                        : "Suspendre le compte"}
-                    </button>
+                  {user.role === "vendeur" && user.seller_status && (
+                    <p className="mt-3 text-xs text-gray-500">
+                      Statut vendeur : {user.seller_status}
+                    </p>
                   )}
-                </div>
-              </article>
-            ))}
+
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+                    <p className="max-w-xl break-all text-[10px] text-gray-600">
+                      ID : {user.id}
+                    </p>
+
+                    {isAdmin ? (
+                      <span className="text-xs text-purple-300">
+                        Compte administrateur protégé
+                      </span>
+                    ) : user.is_suspended ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void changeStatus(user, "reactivate")
+                        }
+                        disabled={processingId === user.id}
+                        className="flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-2.5 text-xs font-bold text-green-300 transition hover:bg-green-500/20 disabled:opacity-50"
+                      >
+                        <ShieldCheckIcon size={16} />
+
+                        {processingId === user.id
+                          ? "Traitement..."
+                          : "Réactiver le compte"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void changeStatus(user, "suspend")
+                        }
+                        disabled={processingId === user.id}
+                        className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-xs font-bold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
+                      >
+                        <ShieldBan size={16} />
+
+                        {processingId === user.id
+                          ? "Traitement..."
+                          : "Suspendre le compte"}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </section>
         )}
 
