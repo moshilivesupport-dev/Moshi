@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -209,8 +208,6 @@ export default function ProfileView({
           .filter((video): video is VideoData => Boolean(video));
       }
 
-      // Toutes les vidéos du profil utilisent désormais la route serveur.
-      // On ne transmet plus directement les URL de stockage au lecteur.
       const videosWithProtectedUrls = loadedVideos.map((video) => ({
         ...video,
         url: getVideoPlaybackUrl(video.id),
@@ -618,6 +615,8 @@ export default function ProfileView({
   const isVendeur =
     profile.role === "vendeur" || profile.role === "seller";
 
+  const isAdmin = profile.role === "admin";
+
   const isVerified = profile.is_verified === true;
 
   const tabs: {
@@ -710,6 +709,12 @@ export default function ProfileView({
                   className="w-5 h-5 text-blue-500 fill-blue-500"
                   aria-label="Compte certifié"
                 />
+              )}
+
+              {isAdmin && (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                  ADMIN
+                </span>
               )}
 
               {isVendeur && (
