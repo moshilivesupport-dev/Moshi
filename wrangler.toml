@@ -13,6 +13,6 @@ binding = "MOSHI_MEDIA"
 bucket_name = "moshi"
 
 [vars]
-NEXT_PUBLIC_SUPABASE_URL=https://jifjeaiqdseetbnvdkpm.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImppZmplYWlxZHNlZXRibnZka3BtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2OTM3NzQsImV4cCI6MjExMTI2OTc3NH0.pYYc-rP8rTFZ2lGSgAjH-CA5ppiJEHUmnzTh-JmJUOY
-NEXT_PUBLIC_APP_URL=https://moshi.moshi-live-support.workers.dev
+NEXT_PUBLIC_SUPABASE_URL = "https://jifjeaiqdseetbnvdkpm.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImppZmplYWlxZHNlZXRibnZka3BtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2OTM3NzQsImV4cCI6MjExMTI2OTc3NH0.pYYc-rP8rTFZ2lGSgAjH-CA5ppiJEHUmnzTh-JmJUOY"
+NEXT_PUBLIC_APP_URL = "https://moshi.moshi-live-support.workers.dev"
