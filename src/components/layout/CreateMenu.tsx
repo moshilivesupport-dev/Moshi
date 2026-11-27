@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -52,23 +53,24 @@ export default function CreateMenu({
         if (!user) {
           if (!cancelled) {
             setRole(null);
-            setError("Connecte-toi pour utiliser cette fonctionnalité.");
+            setError(
+              "Connecte-toi pour utiliser cette fonctionnalité."
+            );
           }
           return;
         }
 
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .maybeSingle();
+        const { data: profile, error: profileError } =
+          await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", user.id)
+            .maybeSingle();
 
         if (profileError) throw profileError;
 
         const metadataRole = user.app_metadata?.role;
-
-        const rawRole =
-          profile?.role || metadataRole || "acheteur";
+        const rawRole = profile?.role || metadataRole || "acheteur";
 
         let normalizedRole: UserRole = "acheteur";
 
@@ -167,6 +169,18 @@ export default function CreateMenu({
                     Administrateur Moshi
                   </div>
                 )}
+
+                {role === "acheteur" && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Partage ton contenu avec la communauté
+                  </p>
+                )}
+
+                {role === "vendeur" && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Publie et développe ta boutique
+                  </p>
+                )}
               </div>
 
               <button
@@ -204,7 +218,8 @@ export default function CreateMenu({
               </div>
             ) : role ? (
               <div className="grid grid-cols-2 gap-3">
-                {/* ENREGISTRER */}
+
+                {/* PUBLICATION DE CONTENU CLASSIQUE */}
                 <button
                   type="button"
                   onClick={() =>
@@ -227,7 +242,7 @@ export default function CreateMenu({
                   </div>
                 </button>
 
-                {/* GALERIE */}
+                {/* PUBLICATION DEPUIS LA GALERIE */}
                 <button
                   type="button"
                   onClick={() =>
@@ -250,7 +265,7 @@ export default function CreateMenu({
                   </div>
                 </button>
 
-                {/* LIVE VENDEUR */}
+                {/* FONCTIONNALITÉS RÉSERVÉES AUX VENDEURS */}
                 {role === "vendeur" && (
                   <>
                     <button
@@ -288,18 +303,18 @@ export default function CreateMenu({
 
                       <div className="text-center">
                         <p className="font-bold text-moshi-text text-sm">
-                          Produit
+                          Ajouter un produit
                         </p>
 
                         <p className="text-[10px] text-gray-500 mt-0.5">
-                          Ajouter à la boutique
+                          Publier dans ma boutique
                         </p>
                       </div>
                     </button>
                   </>
                 )}
 
-                {/* LIVE SIMPLE ACHETEUR ET ADMIN */}
+                {/* LIVE CLASSIQUE ACHETEUR ET ADMIN */}
                 {(role === "acheteur" || role === "admin") && (
                   <button
                     type="button"
