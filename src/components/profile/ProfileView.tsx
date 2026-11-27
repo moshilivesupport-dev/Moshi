@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -104,26 +105,19 @@ export default function ProfileView({
     total_likes: 0,
   });
 
+  // Retour corrigé : ne dépend plus de document.referrer.
   const handleProfileBack = () => {
     if (returnToLiveId) {
-      router.push(fallbackHref);
+      router.replace(fallbackHref);
       return;
     }
 
-    if (typeof window === "undefined") {
-      router.push("/");
-      return;
-    }
-
-    const hasInternalReferrer =
-      document.referrer.startsWith(window.location.origin);
-
-    if (window.history.length > 1 && hasInternalReferrer) {
+    if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
       return;
     }
 
-    router.push("/");
+    router.replace("/");
   };
 
   const loadVideos = useCallback(async () => {
@@ -616,7 +610,6 @@ export default function ProfileView({
     profile.role === "vendeur" || profile.role === "seller";
 
   const isAdmin = profile.role === "admin";
-
   const isVerified = profile.is_verified === true;
 
   const tabs: {
@@ -828,7 +821,11 @@ export default function ProfileView({
                   ? "border-red-200 bg-red-50 text-red-600"
                   : "border-gray-200 bg-white text-gray-600"
               }`}
-              aria-label={isBlocked ? "Débloquer cet utilisateur" : "Bloquer cet utilisateur"}
+              aria-label={
+                isBlocked
+                  ? "Débloquer cet utilisateur"
+                  : "Bloquer cet utilisateur"
+              }
             >
               {blockLoading || blockStatusLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
