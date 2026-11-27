@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createClient } from "@/lib/supabase/server";
@@ -96,6 +95,24 @@ async function getAuthenticatedClient() {
   };
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+function validObjectKey(key: string, userId: string): boolean {
+  const prefix = `comment-audio/${userId}/`;
+
+  if (!key.startsWith(prefix)) return false;
+
+  const filename = key.slice(prefix.length);
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(m4a|webm|ogg|mp3|wav|aac)$/i.test(
+    filename
+  );
+}
+
 function parseRange(
   header: string | null,
   size: number
@@ -112,10 +129,7 @@ function parseRange(
   if (match[1] === "") {
     const suffixLength = Number(match[2]);
 
-    if (
-      !Number.isFinite(suffixLength) ||
-      suffixLength <= 0
-    ) {
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
       return false;
     }
 
@@ -123,10 +137,7 @@ function parseRange(
     end = size - 1;
   } else {
     start = Number(match[1]);
-    end =
-      match[2] === ""
-        ? size - 1
-        : Number(match[2]);
+    end = match[2] === "" ? size - 1 : Number(match[2]);
   }
 
   if (
@@ -147,16 +158,6 @@ function parseRange(
   };
 }
 
-function validObjectKey(key: string, userId: string) {
-  const prefix = `comment-audio/${userId}/`;
-
-  if (!key.startsWith(prefix)) return false;
-
-  return /^[a-f0-9-]{36}\.(m4a|webm|ogg|mp3|wav|aac)$/i.test(
-    key.slice(prefix.length)
-  );
-}
-
 export async function POST(request: NextRequest) {
   let uploadedKey: string | null = null;
 
@@ -169,25 +170,29 @@ export async function POST(request: NextRequest) {
 
     const file = formData.get("file");
     const videoId = formData.get("videoId");
-    const parentCommentId = formData.get("parentCommentId");
+    const parentCommentValue = formData.get("parentCommentId");
     const durationValue = formData.get("durationMs");
 
     if (!(file instanceof File)) {
       return jsonError("Fichier audio manquant.");
     }
 
-    if (
-      typeof videoId !== "string" ||
-      !/^[a-f0-9-]{36}$/i.test(videoId)
-    ) {
+    if (typeof videoId !== "string" || !isUuid(videoId)) {
       return jsonError("Identifiant vidéo invalide.");
     }
 
+    let parentCommentId: string | null = null;
+
     if (
-      parentCommentId !== null &&
-      (typeof parentCommentId !== "string" ||
-        !/^[a-f0-9-]{36}$/i.test(parentCommentId))
+      typeof parentCommentValue === "string" &&
+      parentCommentValue.trim() !== ""
     ) {
+      if (!isUuid(parentCommentValue)) {
+        return jsonError("Identifiant de réponse invalide.");
+      }
+
+      parentCommentId = parentCommentValue;
+    } else if (parentCommentValue !== null && typeof parentCommentValue !== "string") {
       return jsonError("Identifiant de réponse invalide.");
     }
 
@@ -226,11 +231,7 @@ export async function POST(request: NextRequest) {
     }
 
     const bucket = await getBucket();
-
-    const uuid = crypto.randomUUID();
-
-    const key =
-      `comment-audio/${auth.user.id}/${uuid}.${extension}`;
+    const key = `comment-audio/${auth.user.id}/${crypto.randomUUID()}.${extension}`;
 
     await bucket.put(key, await file.arrayBuffer(), {
       httpMetadata: {
@@ -245,32 +246,25 @@ export async function POST(request: NextRequest) {
 
     uploadedKey = key;
 
-    const { data: comment, error: insertError } =
-      await auth.supabase
-        .from("video_comments")
-        .insert({
-          video_id: videoId,
-          user_id: auth.user.id,
-          content: "🎤 Message vocal",
-          parent_comment_id:
-            typeof parentCommentId === "string"
-              ? parentCommentId
-              : null,
-          voice_object_key: key,
-          voice_content_type: contentType,
-          voice_duration_ms: durationMs,
-          voice_url: null,
-        })
-        .select(
-          "id, content, created_at, user_id, parent_comment_id, voice_url, voice_object_key, voice_content_type, voice_duration_ms"
-        )
-        .single();
+    const { data: comment, error: insertError } = await auth.supabase
+      .from("video_comments")
+      .insert({
+        video_id: videoId,
+        user_id: auth.user.id,
+        content: "🎤 Message vocal",
+        parent_comment_id: parentCommentId,
+        voice_object_key: key,
+        voice_content_type: contentType,
+        voice_duration_ms: durationMs,
+        voice_url: null,
+      })
+      .select(
+        "id, content, created_at, user_id, parent_comment_id, voice_url, voice_object_key, voice_content_type, voice_duration_ms"
+      )
+      .single();
 
     if (insertError || !comment) {
-      console.error(
-        "Enregistrement commentaire vocal :",
-        insertError
-      );
+      console.error("Enregistrement commentaire vocal :", insertError);
 
       await bucket.delete(key);
       uploadedKey = null;
@@ -300,17 +294,11 @@ export async function POST(request: NextRequest) {
         const bucket = await getBucket();
         await bucket.delete(uploadedKey);
       } catch (cleanupError) {
-        console.error(
-          "Nettoyage R2 après erreur :",
-          cleanupError
-        );
+        console.error("Nettoyage R2 après erreur :", cleanupError);
       }
     }
 
-    return jsonError(
-      "Impossible d'envoyer le message vocal.",
-      500
-    );
+    return jsonError("Impossible d'envoyer le message vocal.", 500);
   }
 }
 
@@ -320,31 +308,22 @@ export async function GET(request: NextRequest) {
 
     if (!auth.ok) return auth.response;
 
-    const commentId =
-      request.nextUrl.searchParams.get("commentId");
+    const commentId = request.nextUrl.searchParams.get("commentId");
 
-    if (
-      !commentId ||
-      !/^[a-f0-9-]{36}$/i.test(commentId)
-    ) {
+    if (!commentId || !isUuid(commentId)) {
       return jsonError("Identifiant de commentaire invalide.");
     }
 
     const { data: comment, error } = await auth.supabase
       .from("video_comments")
-      .select(
-        "id, voice_object_key, voice_content_type"
-      )
+      .select("id, user_id, voice_object_key, voice_content_type")
       .eq("id", commentId)
       .maybeSingle();
 
     if (error) {
       console.error("Lecture commentaire vocal :", error);
 
-      return jsonError(
-        "Impossible de vérifier le commentaire.",
-        500
-      );
+      return jsonError("Impossible de vérifier le commentaire.", 500);
     }
 
     if (!comment?.voice_object_key) {
@@ -353,7 +332,8 @@ export async function GET(request: NextRequest) {
 
     const key = comment.voice_object_key;
 
-    if (!validObjectKey(key, comment.voice_object_key.split("/")[1])) {
+    // La clé doit appartenir à l'auteur réel de la ligne en base.
+    if (!validObjectKey(key, comment.user_id)) {
       return jsonError("Référence audio invalide.", 400);
     }
 
@@ -376,10 +356,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const object = await bucket.get(
-      key,
-      range ? { range } : undefined
-    );
+    const object = await bucket.get(key, range ? { range } : undefined);
 
     if (!object) {
       return jsonError("Fichier audio introuvable.", 404);
@@ -406,7 +383,6 @@ export async function GET(request: NextRequest) {
         "Content-Range",
         `bytes ${range.offset}-${range.offset + range.length - 1}/${metadata.size}`
       );
-
       headers.set("Content-Length", String(range.length));
 
       return new NextResponse(object.body, {
@@ -424,9 +400,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Lecture commentaire vocal :", error);
 
-    return jsonError(
-      "Impossible de lire ce message vocal.",
-      500
-    );
+    return jsonError("Impossible de lire ce message vocal.", 500);
   }
 }
