@@ -15,6 +15,7 @@ import {
   AlertCircle,
   CheckCircle2,
   XCircle,
+  Eye,
 } from "lucide-react";
 
 type VerificationRequest = {
@@ -25,11 +26,13 @@ type VerificationRequest = {
   admin_note: string | null;
   created_at: string;
   documents: {
-    identity: string | null;
-    selfie: string | null;
-    business: string | null;
+    identity: boolean;
+    selfie: boolean;
+    business: boolean;
   };
 };
+
+type DocumentKind = "identity" | "selfie" | "business";
 
 export default function AdminVerificationsPage() {
   const [requests, setRequests] = useState<VerificationRequest[]>([]);
@@ -52,13 +55,17 @@ export default function AdminVerificationsPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "Impossible de charger les demandes.");
+        throw new Error(
+          result.error || "Impossible de charger les demandes."
+        );
       }
 
       setRequests(result.requests || []);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Une erreur est survenue."
+        err instanceof Error
+          ? err.message
+          : "Une erreur est survenue."
       );
     } finally {
       setLoading(false);
@@ -66,7 +73,7 @@ export default function AdminVerificationsPage() {
   }, []);
 
   useEffect(() => {
-    loadRequests();
+    void loadRequests();
   }, [loadRequests]);
 
   const reviewRequest = async (
@@ -85,33 +92,51 @@ export default function AdminVerificationsPage() {
     setMessage("");
 
     try {
-      const response = await fetch("/api/admin/verifications/review", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          requestId,
-          decision,
-          adminNote: notes[requestId] || null,
-        }),
-      });
+      const response = await fetch(
+        "/api/admin/verifications/review",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requestId,
+            decision,
+            adminNote: notes[requestId] || null,
+          }),
+        }
+      );
 
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "Impossible de traiter la demande.");
+        throw new Error(
+          result.error || "Impossible de traiter la demande."
+        );
       }
 
       setMessage(result.message || "Demande traitée.");
       await loadRequests();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Une erreur est survenue."
+        err instanceof Error
+          ? err.message
+          : "Une erreur est survenue."
       );
     } finally {
       setProcessingId(null);
     }
+  };
+
+  const openDocument = (
+    requestId: string,
+    kind: DocumentKind
+  ) => {
+    const url =
+      `/api/admin/verifications/document?requestId=${encodeURIComponent(requestId)}` +
+      `&kind=${encodeURIComponent(kind)}`;
+
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const pendingCount = requests.filter(
@@ -138,7 +163,7 @@ export default function AdminVerificationsPage() {
           </div>
 
           <button
-            onClick={loadRequests}
+            onClick={() => void loadRequests()}
             disabled={loading}
             className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm hover:bg-white/10 disabled:opacity-50"
           >
@@ -151,9 +176,15 @@ export default function AdminVerificationsPage() {
         </header>
 
         <section className="mb-6 rounded-2xl border border-white/10 bg-[#111722] p-5">
-          <p className="text-sm text-gray-400">Demandes en attente</p>
+          <p className="text-sm text-gray-400">
+            Demandes en attente
+          </p>
+
           <div className="mt-1 flex items-center justify-between">
-            <p className="text-3xl font-bold">{pendingCount}</p>
+            <p className="text-3xl font-bold">
+              {pendingCount}
+            </p>
+
             <div className="rounded-xl bg-yellow-500/10 p-3 text-yellow-400">
               <Clock size={25} />
             </div>
@@ -185,9 +216,11 @@ export default function AdminVerificationsPage() {
               size={38}
               className="mx-auto mb-4 text-gray-500"
             />
+
             <h2 className="font-semibold">
               Aucune demande pour le moment
             </h2>
+
             <p className="mt-2 text-sm text-gray-400">
               Les nouvelles demandes apparaîtront ici.
             </p>
@@ -203,9 +236,15 @@ export default function AdminVerificationsPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       {request.account_type === "seller" ? (
-                        <Store size={19} className="text-blue-400" />
+                        <Store
+                          size={19}
+                          className="text-blue-400"
+                        />
                       ) : (
-                        <User size={19} className="text-blue-400" />
+                        <User
+                          size={19}
+                          className="text-blue-400"
+                        />
                       )}
 
                       <h2 className="font-semibold">
@@ -221,7 +260,9 @@ export default function AdminVerificationsPage() {
 
                     <p className="mt-1 text-xs text-gray-500">
                       Envoyée le{" "}
-                      {new Date(request.created_at).toLocaleString("fr-FR")}
+                      {new Date(
+                        request.created_at
+                      ).toLocaleString("fr-FR")}
                     </p>
                   </div>
 
@@ -230,15 +271,15 @@ export default function AdminVerificationsPage() {
                       request.status === "pending"
                         ? "bg-yellow-500/10 text-yellow-400"
                         : request.status === "approved"
-                        ? "bg-green-500/10 text-green-400"
-                        : "bg-red-500/10 text-red-400"
+                          ? "bg-green-500/10 text-green-400"
+                          : "bg-red-500/10 text-red-400"
                     }`}
                   >
                     {request.status === "pending"
                       ? "En attente"
                       : request.status === "approved"
-                      ? "Approuvée"
-                      : "Refusée"}
+                        ? "Approuvée"
+                        : "Refusée"}
                   </span>
                 </div>
 
@@ -246,20 +287,29 @@ export default function AdminVerificationsPage() {
                   <DocumentLink
                     title="Pièce d'identité"
                     icon={<FileText size={19} />}
-                    url={request.documents.identity}
+                    available={request.documents.identity}
+                    onClick={() =>
+                      openDocument(request.id, "identity")
+                    }
                   />
 
                   <DocumentLink
                     title="Photo selfie"
                     icon={<Camera size={19} />}
-                    url={request.documents.selfie}
+                    available={request.documents.selfie}
+                    onClick={() =>
+                      openDocument(request.id, "selfie")
+                    }
                   />
 
                   {request.account_type === "seller" && (
                     <DocumentLink
                       title="Document professionnel"
                       icon={<Building2 size={19} />}
-                      url={request.documents.business}
+                      available={request.documents.business}
+                      onClick={() =>
+                        openDocument(request.id, "business")
+                      }
                     />
                   )}
                 </div>
@@ -286,12 +336,16 @@ export default function AdminVerificationsPage() {
                     <div className="mt-4 flex flex-wrap gap-3">
                       <button
                         onClick={() =>
-                          reviewRequest(request.id, "approved")
+                          void reviewRequest(
+                            request.id,
+                            "approved"
+                          )
                         }
                         disabled={processingId === request.id}
                         className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-3 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
                       >
                         <CheckCircle2 size={18} />
+
                         {processingId === request.id
                           ? "Traitement..."
                           : "Approuver"}
@@ -299,7 +353,10 @@ export default function AdminVerificationsPage() {
 
                       <button
                         onClick={() =>
-                          reviewRequest(request.id, "rejected")
+                          void reviewRequest(
+                            request.id,
+                            "rejected"
+                          )
                         }
                         disabled={processingId === request.id}
                         className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-500/20 disabled:opacity-50"
@@ -323,6 +380,7 @@ export default function AdminVerificationsPage() {
 
         <p className="mt-8 text-center text-xs text-gray-500">
           Espace réservé aux administrateurs autorisés de Moshi.
+          Les documents sont consultés via une API privée.
         </p>
       </div>
     </main>
@@ -332,11 +390,13 @@ export default function AdminVerificationsPage() {
 function DocumentLink({
   title,
   icon,
-  url,
+  available,
+  onClick,
 }: {
   title: string;
   icon: React.ReactNode;
-  url: string | null;
+  available: boolean;
+  onClick: () => void;
 }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
@@ -345,16 +405,16 @@ function DocumentLink({
         {title}
       </div>
 
-      {url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
+      {available ? (
+        <button
+          type="button"
+          onClick={onClick}
           className="inline-flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-blue-300"
         >
+          <Eye size={16} />
           Consulter le document
           <ExternalLink size={15} />
-        </a>
+        </button>
       ) : (
         <span className="text-xs text-gray-500">
           Document indisponible
