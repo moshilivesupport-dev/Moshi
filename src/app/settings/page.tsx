@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -25,28 +25,22 @@ import {
   Headphones,
   Video,
 } from "lucide-react";
+
 import { createClient } from "@/lib/supabase/client";
+import {
+  CURRENCY_OPTIONS,
+  LANGUAGE_OPTIONS,
+  type MoshiCurrency,
+  type MoshiLanguage,
+} from "@/lib/currency";
+import { useMoshiPreferences } from "@/components/providers/MoshiPreferencesProvider";
 
-const LANGUAGES = [
-  { value: "fr", label: "Français 🇫🇷" },
-  { value: "en", label: "English 🇬🇧" },
-  { value: "pt", label: "Português 🇵🇹" },
-  { value: "es", label: "Español 🇪🇸" },
-  { value: "ar", label: "العربية 🇸🇦" },
-] as const;
-
-const CURRENCIES = [
-  { value: "XOF", label: "XOF — Franc CFA" },
-  { value: "EUR", label: "EUR — Euro" },
-  { value: "USD", label: "USD — Dollar américain" },
-  { value: "GBP", label: "GBP — Livre sterling" },
-  { value: "GHS", label: "GHS — Cedi ghanéen" },
-] as const;
-
-type Language = (typeof LANGUAGES)[number]["value"];
-type Currency = (typeof CURRENCIES)[number]["value"];
 type AccountRole = "acheteur" | "vendeur" | "admin";
-type ConversionStatus = "pending" | "approved" | "rejected" | null;
+type ConversionStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | null;
 
 type SettingItem = {
   title: string;
@@ -59,6 +53,7 @@ type SettingItem = {
 
 function SettingLink({ item }: { item: SettingItem }) {
   const Icon = item.icon;
+  const { t } = useMoshiPreferences();
 
   const content = (
     <>
@@ -70,12 +65,12 @@ function SettingLink({ item }: { item: SettingItem }) {
 
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-gray-900">
-          {item.title}
+          {t(item.title)}
         </p>
 
         {item.description && (
           <p className="mt-0.5 text-xs text-gray-500">
-            {item.description}
+            {t(item.description)}
           </p>
         )}
       </div>
@@ -86,7 +81,7 @@ function SettingLink({ item }: { item: SettingItem }) {
 
       {item.disabled && (
         <span className="text-[10px] font-semibold text-gray-400">
-          Bientôt
+          {t("Bientôt")}
         </span>
       )}
     </>
@@ -122,10 +117,12 @@ function SettingSection({
   title: string;
   items: SettingItem[];
 }) {
+  const { t } = useMoshiPreferences();
+
   return (
     <section>
       <h2 className="mb-2 px-1 text-sm font-bold text-gray-900">
-        {title}
+        {t(title)}
       </h2>
 
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm divide-y divide-gray-100">
@@ -139,23 +136,47 @@ function SettingSection({
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [supabase] = useState(() => createClient());
+  const supabase = useMemo(() => createClient(), []);
+
+  const {
+    language: globalLanguage,
+    currency: globalCurrency,
+    setPreferences,
+    t,
+    ratesSource,
+    ratesSourceUrl,
+    ratesDate,
+    ratesDisclaimer,
+    ratesError,
+  } = useMoshiPreferences();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [language, setLanguage] = useState<Language>("fr");
-  const [currency, setCurrency] = useState<Currency>("XOF");
+  const [language, setLanguage] =
+    useState<MoshiLanguage>(globalLanguage);
 
-  const [role, setRole] = useState<AccountRole>("acheteur");
+  const [currency, setCurrency] =
+    useState<MoshiCurrency>(globalCurrency);
+
+  const [role, setRole] =
+    useState<AccountRole>("acheteur");
+
   const [conversionStatus, setConversionStatus] =
     useState<ConversionStatus>(null);
-  const [requestingSeller, setRequestingSeller] = useState(false);
+
+  const [requestingSeller, setRequestingSeller] =
+    useState(false);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    setLanguage(globalLanguage);
+    setCurrency(globalCurrency);
+  }, [globalLanguage, globalCurrency]);
 
   useEffect(() => {
     let active = true;
@@ -189,33 +210,45 @@ export default function SettingsPage() {
         if (profileError) throw profileError;
         if (!active) return;
 
-        const savedLanguage = LANGUAGES.find(
-          (item) => item.value === data?.preferred_language
-        );
+        const savedLanguage =
+          LANGUAGE_OPTIONS.find(
+            (item) =>
+              item.value === data?.preferred_language
+          )?.value ?? "fr";
 
-        const savedCurrency = CURRENCIES.find(
-          (item) => item.value === data?.preferred_currency
-        );
+        const savedCurrency =
+          CURRENCY_OPTIONS.find(
+            (item) =>
+              item.value === data?.preferred_currency
+          )?.value ?? "XOF";
 
-        setLanguage(savedLanguage?.value ?? "fr");
-        setCurrency(savedCurrency?.value ?? "XOF");
+        setLanguage(savedLanguage);
+        setCurrency(savedCurrency);
+
+        setPreferences({
+          language: savedLanguage,
+          currency: savedCurrency,
+        });
 
         const accountRole = data?.role;
 
         setRole(
-          accountRole === "vendeur" || accountRole === "admin"
+          accountRole === "vendeur" ||
+            accountRole === "admin"
             ? accountRole
             : "acheteur"
         );
 
-        const { data: requestData, error: requestError } =
-          await supabase
-            .from("seller_conversion_requests")
-            .select("status")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        const {
+          data: requestData,
+          error: requestError,
+        } = await supabase
+          .from("seller_conversion_requests")
+          .select("status")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         if (requestError) throw requestError;
         if (!active) return;
@@ -232,7 +265,7 @@ export default function SettingsPage() {
 
         if (active) {
           setError(
-            "Impossible de charger les paramètres du compte."
+            t("Impossible de charger les paramètres du compte.")
           );
         }
       } finally {
@@ -245,11 +278,11 @@ export default function SettingsPage() {
     return () => {
       active = false;
     };
-  }, [supabase, router]);
+  }, [supabase, router, setPreferences, t]);
 
   async function savePreferences(
-    nextLanguage: Language,
-    nextCurrency: Currency
+    nextLanguage: MoshiLanguage,
+    nextCurrency: MoshiCurrency
   ) {
     if (saving || !userId) return;
 
@@ -278,6 +311,12 @@ export default function SettingsPage() {
 
       setLanguage(nextLanguage);
       setCurrency(nextCurrency);
+
+      setPreferences({
+        language: nextLanguage,
+        currency: nextCurrency,
+      });
+
       setSuccess("Préférences enregistrées.");
     } catch (err) {
       console.error("Sauvegarde préférences :", err);
@@ -285,7 +324,7 @@ export default function SettingsPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Impossible d'enregistrer les préférences."
+          : t("Impossible d'enregistrer les préférences.")
       );
     } finally {
       setSaving(false);
@@ -314,7 +353,9 @@ export default function SettingsPage() {
 
       setConversionStatus("pending");
       setSuccess(
-        "Ta demande pour devenir vendeur a été envoyée à l'administration."
+        t(
+          "Ta demande pour devenir vendeur a été envoyée à l'administration."
+        )
       );
     } catch (err) {
       console.error("Demande vendeur :", err);
@@ -322,7 +363,7 @@ export default function SettingsPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Impossible d'envoyer ta demande. Réessaie."
+          : t("Impossible d'envoyer ta demande. Réessaie.")
       );
     } finally {
       setRequestingSeller(false);
@@ -332,7 +373,7 @@ export default function SettingsPage() {
   async function handleLogout() {
     if (
       !window.confirm(
-        "Veux-tu vraiment te déconnecter de Moshi ?"
+        t("Veux-tu vraiment te déconnecter de Moshi ?")
       )
     ) {
       return;
@@ -351,7 +392,11 @@ export default function SettingsPage() {
       router.refresh();
     } catch (err) {
       console.error("Déconnexion :", err);
-      setError("Impossible de te déconnecter. Réessaie.");
+
+      setError(
+        t("Impossible de te déconnecter. Réessaie.")
+      );
+
       setLoggingOut(false);
     }
   }
@@ -371,7 +416,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={goBack}
-            aria-label="Retour au profil"
+            aria-label={t("Retour au profil")}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50"
           >
             <ArrowLeft className="h-5 w-5 text-gray-800" />
@@ -379,10 +424,11 @@ export default function SettingsPage() {
 
           <div>
             <h1 className="text-lg font-extrabold text-gray-900">
-              Paramètres
+              {t("Paramètres")}
             </h1>
+
             <p className="text-[11px] text-gray-500">
-              Personnalise ton expérience Moshi
+              {t("Personnalise ton expérience Moshi")}
             </p>
           </div>
         </div>
@@ -401,11 +447,10 @@ export default function SettingsPage() {
         {success && (
           <div className="flex items-center gap-2 rounded-xl border border-green-100 bg-green-50 p-3 text-sm text-green-700">
             <Check className="h-5 w-5 shrink-0" />
-            <span>{success}</span>
+            <span>{t(success)}</span>
           </div>
         )}
 
-        {/* Conversion acheteur vers vendeur */}
         {role === "acheteur" && (
           <section className="rounded-2xl border border-purple-100 bg-white p-4 shadow-sm">
             <div className="flex items-start gap-3">
@@ -415,24 +460,26 @@ export default function SettingsPage() {
 
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-bold text-gray-900">
-                  Devenir vendeur
+                  {t("Devenir vendeur")}
                 </h2>
 
                 <p className="mt-1 text-xs leading-5 text-gray-500">
-                  Envoie une demande à l'administration pour
-                  convertir ton compte acheteur en compte vendeur.
+                  {t(
+                    "Envoie une demande à l'administration pour convertir ton compte acheteur en compte vendeur."
+                  )}
                 </p>
 
                 {conversionStatus === "pending" && (
                   <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                    Demande en attente de validation.
+                    {t("Demande en attente de validation.")}
                   </p>
                 )}
 
                 {conversionStatus === "rejected" && (
                   <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                    Ta précédente demande a été refusée. Tu peux
-                    en envoyer une nouvelle.
+                    {t(
+                      "Ta précédente demande a été refusée. Tu peux en envoyer une nouvelle."
+                    )}
                   </p>
                 )}
 
@@ -448,8 +495,8 @@ export default function SettingsPage() {
                     )}
 
                     {requestingSeller
-                      ? "Envoi..."
-                      : "Demander à devenir vendeur"}
+                      ? t("Envoi...")
+                      : t("Demander à devenir vendeur")}
                   </button>
                 )}
               </div>
@@ -462,7 +509,8 @@ export default function SettingsPage() {
           items={[
             {
               title: "Informations du compte",
-              description: "Consulter ton profil et tes informations",
+              description:
+                "Consulter ton profil et tes informations",
               href: userId ? `/profile/${userId}` : "/",
               icon: UserRound,
               iconStyle: "bg-indigo-50 text-indigo-600",
@@ -492,7 +540,8 @@ export default function SettingsPage() {
               ? [
                   {
                     title: "Espace vendeur",
-                    description: "Gérer ta boutique et tes ventes",
+                    description:
+                      "Gérer ta boutique et tes ventes",
                     href: "/seller",
                     icon: Store,
                     iconStyle: "bg-pink-50 text-pink-600",
@@ -502,54 +551,12 @@ export default function SettingsPage() {
           ]}
         />
 
-        {/* Préférences */}
         <section>
           <h2 className="mb-2 px-1 text-sm font-bold text-gray-900">
-            Préférences
+            {t("Préférences")}
           </h2>
 
           <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm divide-y divide-gray-100">
-            <div className="flex items-center gap-3 px-4 py-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                <Bell className="h-5 w-5" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-900">
-                  Notifications
-                </p>
-                <p className="text-xs text-gray-500">
-                  Alertes et actualités
-                </p>
-              </div>
-
-              <Link
-                href="/notifications"
-                aria-label="Ouvrir les notifications"
-              >
-                <ChevronRight className="h-5 w-5 text-moshi-purple" />
-              </Link>
-            </div>
-
-            <div className="flex items-center gap-3 px-4 py-3 opacity-70">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
-                <Palette className="h-5 w-5" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-900">
-                  Apparence
-                </p>
-                <p className="text-xs text-gray-500">
-                  Personnalisation de l'affichage
-                </p>
-              </div>
-
-              <span className="text-[10px] font-semibold text-gray-400">
-                Bientôt
-              </span>
-            </div>
-
             <div className="flex items-center gap-3 px-4 py-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                 <Languages className="h-5 w-5" />
@@ -557,10 +564,11 @@ export default function SettingsPage() {
 
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-gray-900">
-                  Langue
+                  {t("Langue")}
                 </p>
+
                 <p className="text-xs text-gray-500">
-                  Langue préférée
+                  {t("Langue préférée")}
                 </p>
               </div>
 
@@ -568,19 +576,22 @@ export default function SettingsPage() {
                 <Loader2 className="h-4 w-4 animate-spin text-moshi-purple" />
               ) : (
                 <select
-                  aria-label="Choisir la langue"
+                  aria-label={t("Choisir la langue")}
                   value={language}
                   disabled={saving}
                   onChange={(event) =>
                     void savePreferences(
-                      event.target.value as Language,
+                      event.target.value as MoshiLanguage,
                       currency
                     )
                   }
-                  className="max-w-[125px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-moshi-purple"
+                  className="max-w-[135px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-moshi-purple"
                 >
-                  {LANGUAGES.map((item) => (
-                    <option key={item.value} value={item.value}>
+                  {LANGUAGE_OPTIONS.map((item) => (
+                    <option
+                      key={item.value}
+                      value={item.value}
+                    >
                       {item.label}
                     </option>
                   ))}
@@ -595,10 +606,11 @@ export default function SettingsPage() {
 
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-gray-900">
-                  Devise
+                  {t("Devise")}
                 </p>
+
                 <p className="text-xs text-gray-500">
-                  Devise préférée
+                  {t("Devise préférée")}
                 </p>
               </div>
 
@@ -606,24 +618,76 @@ export default function SettingsPage() {
                 <Loader2 className="h-4 w-4 animate-spin text-moshi-purple" />
               ) : (
                 <select
-                  aria-label="Choisir la devise"
+                  aria-label={t("Choisir la devise")}
                   value={currency}
                   disabled={saving}
                   onChange={(event) =>
                     void savePreferences(
                       language,
-                      event.target.value as Currency
+                      event.target.value as MoshiCurrency
                     )
                   }
-                  className="max-w-[145px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-moshi-purple"
+                  className="max-w-[155px] rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-moshi-purple"
                 >
-                  {CURRENCIES.map((item) => (
-                    <option key={item.value} value={item.value}>
+                  {CURRENCY_OPTIONS.map((item) => (
+                    <option
+                      key={item.value}
+                      value={item.value}
+                    >
                       {item.label}
                     </option>
                   ))}
                 </select>
               )}
+            </div>
+
+            {currency !== "XOF" && (
+              <div className="bg-gray-50 px-4 py-3">
+                <p className="text-xs leading-5 text-gray-600">
+                  {t(ratesDisclaimer)}
+                </p>
+
+                {ratesError ? (
+                  <p className="mt-1 text-xs text-amber-700">
+                    {t("Conversion momentanément indisponible.")}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    {rateDate
+                      ? `${t("Taux mis à jour le")} ${rateDate}`
+                      : t("Chargement des taux...")}
+                    {" · "}
+                    <a
+                      href={ratesSourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-moshi-purple underline"
+                    >
+                      {ratesSource}
+                    </a>
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 px-4 py-3 opacity-70">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-moshi-purple">
+                <Palette className="h-5 w-5" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-900">
+                  {t("Apparence")}
+                </p>
+
+                <p className="text-xs text-gray-500">
+                  {t("Personnalisation de l'affichage")}
+                </p>
+              </div>
+
+              <span className="text-[10px] font-semibold text-gray-400">
+                {t("Bientôt")}
+              </span>
             </div>
 
             <div className="flex items-center gap-3 px-4 py-3 opacity-70">
@@ -633,15 +697,16 @@ export default function SettingsPage() {
 
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-gray-900">
-                  Qualité vidéo
+                  {t("Qualité vidéo")}
                 </p>
+
                 <p className="text-xs text-gray-500">
-                  Qualité de lecture et consommation de données
+                  {t("Qualité de lecture et consommation de données")}
                 </p>
               </div>
 
               <span className="text-[10px] font-semibold text-gray-400">
-                Bientôt
+                {t("Bientôt")}
               </span>
             </div>
           </div>
@@ -649,32 +714,34 @@ export default function SettingsPage() {
           {saving && (
             <p className="mt-2 flex items-center gap-2 px-1 text-xs text-gray-500">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Enregistrement...
+              {t("Enregistrement...")}
             </p>
           )}
         </section>
 
-        {/* Confidentialité */}
         <SettingSection
           title="Confidentialité"
           items={[
             {
               title: "Confidentialité",
-              description: "Contrôle de la visibilité de ton compte",
+              description:
+                "Contrôle de la visibilité de ton compte",
               icon: Lock,
               iconStyle: "bg-indigo-50 text-indigo-600",
               disabled: true,
             },
             {
               title: "Utilisateurs bloqués",
-              description: "Consulter et débloquer des comptes",
+              description:
+                "Consulter et débloquer des comptes",
               href: "/settings/blocked",
               icon: UserRound,
               iconStyle: "bg-red-50 text-red-500",
             },
             {
               title: "Télécharger mes données",
-              description: "Obtenir une copie de tes informations",
+              description:
+                "Obtenir une copie de tes informations",
               icon: Download,
               iconStyle: "bg-gray-100 text-gray-600",
               disabled: true,
@@ -682,7 +749,6 @@ export default function SettingsPage() {
           ]}
         />
 
-        {/* Assistance */}
         <SettingSection
           title="Assistance"
           items={[
@@ -703,10 +769,9 @@ export default function SettingsPage() {
           ]}
         />
 
-        {/* Session */}
         <section>
           <h2 className="mb-2 px-1 text-sm font-bold text-gray-900">
-            Session
+            {t("Session")}
           </h2>
 
           <div className="overflow-hidden rounded-2xl border border-red-100 bg-white shadow-sm">
@@ -727,11 +792,12 @@ export default function SettingsPage() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-red-600">
                   {loggingOut
-                    ? "Déconnexion..."
-                    : "Se déconnecter"}
+                    ? t("Déconnexion...")
+                    : t("Se déconnecter")}
                 </p>
+
                 <p className="text-xs text-gray-500">
-                  Fermer ta session sur cet appareil
+                  {t("Fermer ta session sur cet appareil")}
                 </p>
               </div>
 
@@ -744,8 +810,9 @@ export default function SettingsPage() {
           <p className="text-xs font-semibold text-gray-400">
             Moshi
           </p>
+
           <p className="mt-1 text-[10px] text-gray-400">
-            Paramètres de ton compte
+            {t("Paramètres de ton compte")}
           </p>
         </div>
       </div>
