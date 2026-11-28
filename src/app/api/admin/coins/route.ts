@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/supabase/admin";
 
@@ -13,11 +14,18 @@ type PackInput = {
   sort_order?: unknown;
 };
 
+type ValidationResult =
+  | { values: Record<string, unknown> }
+  | { error: string };
+
 function errorResponse(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
-function validatePack(body: PackInput, partial = false) {
+function validatePack(
+  body: PackInput,
+  partial = false
+): ValidationResult {
   const values: Record<string, unknown> = {};
 
   if (!partial || body.name !== undefined) {
@@ -26,7 +34,9 @@ function validatePack(body: PackInput, partial = false) {
       body.name.trim().length < 2 ||
       body.name.trim().length > 80
     ) {
-      return { error: "Le nom doit contenir entre 2 et 80 caractères." };
+      return {
+        error: "Le nom doit contenir entre 2 et 80 caractères.",
+      };
     }
 
     values.name = body.name.trim();
@@ -36,17 +46,22 @@ function validatePack(body: PackInput, partial = false) {
     const coins = Number(body.coins);
 
     if (!Number.isSafeInteger(coins) || coins <= 0) {
-      return { error: "Le nombre de coins doit être un entier positif." };
+      return {
+        error: "Le nombre de coins doit être un entier positif.",
+      };
     }
 
     values.coins = coins;
   }
 
   if (!partial || body.bonus !== undefined) {
-    const bonus = body.bonus === undefined ? 0 : Number(body.bonus);
+    const bonus =
+      body.bonus === undefined ? 0 : Number(body.bonus);
 
     if (!Number.isSafeInteger(bonus) || bonus < 0) {
-      return { error: "Le bonus doit être un entier positif ou nul." };
+      return {
+        error: "Le bonus doit être un entier positif ou nul.",
+      };
     }
 
     values.bonus = bonus;
@@ -56,7 +71,9 @@ function validatePack(body: PackInput, partial = false) {
     const price = Number(body.price_fcfa);
 
     if (!Number.isSafeInteger(price) || price <= 0) {
-      return { error: "Le prix doit être un montant entier positif en FCFA." };
+      return {
+        error: "Le prix doit être un montant entier positif en FCFA.",
+      };
     }
 
     values.price_fcfa = price;
@@ -86,7 +103,9 @@ function validatePack(body: PackInput, partial = false) {
 
   if (!partial || body.sort_order !== undefined) {
     const order =
-      body.sort_order === undefined ? 0 : Number(body.sort_order);
+      body.sort_order === undefined
+        ? 0
+        : Number(body.sort_order);
 
     if (!Number.isSafeInteger(order) || order < 0) {
       return { error: "Ordre d'affichage invalide." };
@@ -121,7 +140,9 @@ async function writeLog(
 
   if (error) {
     console.error("Journal coins Moshi :", error);
-    throw new Error("La journalisation administrative a échoué.");
+    throw new Error(
+      "La journalisation administrative a échoué."
+    );
   }
 }
 
@@ -143,7 +164,10 @@ export async function GET() {
 
     if (error) {
       console.error("Chargement packs coins :", error);
-      return errorResponse("Impossible de charger les packs.", 500);
+      return errorResponse(
+        "Impossible de charger les packs.",
+        500
+      );
     }
 
     return NextResponse.json(
@@ -190,7 +214,10 @@ export async function POST(request: Request) {
 
     if (error || !pack) {
       console.error("Création pack coins :", error);
-      return errorResponse("Impossible de créer ce pack.", 500);
+      return errorResponse(
+        "Impossible de créer ce pack.",
+        500
+      );
     }
 
     try {
@@ -221,8 +248,11 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error("Admin coins POST :", error);
+
     return errorResponse(
-      error instanceof Error ? error.message : "Erreur interne.",
+      error instanceof Error
+        ? error.message
+        : "Erreur interne.",
       500
     );
   }
@@ -241,7 +271,9 @@ export async function PATCH(request: Request) {
       | null;
 
     if (!body || typeof body.id !== "string") {
-      return errorResponse("Identifiant de pack manquant.");
+      return errorResponse(
+        "Identifiant de pack manquant."
+      );
     }
 
     const id = body.id.trim();
@@ -251,7 +283,9 @@ export async function PATCH(request: Request) {
         id
       )
     ) {
-      return errorResponse("Identifiant de pack invalide.");
+      return errorResponse(
+        "Identifiant de pack invalide."
+      );
     }
 
     const validated = validatePack(body, true);
@@ -261,14 +295,17 @@ export async function PATCH(request: Request) {
     }
 
     if (Object.keys(validated.values).length === 0) {
-      return errorResponse("Aucune modification fournie.");
+      return errorResponse(
+        "Aucune modification fournie."
+      );
     }
 
-    const { data: previous, error: readError } = await auth.adminClient
-      .from("coin_packs")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+    const { data: previous, error: readError } =
+      await auth.adminClient
+        .from("coin_packs")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
 
     if (readError || !previous) {
       return errorResponse("Pack introuvable.", 404);
@@ -286,7 +323,10 @@ export async function PATCH(request: Request) {
 
     if (error || !pack) {
       console.error("Modification pack coins :", error);
-      return errorResponse("Impossible de modifier ce pack.", 500);
+      return errorResponse(
+        "Impossible de modifier ce pack.",
+        500
+      );
     }
 
     try {
@@ -318,11 +358,17 @@ export async function PATCH(request: Request) {
       throw logError;
     }
 
-    return NextResponse.json({ success: true, pack });
+    return NextResponse.json({
+      success: true,
+      pack,
+    });
   } catch (error) {
     console.error("Admin coins PATCH :", error);
+
     return errorResponse(
-      error instanceof Error ? error.message : "Erreur interne.",
+      error instanceof Error
+        ? error.message
+        : "Erreur interne.",
       500
     );
   }
@@ -340,14 +386,17 @@ export async function DELETE(request: Request) {
     const id = searchParams.get("id");
 
     if (!id) {
-      return errorResponse("Identifiant de pack manquant.");
+      return errorResponse(
+        "Identifiant de pack manquant."
+      );
     }
 
-    const { data: previous, error: readError } = await auth.adminClient
-      .from("coin_packs")
-      .select("id, name, is_active")
-      .eq("id", id)
-      .maybeSingle();
+    const { data: previous, error: readError } =
+      await auth.adminClient
+        .from("coin_packs")
+        .select("id, name, is_active")
+        .eq("id", id)
+        .maybeSingle();
 
     if (readError || !previous) {
       return errorResponse("Pack introuvable.", 404);
@@ -370,7 +419,10 @@ export async function DELETE(request: Request) {
 
     if (error) {
       console.error("Désactivation pack :", error);
-      return errorResponse("Impossible de désactiver ce pack.", 500);
+      return errorResponse(
+        "Impossible de désactiver ce pack.",
+        500
+      );
     }
 
     try {
@@ -399,8 +451,11 @@ export async function DELETE(request: Request) {
     });
   } catch (error) {
     console.error("Admin coins DELETE :", error);
+
     return errorResponse(
-      error instanceof Error ? error.message : "Erreur interne.",
+      error instanceof Error
+        ? error.message
+        : "Erreur interne.",
       500
     );
   }
