@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -493,7 +494,7 @@ export default function SellerOrdersPage() {
                               Quantité : {item.quantity}
                             </p>
                             <p className="text-xs font-bold text-moshi-purple mt-1">
-                              {formatMoney(item.total_price, "XOF")}
+                              {formatMoney(item.total_price)}
                             </p>
                           </div>
                         </div>
@@ -506,12 +507,12 @@ export default function SellerOrdersPage() {
                   <div className="p-4 space-y-2">
                     <div className="flex justify-between text-xs text-gray-500">
                       <span>Sous-total</span>
-                      <span>{formatMoney(order.subtotal, "XOF")}</span>
+                      <span>{formatMoney(order.subtotal)}</span>
                     </div>
 
                     <div className="flex justify-between text-xs text-gray-500">
                       <span>Livraison</span>
-                      <span>{formatMoney(order.shipping_fee, "XOF")}</span>
+                      <span>{formatMoney(order.shipping_fee)}</span>
                     </div>
 
                     <div className="flex justify-between items-center pt-1">
@@ -519,7 +520,7 @@ export default function SellerOrdersPage() {
                         Total payé
                       </span>
                       <span className="text-base font-extrabold text-moshi-purple">
-                        {formatMoney(order.total, "XOF")}
+                        {formatMoney(order.total)}
                       </span>
                     </div>
                   </div>
