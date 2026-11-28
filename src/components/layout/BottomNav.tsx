@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -12,14 +11,26 @@ import {
   User,
 } from "lucide-react";
 import { motion } from "framer-motion";
+
 import { cn } from "@/lib/utils";
 import CreateMenu from "./CreateMenu";
+import { useMoshiPreferences } from "@/components/providers/MoshiPreferencesProvider";
 
 const links = [
   { href: "/", label: "Accueil", icon: Home },
   { href: "/shop", label: "Boutique", icon: ShoppingBag },
-  { href: "/create", label: "Créer", icon: Plus, central: true },
-  { href: "/messages", label: "Messagerie", icon: MessageCircle, badge: 3 },
+  {
+    href: "/create",
+    label: "Créer",
+    icon: Plus,
+    central: true,
+  },
+  {
+    href: "/messages",
+    label: "Messagerie",
+    icon: MessageCircle,
+    badge: 3,
+  },
   { href: "/profile/me", label: "Profil", icon: User },
 ];
 
@@ -32,7 +43,10 @@ const hiddenRoutes = [
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
+  const { t } = useMoshiPreferences();
+
+  const [isCreateMenuOpen, setIsCreateMenuOpen] =
+    useState(false);
 
   const isProductDetail =
     /^\/shop\/[^/]+\/?$/.test(pathname);
@@ -41,7 +55,8 @@ export default function BottomNav() {
     isProductDetail ||
     hiddenRoutes.some(
       (route) =>
-        pathname === route || pathname.startsWith(`${route}/`)
+        pathname === route ||
+        pathname.startsWith(`${route}/`)
     );
 
   if (shouldHideNavigation) {
@@ -52,7 +67,7 @@ export default function BottomNav() {
     <>
       <div className="fixed bottom-4 left-4 right-4 z-50 pb-safe">
         <nav
-          aria-label="Navigation principale"
+          aria-label={t("Navigation principale")}
           className="mx-auto flex h-[72px] max-w-lg items-center justify-around rounded-[28px] bg-white/95 px-2 shadow-lg backdrop-blur-xl"
         >
           {links.map((link) => {
@@ -69,7 +84,7 @@ export default function BottomNav() {
                   key={link.href}
                   type="button"
                   onClick={() => setIsCreateMenuOpen(true)}
-                  aria-label="Créer"
+                  aria-label={t(link.label)}
                   className="relative -top-3 flex flex-col items-center"
                 >
                   <motion.div
@@ -117,7 +132,7 @@ export default function BottomNav() {
                       : "text-gray-600"
                   )}
                 >
-                  {link.label}
+                  {t(link.label)}
                 </span>
               </Link>
             );
