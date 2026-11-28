@@ -1,22 +1,85 @@
-name: Fix lock file
-on: workflow_dispatch
+
+name: Moshi - Repair Package Lock
+
+on:
+  workflow_dispatch:
+
 permissions:
   contents: write
+  pull-requests: write
+
+concurrency:
+  group: moshi-fix-lock
+  cancel-in-progress: false
+
 jobs:
-  fix:
+  repair:
+    name: Regenerate and validate package-lock.json
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: npm install -g npm@10.9.2
-      - run: npm --version
-      - run: rm -f package-lock.json
-      - run: npm install
-      - run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add package-lock.json
-          git commit -m "Regenerate package-lock.json" || echo "No changes"
-          git push
+
+      - name: Set npm version
+        run: |
+          npm install --global npm@10.9.2
+          npm --version
+
+      - name: Check package manifest
+        run: |
+          node -e "
+            const p = require('./package.json');
+            if (!p.dependencies || !p.dependencies['cinetpay-js']) {
+              throw new Error('cinetpay-js is missing from package.json');
+            }
+            console.log('cinetpay-js:', p.dependencies['cinetpay-js']);
+          "
+
+      - name: Regenerate lockfile
+        run: |
+          npm install \
+            --package-lock-only \
+            --ignore-scripts \
+            --no-audit \
+            --no-fund
+
+      - name: Validate lockfile with clean install
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify CinetPay installation
+        run: npm ls cinetpay-js
+
+      - name: Create lockfile repair pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/moshi-package-lock-repair
+          delete-branch: true
+          add-paths: |
+            package-lock.json
+          commit-message: "fix(deps): regenerate package lock"
+          title: "Fix: synchronize package-lock.json"
+          body: |
+            ## Package lock repair
+
+            This automated update regenerates package-lock.json
+            from the current package.json.
+
+            Validation performed:
+            - npm install --package-lock-only
+            - npm ci
+            - npm ls cinetpay-js
+
+            The main branch is not modified directly.
+          labels: |
+            dependencies
+            automated
