@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const runtime = "edge";
 export const revalidate = 21600;
 
 type RateRow = {
@@ -77,6 +76,7 @@ export async function GET() {
       headers: {
         Accept: "application/json",
       },
+      cache: "force-cache",
     });
 
     if (!response.ok) {
@@ -99,13 +99,6 @@ export async function GET() {
       );
     }
 
-    /*
-     * GHSXOF représente le nombre de XOF pour 1 GHS.
-     * Les autres paires représentent le nombre de GHS
-     * pour une unité de la devise correspondante.
-     *
-     * Les conversions sont donc calculées à partir du GHS.
-     */
     const xofPerGhs = ghsXof.rate;
 
     const rates = {
