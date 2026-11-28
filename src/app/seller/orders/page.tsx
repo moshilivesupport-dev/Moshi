@@ -187,7 +187,7 @@ export default function SellerOrdersPage() {
       ...new Set(rows.map((order) => order.buyer_id).filter(Boolean)),
     ];
 
-    let buyersMap: Record<string, BuyerProfile> = {};
+    const buyersMap: Record<string, BuyerProfile> = {};
 
     if (buyerIds.length > 0) {
       const { data: buyers, error: buyersError } = await supabase
