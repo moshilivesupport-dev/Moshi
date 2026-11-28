@@ -1,13 +1,14 @@
-
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 import BottomNav from "@/components/layout/BottomNav";
 import LiveInvitationListener from "@/components/live/LiveInvitationListener";
+import { MoshiPreferencesProvider } from "@/components/providers/MoshiPreferencesProvider";
 
 export const metadata: Metadata = {
   title: "Moshi – Soft Social Commerce",
-  description: "La plateforme de live shopping immersive et sociale.",
+  description:
+    "La plateforme de live shopping immersive et sociale.",
   applicationName: "Moshi",
   appleWebApp: {
     capable: true,
@@ -54,17 +55,19 @@ export default function RootLayout({
   modal: React.ReactNode;
 }) {
   return (
-    <html lang="fr">
+    <html lang="fr" dir="ltr">
       <body className="min-h-[100dvh] bg-moshi-bg text-moshi-text antialiased">
-        <div className="pb-[72px]">
-          {children}
-        </div>
+        <MoshiPreferencesProvider>
+          <div className="pb-[72px]">
+            {children}
+          </div>
 
-        {modal}
+          {modal}
 
-        <LiveInvitationListener />
+          <LiveInvitationListener />
 
-        <BottomNav />
+          <BottomNav />
+        </MoshiPreferencesProvider>
       </body>
     </html>
   );
