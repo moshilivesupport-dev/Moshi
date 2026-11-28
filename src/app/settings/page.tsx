@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -14,7 +15,6 @@ import {
   Loader2,
   AlertCircle,
   MessageCircle,
-  Bell,
   Languages,
   Check,
   Coins,
@@ -145,7 +145,7 @@ export default function SettingsPage() {
     t,
     ratesSource,
     ratesSourceUrl,
-    ratesDate,
+    rateDate,
     ratesDisclaimer,
     ratesError,
   } = useMoshiPreferences();
