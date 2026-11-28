@@ -394,7 +394,7 @@ function StartLiveForm() {
                         {product.title}
                       </p>
                       <p className="text-[11px] text-moshi-purple font-extrabold mt-1">
-                        {formatMoney(product.price, product.currency)}
+                        {formatMoney(product.price)}
                       </p>
                       <p className="text-[10px] text-gray-400 mt-1">
                         Stock : {product.stock}
