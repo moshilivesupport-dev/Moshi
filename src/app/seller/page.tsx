@@ -1,12 +1,9 @@
-
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import { uploadMoshiMedia } from "@/lib/media";
 import {
   Plus,
   Package,
@@ -16,17 +13,34 @@ import {
   Trash2,
   ImagePlus,
   MapPin,
+  Store,
 } from "lucide-react";
+
+import { createClient } from "@/lib/supabase/client";
+import {
+  deleteMoshiMedia,
+  uploadMoshiMedia,
+  type UploadedMedia,
+} from "@/lib/media";
+
+import {
+  getPrimaryProductImage,
+  normalizeProductImages,
+} from "@/lib/products";
+
+import { useMoshiPreferences } from "@/components/providers/MoshiPreferencesProvider";
 
 interface Product {
   id: string;
   title: string;
   description: string | null;
   price: number;
-  image_url: string | null;
+  currency: string;
+  images: unknown;
   stock: number;
-  category: string | null;
-  is_active: boolean;
+  category_id: string | null;
+  category?: { name: string } | null;
+  status: string;
   created_at: string;
 }
 
@@ -38,6 +52,7 @@ interface ProductPhoto {
 
 const MAX_PHOTOS = 8;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
@@ -45,12 +60,18 @@ const ALLOWED_IMAGE_TYPES = [
 ];
 
 const inputClass =
-  "w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 outline-none text-sm focus:border-purple-400";
+  "w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none focus:border-purple-400";
 
 export default function SellerDashboardPage() {
   const router = useRouter();
   const supabase = createClient();
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    t,
+    formatMoney,
+  } = useMoshiPreferences();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -69,14 +90,40 @@ export default function SellerDashboardPage() {
   const [category, setCategory] = useState("");
 
   const [sellerAddress, setSellerAddress] = useState("");
-  const [sellerCountry, setSellerCountry] = useState("");
+  const [sellerCountry, setSellerCountry] = useState("Togo");
 
   const [photos, setPhotos] = useState<ProductPhoto[]>([]);
+
+  const loadProducts = async (id: string) => {
+    const { data, error } = await supabase
+      .from("products")
+      .select(
+        `
+          id,
+          title,
+          description,
+          price,
+          currency,
+          images,
+          stock,
+          category_id,
+          status,
+          created_at,
+          category:categories(name)
+        `
+      )
+      .eq("seller_id", id)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    setProducts((data || []) as Product[]);
+  };
 
   useEffect(() => {
     let mounted = true;
 
-    const loadData = async () => {
+    async function loadData() {
       try {
         const {
           data: { user },
@@ -91,83 +138,86 @@ export default function SellerDashboardPage() {
         }
 
         if (!mounted) return;
+
         setUserId(user.id);
 
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("role, seller_status")
-          .eq("id", user.id)
-          .maybeSingle();
+        const { data: profile, error: profileError } =
+          await supabase
+            .from("profiles")
+            .select("role,seller_status,country")
+            .eq("id", user.id)
+            .maybeSingle();
 
         if (profileError) throw profileError;
 
-        if (!profile || !["vendeur", "seller"].includes(profile.role)) {
-          alert("Ce compte n'est pas enregistré comme vendeur.");
+        if (
+          !profile ||
+          !["vendeur", "seller"].includes(profile.role)
+        ) {
+          window.alert(
+            t("Ce compte n'est pas enregistré comme vendeur.")
+          );
+
           router.replace("/");
           return;
         }
 
         if (profile.seller_status !== "approved") {
-          alert(
-            "Ta demande vendeur doit être approuvée avant de publier des produits."
+          window.alert(
+            t(
+              "Ta demande vendeur doit être approuvée avant de publier des produits."
+            )
           );
+
           router.replace("/");
           return;
         }
 
-        const { data, error } = await supabase
-          .from("products")
-          .select(
-            "id, title, description, price, image_url, stock, category, is_active, created_at"
-          )
-          .eq("seller_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
         if (!mounted) return;
 
-        setProducts((data || []) as Product[]);
+        setSellerCountry(profile.country || "Togo");
+
+        await loadProducts(user.id);
+
+        if (!mounted) return;
+
         setIsVendeur(true);
       } catch (error) {
-        console.error("Erreur chargement boutique vendeur:", error);
-        alert(
+        console.error(
+          "Moshi seller dashboard:",
+          error
+        );
+
+        window.alert(
           error instanceof Error
             ? error.message
-            : "Impossible de charger ta boutique."
+            : t("Impossible de charger ta boutique.")
         );
       } finally {
         if (mounted) setLoading(false);
       }
-    };
+    }
 
     void loadData();
 
     return () => {
       mounted = false;
     };
-  }, [router, supabase]);
+  }, [router, supabase, t]);
 
-  const loadProducts = async (id: string) => {
-    const { data, error } = await supabase
-      .from("products")
-      .select(
-        "id, title, description, price, image_url, stock, category, is_active, created_at"
-      )
-      .eq("seller_id", id)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-    setProducts((data || []) as Product[]);
-  };
-
-  const releasePhotoPreviews = (items: ProductPhoto[]) => {
-    items.forEach((photo) => URL.revokeObjectURL(photo.preview));
+  const releasePhotoPreviews = (
+    items: ProductPhoto[]
+  ) => {
+    items.forEach((photo) => {
+      URL.revokeObjectURL(photo.preview);
+    });
   };
 
   const handlePhotosChange = (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     const files = Array.from(event.target.files || []);
+
     event.target.value = "";
 
     if (!files.length) return;
@@ -176,35 +226,54 @@ export default function SellerDashboardPage() {
 
     for (const file of files) {
       if (photos.length + accepted.length >= MAX_PHOTOS) {
-        alert(`Maximum ${MAX_PHOTOS} photos par produit.`);
+        window.alert(
+          t(`Maximum ${MAX_PHOTOS} photos par produit.`)
+        );
         break;
       }
 
       if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-        alert(`${file.name} : utilise JPG, PNG ou WebP.`);
+        window.alert(
+          `${file.name} : ${t("Utilise JPG, PNG ou WebP.")}`
+        );
         continue;
       }
 
       if (file.size > MAX_FILE_SIZE) {
-        alert(`${file.name} dépasse la limite de 5 Mo.`);
+        window.alert(
+          `${file.name} ${t("dépasse la limite de 5 Mo.")}`
+        );
         continue;
       }
 
       accepted.push({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        id:
+          `${Date.now()}-` +
+          Math.random().toString(36).slice(2),
         file,
         preview: URL.createObjectURL(file),
       });
     }
 
-    setPhotos((current) => [...current, ...accepted]);
+    setPhotos((current) => [
+      ...current,
+      ...accepted,
+    ]);
   };
 
   const removePhoto = (photoId: string) => {
     setPhotos((current) => {
-      const photo = current.find((item) => item.id === photoId);
-      if (photo) URL.revokeObjectURL(photo.preview);
-      return current.filter((item) => item.id !== photoId);
+      const photo = current.find(
+        (item) => item.id === photoId
+      );
+
+      if (photo) {
+        URL.revokeObjectURL(photo.preview);
+      }
+
+      return current.filter(
+        (item) => item.id !== photoId
+      );
     });
   };
 
@@ -217,7 +286,6 @@ export default function SellerDashboardPage() {
     setStock("1");
     setCategory("");
     setSellerAddress("");
-    setSellerCountry("");
     setPhotos([]);
 
     if (fileInputRef.current) {
@@ -225,69 +293,103 @@ export default function SellerDashboardPage() {
     }
   };
 
-  // Envoie chaque photo vers R2 et renvoie les URL à enregistrer en base.
-  const uploadPhotos = async (): Promise<string[]> => {
+  const uploadPhotos = async (): Promise<UploadedMedia[]> => {
     if (!userId) {
-      throw new Error("Session utilisateur introuvable.");
+      throw new Error(
+        t("Session utilisateur introuvable.")
+      );
     }
 
-    const uploadedUrls: string[] = [];
+    const uploadedMedia: UploadedMedia[] = [];
 
-    for (const photo of photos) {
-      try {
-        const uploaded = await uploadMoshiMedia(photo.file, "products");
-        uploadedUrls.push(uploaded.url);
-      } catch (error) {
-        throw new Error(
-          `Impossible d'envoyer ${photo.file.name} : ${
-            error instanceof Error ? error.message : "Erreur inconnue."
-          }`
+    try {
+      for (const photo of photos) {
+        const uploaded = await uploadMoshiMedia(
+          photo.file,
+          "products"
         );
-      }
-    }
 
-    return uploadedUrls;
+        uploadedMedia.push(uploaded);
+      }
+
+      return uploadedMedia;
+    } catch (error) {
+      await Promise.allSettled(
+        uploadedMedia.map((media) =>
+          deleteMoshiMedia(media.key)
+        )
+      );
+
+      throw error;
+    }
   };
 
   const validateForm = () => {
     if (!title.trim()) {
-      alert("Saisis le nom du produit.");
+      window.alert(t("Saisis le nom du produit."));
       return false;
     }
 
-    if (!description.trim()) {
-      alert("La description du produit est obligatoire.");
+    if (title.trim().length > 120) {
+      window.alert(t("Le titre est trop long."));
       return false;
     }
 
     if (description.trim().length < 10) {
-      alert("La description doit contenir au moins 10 caractères.");
+      window.alert(
+        t(
+          "La description doit contenir au moins 10 caractères."
+        )
+      );
       return false;
     }
 
-    if (!price || !Number.isFinite(Number(price)) || Number(price) <= 0) {
-      alert("Saisis un prix valide supérieur à zéro.");
+    if (description.trim().length > 2000) {
+      window.alert(t("La description est trop longue."));
+      return false;
+    }
+
+    const numericPrice = Number(price);
+
+    if (
+      !Number.isFinite(numericPrice) ||
+      numericPrice <= 0 ||
+      !Number.isInteger(numericPrice)
+    ) {
+      window.alert(
+        t("Le prix doit être un montant entier en XOF.")
+      );
       return false;
     }
 
     const numericStock = Number(stock);
-    if (!Number.isInteger(numericStock) || numericStock < 0) {
-      alert("Saisis une quantité de stock valide.");
+
+    if (
+      !Number.isInteger(numericStock) ||
+      numericStock < 0
+    ) {
+      window.alert(t("Quantité de stock invalide."));
       return false;
     }
 
     if (photos.length < 2) {
-      alert("Ajoute au minimum deux photos du produit.");
+      window.alert(
+        t("Ajoute au minimum deux photos du produit.")
+      );
       return false;
     }
 
     if (!sellerAddress.trim()) {
-      alert("L'adresse du vendeur est obligatoire.");
+      window.alert(
+        t("L'adresse du vendeur est obligatoire.")
+      );
       return false;
     }
 
     if (!sellerCountry.trim()) {
-      alert("Le pays du vendeur est obligatoire.");
+      window.alert(
+        t("Le pays du vendeur est obligatoire.")
+      );
       return false;
     }
 
@@ -296,26 +398,33 @@ export default function SellerDashboardPage() {
 
   const handleSave = async () => {
     if (!userId) {
-      alert("Session expirée. Reconnecte-toi.");
+      window.alert(
+        t("Session expirée. Reconnecte-toi.")
+      );
+
       router.push("/auth/login");
       return;
     }
 
-    if (!validateForm()) return;
+    if (saving || !validateForm()) return;
 
     setSaving(true);
     setUploading(true);
 
-    try {
-      const imageUrls = await uploadPhotos();
+    let uploadedImages: UploadedMedia[] = [];
+    let productCreated = false;
 
-      if (imageUrls.length < 2) {
-        throw new Error("Au moins deux photos sont obligatoires.");
+    try {
+      uploadedImages = await uploadPhotos();
+
+      if (uploadedImages.length < 2) {
+        throw new Error(
+          t("Au moins deux photos sont obligatoires.")
+        );
       }
 
-      const { data: productId, error } = await supabase.rpc(
-        "create_seller_product",
-        {
+      const { data: productId, error } =
+        await supabase.rpc("create_seller_product", {
           p_title: title.trim(),
           p_description: description.trim(),
           p_price: Number(price),
@@ -323,27 +432,40 @@ export default function SellerDashboardPage() {
           p_category: category.trim() || null,
           p_seller_address: sellerAddress.trim(),
           p_seller_country: sellerCountry.trim(),
-          p_image_urls: imageUrls,
-        }
-      );
+          p_image_urls: uploadedImages,
+        });
 
       if (error) throw error;
 
       if (!productId) {
-        throw new Error("La publication n'a pas retourné d'identifiant.");
+        throw new Error(
+          t("La publication n'a pas retourné d'identifiant.")
+        );
       }
 
+      productCreated = true;
+
       await loadProducts(userId);
+
       resetForm();
       setShowForm(false);
 
-      alert("Produit publié avec succès !");
+      window.alert(t("Produit publié avec succès !"));
     } catch (error) {
-      console.error("Erreur publication produit:", error);
-      alert(
+      console.error("Publication produit:", error);
+
+      if (!productCreated && uploadedImages.length) {
+        await Promise.allSettled(
+          uploadedImages.map((image) =>
+            deleteMoshiMedia(image.key)
+          )
+        );
+      }
+
+      window.alert(
         error instanceof Error
-          ? `Publication impossible : ${error.message}`
-          : "Impossible de publier le produit."
+          ? `${t("Publication impossible")} : ${error.message}`
+          : t("Impossible de publier le produit.")
       );
     } finally {
       setUploading(false);
@@ -351,41 +473,69 @@ export default function SellerDashboardPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Supprimer définitivement ce produit ?")) return;
+  const handleDelete = async (product: Product) => {
+    if (!userId || saving) return;
+
+    if (
+      !window.confirm(
+        t("Supprimer définitivement ce produit ?")
+      )
+    ) {
+      return;
+    }
+
+    setSaving(true);
 
     try {
       const { error } = await supabase
         .from("products")
         .delete()
-        .eq("id", id)
+        .eq("id", product.id)
         .eq("seller_id", userId);
 
       if (error) throw error;
 
       setProducts((current) =>
-        current.filter((product) => product.id !== id)
+        current.filter(
+          (item) => item.id !== product.id
+        )
+      );
+
+      const images = normalizeProductImages(
+        product.images
+      );
+
+      await Promise.allSettled(
+        images
+          .filter((image) => image.key)
+          .map((image) =>
+            deleteMoshiMedia(image.key as string)
+          )
       );
     } catch (error) {
-      console.error("Erreur suppression produit:", error);
-      alert(
+      console.error("Suppression produit:", error);
+
+      window.alert(
         error instanceof Error
           ? error.message
-          : "Impossible de supprimer ce produit."
+          : t("Impossible de supprimer ce produit.")
       );
+    } finally {
+      setSaving(false);
     }
   };
 
   const closeForm = () => {
     if (saving || uploading) return;
+
     resetForm();
     setShowForm(false);
   };
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-moshi-bg">
-        <Loader2 className="w-10 h-10 text-moshi-purple animate-spin" />
+      <div className="flex min-h-[100dvh] items-center justify-center bg-moshi-bg">
+        <Loader2 className="h-10 w-10 animate-spin text-moshi-purple" />
       </div>
     );
   }
@@ -394,116 +544,151 @@ export default function SellerDashboardPage() {
 
   return (
     <div className="min-h-[100dvh] bg-moshi-bg pb-32">
-      <header className="px-4 py-4 flex items-center justify-between bg-white shadow-sm sticky top-0 z-20">
-        <Link href="/" className="p-2" aria-label="Retour">
-          <ArrowLeft className="w-6 h-6" />
+      <header className="sticky top-0 z-20 flex items-center justify-between bg-white px-4 py-4 shadow-sm">
+        <Link
+          href="/"
+          className="p-2"
+          aria-label={t("Retour")}
+        >
+          <ArrowLeft className="h-6 w-6" />
         </Link>
 
-        <h1 className="text-lg font-bold">Ma Boutique</h1>
+        <h1 className="text-lg font-bold">
+          {t("Ma Boutique")}
+        </h1>
 
         <Link
           href="/seller/orders"
           className="relative p-2"
-          aria-label="Mes commandes"
+          aria-label={t("Mes commandes")}
         >
-          <Package className="w-6 h-6 text-moshi-purple" />
+          <Package className="h-6 w-6 text-moshi-purple" />
         </Link>
       </header>
 
-      <div className="p-4 max-w-md mx-auto">
+      <div className="mx-auto max-w-md p-4">
         {products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <Package className="w-12 h-12 text-gray-300" />
+          <div className="flex flex-col items-center justify-center gap-4 py-20">
+            <Package className="h-12 w-12 text-gray-300" />
+
             <p className="text-sm text-gray-500">
-              Tu n'as pas encore de produits.
+              {t("Tu n'as pas encore de produits.")}
             </p>
+
             <button
+              type="button"
               onClick={() => setShowForm(true)}
-              className="moshi-gradient text-white font-bold px-5 py-3 rounded-xl"
+              className="rounded-xl moshi-gradient px-5 py-3 font-bold text-white"
             >
-              Ajouter mon premier produit
+              {t("Ajouter mon premier produit")}
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            {products.map((product) => (
-              <div
-                key={product.id}
-                className="bg-white rounded-2xl overflow-hidden shadow-sm relative"
-              >
-                <div className="aspect-square bg-gray-100 relative">
-                  {product.image_url ? (
-                    <Image
-                      src={product.image_url}
-                      alt={product.title}
-                      fill
-                      sizes="(max-width: 640px) 50vw, 240px"
-                      className="object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-300">
-                      <Package size={32} />
-                    </div>
-                  )}
-                </div>
+            {products.map((product) => {
+              const image = getPrimaryProductImage(
+                product.images
+              );
 
-                <div className="p-3">
-                  <p className="text-sm font-bold truncate">
-                    {product.title}
-                  </p>
-                  <p className="text-sm font-extrabold text-moshi-purple mt-1">
-                    {Number(product.price).toLocaleString("fr-FR")} FCFA
-                  </p>
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    Stock : {product.stock}
-                  </p>
-                  <p className="text-[10px] mt-1">
-                    {product.is_active ? (
-                      <span className="text-green-600">Publié</span>
-                    ) : (
-                      <span className="text-orange-500">Masqué</span>
-                    )}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => handleDelete(product.id)}
-                  aria-label={`Supprimer ${product.title}`}
-                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center z-10"
+              return (
+                <div
+                  key={product.id}
+                  className="relative overflow-hidden rounded-2xl bg-white shadow-sm"
                 >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
+                  <div className="relative aspect-square bg-gray-100">
+                    {image ? (
+                      <Image
+                        src={image}
+                        alt={product.title}
+                        fill
+                        sizes="(max-width: 640px) 50vw, 240px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-gray-300">
+                        <Package size={32} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-3">
+                    <p className="truncate text-sm font-bold">
+                      {product.title}
+                    </p>
+
+                    <p className="mt-1 text-sm font-extrabold text-moshi-purple">
+                      {formatMoney(Number(product.price))}
+                    </p>
+
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      {t("Stock")} : {product.stock}
+                    </p>
+
+                    {product.category?.name && (
+                      <p className="mt-1 truncate text-[10px] text-gray-400">
+                        {product.category.name}
+                      </p>
+                    )}
+
+                    <p className="mt-1 text-[10px]">
+                      {product.status === "active" ? (
+                        <span className="text-green-600">
+                          {t("Publié")}
+                        </span>
+                      ) : (
+                        <span className="text-orange-500">
+                          {t("Non publié")}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(product)}
+                    disabled={saving}
+                    aria-label={`${t("Supprimer")} ${product.title}`}
+                    className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white disabled:opacity-50"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
       <button
+        type="button"
         onClick={() => setShowForm(true)}
-        aria-label="Ajouter un produit"
-        className="fixed bottom-6 right-6 z-40 w-16 h-16 rounded-full moshi-gradient shadow-2xl shadow-purple-500/50 flex items-center justify-center text-white active:scale-95 transition"
+        aria-label={t("Ajouter un produit")}
+        className="fixed bottom-6 right-6 z-40 flex h-16 w-16 items-center justify-center rounded-full moshi-gradient text-white shadow-2xl shadow-purple-500/50 transition active:scale-95"
       >
         <Plus size={32} strokeWidth={2.5} />
       </button>
 
       {showForm && (
-        <div className="fixed inset-0 z-[60] bg-black/60 flex items-end justify-center">
-          <div className="bg-white w-full max-w-md rounded-t-3xl p-6 max-h-[92dvh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-5">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60">
+          <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-6">
+            <div className="mb-5 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold">Nouveau produit</h2>
-                <p className="text-xs text-gray-400 mt-1">
-                  Tous les champs marqués obligatoires doivent être remplis.
+                <h2 className="text-lg font-bold">
+                  {t("Nouveau produit")}
+                </h2>
+
+                <p className="mt-1 text-xs text-gray-400">
+                  {t("Les champs marqués obligatoires doivent être remplis.")}
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={closeForm}
                 disabled={saving || uploading}
                 className="p-2 disabled:opacity-40"
-                aria-label="Fermer"
+                aria-label={t("Fermer")}
               >
                 <X size={20} />
               </button>
@@ -511,10 +696,11 @@ export default function SellerDashboardPage() {
 
             <div className="space-y-4">
               <section>
-                <div className="flex justify-between items-center mb-2">
+                <div className="mb-2 flex items-center justify-between">
                   <label className="text-sm font-bold">
-                    Photos du produit *
+                    {t("Photos du produit")} *
                   </label>
+
                   <span
                     className={`text-xs font-semibold ${
                       photos.length >= 2
@@ -522,24 +708,23 @@ export default function SellerDashboardPage() {
                         : "text-orange-500"
                     }`}
                   >
-                    {photos.length}/{MAX_PHOTOS} photos
+                    {photos.length}/{MAX_PHOTOS}
                   </span>
                 </div>
 
-                <p className="text-xs text-gray-500 mb-3">
-                  Ajoute au minimum 2 photos. JPG, PNG ou WebP, 5 Mo maximum
-                  par photo.
+                <p className="mb-3 text-xs text-gray-500">
+                  {t("Ajoute au minimum deux photos. JPG, PNG ou WebP, 5 Mo maximum par photo.")}
                 </p>
 
                 <div className="grid grid-cols-3 gap-2">
                   {photos.map((photo, index) => (
                     <div
                       key={photo.id}
-                      className="relative aspect-square rounded-xl overflow-hidden bg-gray-100"
+                      className="relative aspect-square overflow-hidden rounded-xl bg-gray-100"
                     >
                       <Image
                         src={photo.preview}
-                        alt={`Photo ${index + 1}`}
+                        alt={`${t("Photo")} ${index + 1}`}
                         fill
                         sizes="120px"
                         className="object-cover"
@@ -547,8 +732,8 @@ export default function SellerDashboardPage() {
                       />
 
                       {index === 0 && (
-                        <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-2 py-1 rounded-full">
-                          Principale
+                        <span className="absolute bottom-1 left-1 rounded-full bg-black/60 px-2 py-1 text-[9px] text-white">
+                          {t("Principale")}
                         </span>
                       )}
 
@@ -556,8 +741,8 @@ export default function SellerDashboardPage() {
                         type="button"
                         onClick={() => removePhoto(photo.id)}
                         disabled={saving || uploading}
-                        aria-label="Retirer cette photo"
-                        className="absolute top-1 right-1 w-7 h-7 rounded-full bg-black/65 text-white flex items-center justify-center"
+                        aria-label={t("Retirer cette photo")}
+                        className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-white"
                       >
                         <X size={14} />
                       </button>
@@ -567,13 +752,16 @@ export default function SellerDashboardPage() {
                   {photos.length < MAX_PHOTOS && (
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() =>
+                        fileInputRef.current?.click()
+                      }
                       disabled={saving || uploading}
-                      className="aspect-square rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-2 text-gray-500 disabled:opacity-50"
+                      className="flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 text-gray-500 disabled:opacity-50"
                     >
                       <ImagePlus size={25} />
+
                       <span className="text-[10px] font-semibold">
-                        Ajouter
+                        {t("Ajouter")}
                       </span>
                     </button>
                   )}
@@ -589,104 +777,134 @@ export default function SellerDashboardPage() {
                 />
 
                 {photos.length < 2 && (
-                  <p className="text-xs text-orange-600 mt-2">
-                    Il manque {2 - photos.length} photo(s) minimum.
+                  <p className="mt-2 text-xs text-orange-600">
+                    {t("Il manque")} {2 - photos.length}{" "}
+                    {t("photo(s) minimum.")}
                   </p>
                 )}
               </section>
 
               <div>
-                <label className="block text-sm font-semibold mb-2">
-                  Nom du produit *
+                <label className="mb-2 block text-sm font-semibold">
+                  {t("Nom du produit")} *
                 </label>
+
                 <input
                   type="text"
-                  placeholder="Ex. Chaussures pour homme"
+                  placeholder={t("Ex. Chaussures pour homme")}
                   value={title}
-                  onChange={(event) => setTitle(event.target.value)}
+                  onChange={(event) =>
+                    setTitle(event.target.value)
+                  }
                   maxLength={120}
                   className={inputClass}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-2">
-                  Description obligatoire *
+                <label className="mb-2 block text-sm font-semibold">
+                  {t("Description obligatoire")} *
                 </label>
+
                 <textarea
-                  placeholder="Décris précisément ton produit, ses caractéristiques et son état..."
+                  placeholder={t(
+                    "Décris précisément ton produit, ses caractéristiques et son état..."
+                  )}
                   value={description}
-                  onChange={(event) => setDescription(event.target.value)}
+                  onChange={(event) =>
+                    setDescription(event.target.value)
+                  }
                   rows={4}
                   maxLength={2000}
                   className={`${inputClass} resize-none`}
                 />
-                <p className="text-[10px] text-gray-400 text-right mt-1">
+
+                <p className="mt-1 text-right text-[10px] text-gray-400">
                   {description.length}/2000
                 </p>
               </div>
 
               <div className="flex gap-2">
-                <div className="flex-1 min-w-0">
-                  <label className="block text-sm font-semibold mb-2">
-                    Prix (FCFA) *
+                <div className="min-w-0 flex-1">
+                  <label className="mb-2 block text-sm font-semibold">
+                    {t("Prix de base (XOF)")} *
                   </label>
+
                   <input
                     type="number"
                     min="1"
                     step="1"
-                    placeholder="Prix"
+                    placeholder="Prix XOF"
                     value={price}
-                    onChange={(event) => setPrice(event.target.value)}
+                    onChange={(event) =>
+                      setPrice(event.target.value)
+                    }
                     className={inputClass}
                   />
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <label className="block text-sm font-semibold mb-2">
-                    Stock *
+                <div className="min-w-0 flex-1">
+                  <label className="mb-2 block text-sm font-semibold">
+                    {t("Stock")} *
                   </label>
+
                   <input
                     type="number"
                     min="0"
                     step="1"
                     placeholder="Stock"
                     value={stock}
-                    onChange={(event) => setStock(event.target.value)}
+                    onChange={(event) =>
+                      setStock(event.target.value)
+                    }
                     className={inputClass}
                   />
                 </div>
               </div>
 
+              <p className="text-[11px] leading-5 text-gray-500">
+                {t("Le prix est enregistré en XOF. Les acheteurs le verront dans leur devise préférée.")}
+              </p>
+
               <div>
-                <label className="block text-sm font-semibold mb-2">
-                  Catégorie
+                <label className="mb-2 block text-sm font-semibold">
+                  {t("Catégorie")}
                 </label>
+
                 <input
                   type="text"
-                  placeholder="Ex. Mode, Beauté, Électronique"
+                  placeholder={t("Ex. Mode, Beauté, Électronique")}
                   value={category}
-                  onChange={(event) => setCategory(event.target.value)}
+                  onChange={(event) =>
+                    setCategory(event.target.value)
+                  }
                   maxLength={80}
                   className={inputClass}
                 />
               </div>
 
               <div className="border-t border-gray-100 pt-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <MapPin size={18} className="text-moshi-purple" />
-                  <h3 className="font-bold text-sm">
-                    Localisation du vendeur
+                <div className="mb-3 flex items-center gap-2">
+                  <MapPin
+                    size={18}
+                    className="text-moshi-purple"
+                  />
+
+                  <h3 className="text-sm font-bold">
+                    {t("Localisation du vendeur")}
                   </h3>
                 </div>
 
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-semibold mb-2">
-                      Adresse du vendeur *
+                    <label className="mb-2 block text-sm font-semibold">
+                      {t("Adresse du vendeur")} *
                     </label>
+
                     <textarea
-                      placeholder="Ville, quartier, rue ou adresse de ton établissement..."
+                      placeholder={t(
+                        "Ville, quartier, rue ou adresse de ton établissement..."
+                      )}
                       value={sellerAddress}
                       onChange={(event) =>
                         setSellerAddress(event.target.value)
@@ -695,16 +913,13 @@ export default function SellerDashboardPage() {
                       maxLength={500}
                       className={`${inputClass} resize-none`}
                     />
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      Indique l'adresse de ton activité ou de ton point de
-                      vente.
-                    </p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold mb-2">
-                      Pays du vendeur *
+                    <label className="mb-2 block text-sm font-semibold">
+                      {t("Pays du vendeur")} *
                     </label>
+
                     <input
                       type="text"
                       placeholder="Ex. Togo"
@@ -720,35 +935,41 @@ export default function SellerDashboardPage() {
               </div>
 
               <button
-                onClick={handleSave}
+                type="button"
+                onClick={() => void handleSave()}
                 disabled={
                   saving ||
                   uploading ||
                   !title.trim() ||
-                  !description.trim() ||
+                  description.trim().length < 10 ||
                   !price ||
                   photos.length < 2 ||
                   !sellerAddress.trim() ||
                   !sellerCountry.trim()
                 }
-                className="w-full moshi-gradient text-white font-bold py-4 rounded-xl shadow-lg disabled:opacity-50 flex items-center justify-center gap-2 mt-3"
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl moshi-gradient py-4 font-bold text-white shadow-lg disabled:opacity-50"
               >
                 {saving || uploading ? (
                   <>
-                    <Loader2 className="animate-spin" size={20} />
-                    {uploading ? "Envoi des photos..." : "Publication..."}
+                    <Loader2
+                      className="animate-spin"
+                      size={20}
+                    />
+
+                    {uploading
+                      ? t("Envoi des photos...")
+                      : t("Publication...")}
                   </>
                 ) : (
                   <>
                     <Package size={20} />
-                    Publier le produit
+                    {t("Publier le produit")}
                   </>
                 )}
               </button>
 
-              <p className="text-[10px] text-center text-gray-400">
-                La publication est vérifiée par Moshi avant son
-                enregistrement.
+              <p className="text-center text-[10px] text-gray-400">
+                {t("Les photos sont stockées sur Cloudflare R2.")}
               </p>
             </div>
           </div>
